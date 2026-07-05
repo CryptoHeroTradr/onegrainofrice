@@ -3,6 +3,9 @@
  * Nothing in `src/components/` hardcodes content.
  */
 
+/** Rice grains per kilogram — tunable. Drives grainsDonated in the charity DTO. */
+export const GRAINS_PER_KG = 50000;
+
 export const site = {
   name: "One Grain of Rice",
   ticker: "$RICE",
@@ -17,16 +20,28 @@ export const site = {
    */
   buyUrl: process.env.NEXT_PUBLIC_BUY_URL ?? "https://jup.ag/#TODO-set-buy-url",
 
-  /**
-   * TODO: set the real mint address in .env.local as NEXT_PUBLIC_TOKEN_ADDRESS,
-   * or replace the fallback below. Shown in the UI with a copy button.
-   */
+  /** $RICE mint (Solana mainnet). Override via NEXT_PUBLIC_TOKEN_ADDRESS. */
   tokenAddress:
     process.env.NEXT_PUBLIC_TOKEN_ADDRESS ??
-    "TODOxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1",
+    "2wQq3MrFFHPQnapMt1wnZ2vGkVZDv5ENDCrdLCqFpump",
+
+  /** On-chain charity wallet — every donation is public and verifiable. */
+  charityWallet: "7SY8eauzB9bSJvM3tShxZEGnf354UiAucq9yDWZb3kVj",
 
   /** Preserved original homepage. Rendered at /onegrainofrice/classic under basePath. */
   classicUrl: "/classic",
+
+  charity: {
+    heading: { lead: "every grain,", accent: "one real meal." },
+    sub: "Each grain in the bowl is one meal funded on-chain. As the community gives, the pile grows — and every transfer settles to a public charity wallet you can watch yourself.",
+    walletLabel: "on-chain charity wallet",
+    grainsLabel: "grains donated",
+    stats: {
+      totalKg: "kg in the pantry",
+      fedToday: "fed today",
+      fedAllTime: "fed all-time",
+    },
+  },
 
   socials: [
     { id: "x", label: "Follow $RICE on X", href: "https://x.com/TODO" },

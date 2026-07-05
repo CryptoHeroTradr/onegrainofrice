@@ -8,6 +8,7 @@
  */
 import { useRef } from "react";
 import { RiceButton } from "@/components/rice/RiceButton";
+import { RicePile } from "@/components/rice/RicePile";
 import { useBowlFill } from "@/components/rice/useBowlFill";
 
 export default function RiceDemo() {
@@ -45,6 +46,11 @@ export default function RiceDemo() {
           placeholder="type here — native caret returns"
           className="border-2 border-porcelain bg-steamed px-4 py-2 font-mono text-sm text-nori placeholder:text-nori/40"
         />
+      </section>
+
+      {/* Live charity pile (Phase 5) */}
+      <section className="border-y-2 border-porcelain bg-bone px-6 py-16">
+        <RicePile />
       </section>
 
       <div className="h-[40vh]" aria-hidden="true" />
