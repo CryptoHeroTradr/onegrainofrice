@@ -343,6 +343,111 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Sushi belt — Phase 6.
+--------------------------------------------------------------------------- */
+/* Conveyor track texture: repeating rollers beneath the plates. */
+.belt-conveyor {
+  background-color: var(--color-nori);
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(196, 179, 112, 0.18) 0px,
+    rgba(196, 179, 112, 0.18) 2px,
+    rgba(20, 17, 13, 0) 2px,
+    rgba(20, 17, 13, 0) 22px
+  );
+  border-top: 2px solid var(--color-porcelain);
+  border-bottom: 2px solid var(--color-porcelain);
+}
+
+.belt-viewport {
+  position: relative;
+  overflow: hidden;
+  perspective: 900px;
+  padding: 1.5rem 0 1.75rem;
+}
+.belt-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+.belt-copy {
+  display: flex;
+  gap: 1.5rem;
+  padding: 0 0.75rem;
+}
+
+/* One plate: round porcelain dish + the cut-out meme sitting on it. */
+.belt-plate {
+  position: relative;
+  width: 172px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 10px;
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center bottom;
+}
+.belt-dish {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 168px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 35%, #f4f7fc 0%, #e7edf6 60%, #d4ddec 100%);
+  box-shadow: 0 8px 14px -6px rgba(20, 17, 13, 0.6);
+  border: 2px solid var(--color-porcelain);
+}
+.belt-dish::after {
+  content: "";
+  position: absolute;
+  inset: 7px 18px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--color-porcelain) 55%, transparent);
+}
+.belt-plate-blue .belt-dish {
+  border-color: var(--color-porcelain);
+}
+.belt-plate-red .belt-dish {
+  border-color: var(--color-tuna);
+}
+.belt-plate-red .belt-dish::after {
+  border-color: color-mix(in srgb, var(--color-tuna) 55%, transparent);
+}
+.belt-plate-green .belt-dish {
+  border-color: var(--color-bamboo);
+}
+.belt-plate-green .belt-dish::after {
+  border-color: color-mix(in srgb, var(--color-bamboo) 55%, transparent);
+}
+.belt-meme {
+  position: relative;
+  z-index: 2;
+  width: 118px;
+  margin-bottom: 6px;
+}
+/* Pop the hovered plate forward. */
+.belt-plate-pop {
+  transform: translateY(-10px) scale(1.12);
+  z-index: 30;
+}
+
+/* Reduced-motion / touch strip. */
+.belt-strip {
+  display: flex;
+  gap: 1.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 1.5rem 0.75rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.belt-strip .belt-plate {
+  scroll-snap-align: center;
+}
+
+/* ---------------------------------------------------------------------------
    Meme carousel — 3D stage. Transforms are applied per-slide from JS.
 --------------------------------------------------------------------------- */
 .carousel-3d {
