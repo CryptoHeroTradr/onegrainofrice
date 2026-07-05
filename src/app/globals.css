@@ -1,0 +1,199 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   $RICE design tokens — Tailwind v4 CSS-first theme.
+   These generate utilities (bg-ink, text-khaki, font-display, …) AND are
+   plain CSS variables (--color-ink etc.) for use in raw CSS below.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-ink: #17150f;
+  --color-paper: #eae3d2;
+  --color-paper-dark: #d9cfb8;
+  --color-bone: #f4efe2;
+  --color-olive: #6a6c3a;
+  --color-olive-deep: #474d2e;
+  --color-khaki: #c4b370;
+
+  --font-display: var(--font-display-next), "Zilla Slab", Georgia, serif;
+  --font-mono: var(--font-mono-next), "Courier Prime", "Courier New", monospace;
+
+  --shadow-sticker: 0 10px 24px -8px rgba(23, 21, 15, 0.55);
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Anchor targets clear the sticky header */
+  scroll-padding-top: 5.5rem;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: var(--color-khaki);
+  color: var(--color-ink);
+}
+
+/* ---------------------------------------------------------------------------
+   Paper grain — self-contained SVG feTurbulence noise, no network, no file.
+   Layer it over any section with .grain (dark) or .grain-paper (light).
+--------------------------------------------------------------------------- */
+.grain::after,
+.grain-paper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.11;
+  mix-blend-mode: overlay;
+  z-index: 1;
+}
+.grain-paper::after {
+  opacity: 0.16;
+  mix-blend-mode: multiply;
+}
+.grain,
+.grain-paper {
+  position: relative;
+}
+/* Content above the grain layer */
+.grain > *,
+.grain-paper > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------------------------
+   Torn paper edges — jagged clip-path strips used by <TornDivider />.
+   Tall, rough rips (many irregular teeth) for the heavy distressed look.
+--------------------------------------------------------------------------- */
+.torn-bottom {
+  clip-path: polygon(
+    0% 0%, 100% 0%,
+    100% 55%, 97% 82%, 94% 48%, 91% 74%, 88% 40%, 85% 88%, 82% 52%, 79% 78%,
+    76% 44%, 73% 90%, 70% 56%, 67% 72%, 64% 38%, 61% 84%, 58% 50%, 55% 80%,
+    52% 42%, 49% 88%, 46% 54%, 43% 70%, 40% 36%, 37% 86%, 34% 48%, 31% 78%,
+    28% 44%, 25% 90%, 22% 52%, 19% 74%, 16% 40%, 13% 84%, 10% 50%, 7% 76%,
+    4% 44%, 0% 82%
+  );
+}
+.torn-top {
+  clip-path: polygon(
+    0% 45%, 4% 18%, 7% 52%, 10% 26%, 13% 60%, 16% 20%, 19% 54%, 22% 28%,
+    25% 62%, 28% 22%, 31% 50%, 34% 30%, 37% 58%, 40% 16%, 43% 52%, 46% 26%,
+    49% 60%, 52% 22%, 55% 54%, 58% 30%, 61% 62%, 64% 20%, 67% 50%, 70% 28%,
+    73% 58%, 76% 24%, 79% 52%, 82% 18%, 85% 56%, 88% 26%, 91% 60%, 94% 22%,
+    97% 54%, 100% 30%,
+    100% 100%, 0% 100%
+  );
+}
+
+/* All-sides hand-torn rip — used to frame the dark hero block as a torn photo
+   sitting on cream paper. Rougher, larger teeth than the sticker frame. */
+.torn-block {
+  clip-path: polygon(
+    1% 2%, 9% 0.5%, 17% 2.5%, 25% 0.8%, 33% 3%, 41% 1%, 49% 2.8%, 57% 0.6%,
+    65% 3%, 73% 1%, 81% 2.6%, 89% 0.7%, 97% 2.4%, 99.3% 3%,
+    98% 11%, 100% 20%, 98.4% 29%, 99.6% 39%, 98% 48%, 100% 57%, 98.6% 66%,
+    99.4% 76%, 98% 85%, 99.5% 94%, 98.8% 98%,
+    91% 99.4%, 83% 97.4%, 75% 99.5%, 67% 97.2%, 59% 99.4%, 51% 97.3%, 43% 99.5%,
+    35% 97.4%, 27% 99.3%, 19% 97.5%, 11% 99.4%, 3% 97.6%, 0.6% 97%,
+    2% 88%, 0.3% 79%, 1.6% 69%, 0.2% 60%, 1.8% 50%, 0.3% 41%, 1.6% 31%,
+    0.4% 22%, 2% 12%, 0.6% 5%
+  );
+}
+
+/* Torn-edge frame for sticker cards — irregular rip around the white border */
+.torn-frame {
+  clip-path: polygon(
+    1.5% 3%, 12% 0.5%, 27% 2.5%, 43% 0%, 58% 2%, 74% 0.5%, 89% 2.5%, 99% 1%,
+    98% 14%, 100% 29%, 98.5% 45%, 100% 61%, 98% 76%, 99.5% 90%, 98% 98.5%,
+    85% 100%, 70% 98%, 54% 100%, 39% 98.5%, 24% 100%, 10% 98%, 0.5% 99%,
+    2% 86%, 0% 71%, 1.5% 55%, 0% 40%, 2% 25%, 0.5% 11%
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   Grungy section framing — inset vignette so section edges darken like the
+   distressed poster panels in the mockup. Pair with .grain / .grain-paper.
+--------------------------------------------------------------------------- */
+.vignette-dark {
+  box-shadow:
+    inset 0 0 120px 24px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.5);
+}
+.vignette-paper {
+  box-shadow:
+    inset 0 0 90px 18px rgba(71, 77, 46, 0.16),
+    inset 0 0 0 2px rgba(71, 77, 46, 0.12);
+}
+
+/* Framed sticker: heavy drop shadow so it floats off the collage. */
+.sticker {
+  filter: drop-shadow(0 14px 16px rgba(23, 21, 15, 0.55));
+}
+
+/* Cut-out sticker: thin white keyline hugging the silhouette (stacked 1px white
+   shadows) + a soft dark float shadow. Works on transparent PNG cut-outs. */
+.sticker-cutout {
+  filter:
+    drop-shadow(1px 0 0 rgba(244, 239, 226, 0.95))
+    drop-shadow(-1px 0 0 rgba(244, 239, 226, 0.95))
+    drop-shadow(0 1px 0 rgba(244, 239, 226, 0.95))
+    drop-shadow(0 -1px 0 rgba(244, 239, 226, 0.95))
+    drop-shadow(0 16px 15px rgba(23, 21, 15, 0.5));
+}
+
+/* ---------------------------------------------------------------------------
+   Washi tape strip — texture via repeating gradient, slight translucency.
+--------------------------------------------------------------------------- */
+.tape {
+  background-color: rgba(196, 179, 112, 0.75);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(244, 239, 226, 0.25) 0px,
+    rgba(244, 239, 226, 0.25) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+  box-shadow: 0 1px 3px rgba(23, 21, 15, 0.3);
+  clip-path: polygon(2% 0%, 98% 4%, 100% 88%, 96% 100%, 3% 96%, 0% 12%);
+}
+.tape-olive {
+  background-color: rgba(106, 108, 58, 0.7);
+}
+.tape-paper {
+  background-color: rgba(234, 227, 210, 0.82);
+}
+
+/* ---------------------------------------------------------------------------
+   Meme carousel — 3D stage. Transforms are applied per-slide from JS.
+--------------------------------------------------------------------------- */
+.carousel-3d {
+  perspective: 1200px;
+}
+.carousel-3d .embla-container {
+  transform-style: preserve-3d;
+}
+.embla-slide {
+  transition: opacity 0.2s linear;
+  backface-visibility: hidden;
+}
+
+/* Reduced motion: flat deck, no smooth scroll */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .carousel-3d {
+    perspective: none;
+  }
+  .carousel-3d .embla-container {
+    transform-style: flat;
+  }
+}

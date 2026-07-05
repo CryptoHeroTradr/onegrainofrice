@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+  <rect width="800" height="1000" fill="#17150F"/>
+  <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5">
+    <stop offset="0%" stop-color="#C4B370" stop-opacity="0.9"/>
+    <stop offset="45%" stop-color="#C4B370" stop-opacity="0.25"/>
+    <stop offset="100%" stop-color="#C4B370" stop-opacity="0"/>
+  </radialGradient>
+  <rect width="800" height="1000" fill="url(#glow)"/>
+  <!-- hand-drawn radiating sparks around the grain -->
+  <g stroke="#C4B370" stroke-width="6" stroke-linecap="round" opacity="0.9">
+    <path d="M400 250 L 400 200 M330 300 L 300 262 M470 300 L 500 262 M300 360 L 258 350 M500 360 L 542 350 M350 250 L 332 214 M450 250 L 468 214"/>
+  </g>
+  <!-- single luminous grain -->
+  <ellipse cx="400" cy="360" rx="46" ry="94" fill="#EAE3D2"/>
+  <ellipse cx="386" cy="335" rx="14" ry="34" fill="#ffffff" opacity="0.7"/>
+  <!-- open upturned palm -->
+  <path d="M 240 620 Q 270 540 350 528 L 470 528 Q 560 545 580 640 Q 592 760 500 812 L 330 812 Q 236 764 240 620 Z" fill="#6A6C3A" opacity="0.8"/>
+  <path d="M 320 532 Q 330 470 358 462 M 388 528 Q 394 452 418 446 M 452 530 Q 460 458 484 456 M 512 542 Q 528 486 552 488" stroke="#6A6C3A" stroke-width="32" stroke-linecap="round" fill="none" opacity="0.8"/>
+  <text x="400" y="930" text-anchor="middle" font-family="'Courier New', monospace" font-size="26" letter-spacing="5" fill="#C4B370" opacity="0.8">[ swap in hero-grain.png ]</text>
+</svg>
