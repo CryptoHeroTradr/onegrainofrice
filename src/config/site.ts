@@ -25,6 +25,9 @@ export const site = {
     process.env.NEXT_PUBLIC_TOKEN_ADDRESS ??
     "TODOxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx1",
 
+  /** Preserved original homepage. Rendered at /onegrainofrice/classic under basePath. */
+  classicUrl: "/classic",
+
   socials: [
     { id: "x", label: "Follow $RICE on X", href: "https://x.com/TODO" },
     { id: "telegram", label: "Join the $RICE Telegram", href: "https://t.me/TODO" },
