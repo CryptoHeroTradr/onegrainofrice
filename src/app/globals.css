@@ -448,6 +448,78 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Journey scroll-snap spine — Phase 7. Snap is scoped to the journey route via
+   the .journey-snap class on <html> (added/removed by JourneySpine).
+--------------------------------------------------------------------------- */
+.journey-snap {
+  scroll-snap-type: y proximity;
+}
+.journey-section {
+  scroll-snap-align: start;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Hero ambient: CSS "paddy at golden hour" gradient (always present). */
+.ambient-farm {
+  background:
+    radial-gradient(120% 80% at 50% 18%, rgba(196, 179, 112, 0.5) 0%, rgba(20, 17, 13, 0) 55%),
+    linear-gradient(to bottom, #1c1913 0%, #23301c 62%, #2f3d22 100%);
+}
+
+@keyframes grain-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 18px rgba(196, 179, 112, 0.45));
+    opacity: 0.95;
+  }
+  50% {
+    filter: drop-shadow(0 0 32px rgba(196, 179, 112, 0.8));
+    opacity: 1;
+  }
+}
+.grain-glow {
+  animation: grain-glow 3.6s ease-in-out infinite;
+}
+
+/* Faint drifting grains rising behind the hero. */
+.hero-drift span {
+  position: absolute;
+  bottom: -10px;
+  width: 4px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(244, 239, 226, 0.55);
+  animation: hero-drift 9s linear infinite;
+}
+@keyframes hero-drift {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.6;
+  }
+  88% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(-90vh) rotate(120deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grain-glow,
+  .hero-drift span {
+    animation: none;
+  }
+  .grain-glow {
+    filter: drop-shadow(0 0 22px rgba(196, 179, 112, 0.6));
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Meme carousel — 3D stage. Transforms are applied per-slide from JS.
 --------------------------------------------------------------------------- */
 .carousel-3d {

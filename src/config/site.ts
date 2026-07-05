@@ -131,7 +131,50 @@ export const site = {
     disclaimer:
       "$RICE is a meme coin. Nothing on this page is financial advice. Do your own research and never risk what you can't afford to lose.",
   },
+
+  /** RiceDAO village/game. Override with NEXT_PUBLIC_VILLAGE_URL. */
+  villageUrl: process.env.NEXT_PUBLIC_VILLAGE_URL ?? "http://209.141.52.60/RiceDAO/",
+
+  nav: {
+    logo: "🌾 one grain of rice",
+    classicLabel: "classic site",
+    // Hrefs: same-page anchors, plus Village (external) resolved in the component.
+    links: [
+      { label: "Memes", href: "#memes" },
+      { label: "Charity", href: "#donate" },
+      { label: "Token", href: "#token" },
+      { label: "Village", href: "village" }, // sentinel → site.villageUrl
+    ],
+  },
+
+  hero: {
+    ctaPrimary: "Get $RICE",
+    ctaSecondary: "Enter the Village",
+  },
+
+  /** Four-beat scroll journey; the bowl doubles SEED→GROW→HARVEST→DONATE. */
+  journey: {
+    seed: {
+      heading: { lead: "it starts with", accent: "one grain." },
+      body: "A single seed, held in an open palm. No whales, no gatekeepers — just a community planting something real.",
+    },
+    grow: {
+      heading: { lead: "the field", accent: "grows." },
+      body: "Every holder is a farmer. Memes are the water, the community is the sun. Row by row, the paddy fills in.",
+    },
+    harvest: {
+      heading: { lead: "the harvest", accent: "doubles." },
+      body: "Grain by grain the bowl fills — then fills again. Momentum compounds, and the pile begins to overflow.",
+    },
+    donate: {
+      heading: { lead: "the bowl", accent: "gives back." },
+      body: "What overflows, we give. Every surplus grain becomes a real meal, settled on-chain to a public charity wallet.",
+    },
+  },
 } as const;
+
+/** Config-gated ambient farm loop behind the hero (needs a local asset). */
+export const HERO_FARM_AMBIENT = process.env.NEXT_PUBLIC_HERO_FARM_AMBIENT === "true";
 
 export type SocialId = "x" | "telegram" | "discord" | "globe";
 export type AboutIcon = "users" | "shield" | "droplet" | "heart" | "scan";
