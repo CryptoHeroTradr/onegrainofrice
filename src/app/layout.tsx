@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { display, displayRound, mono } from "./fonts";
 import { site } from "@/config/site";
 import { RiceProvider } from "@/components/rice/RiceParticles";
+import { ChopstickCursor } from "@/components/rice/ChopstickCursor";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default function RootLayout({
     >
       <body className="min-h-screen bg-ink text-paper">
         <RiceProvider>{children}</RiceProvider>
+        <ChopstickCursor />
       </body>
     </html>
   );

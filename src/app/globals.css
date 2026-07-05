@@ -217,6 +217,71 @@ body {
 /* .grain is defined above (feTurbulence overlay) — reused as-is by Phase 1+. */
 
 /* ---------------------------------------------------------------------------
+   Chopstick cursor — Phase 3. Active only while <ChopstickCursor> mounts (fine
+   pointer + motion allowed); it toggles the body class.
+--------------------------------------------------------------------------- */
+.chopsticks-active {
+  cursor: none;
+}
+/* Native caret returns over text fields so typing is unaffected. */
+.chopsticks-active :is(input, textarea, [contenteditable=""], [contenteditable="true"]) {
+  cursor: auto;
+}
+
+.chopstick-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  will-change: transform;
+}
+.chopstick-cursor[data-show="true"] {
+  opacity: 1;
+}
+
+.chopstick-pair {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  transform: rotate(18deg);
+  transform-origin: 39px 72px; /* the tip = cursor point */
+}
+.chopstick-pair .stick {
+  position: absolute;
+  bottom: 8px;
+  left: 33px;
+  transform-origin: 50% 100%;
+  /* Springy open/close (slight overshoot). */
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.chopstick-pair .stick-left {
+  transform: rotate(-6deg);
+}
+.chopstick-pair .stick-right {
+  transform: rotate(6deg);
+}
+.chopstick-pair[data-pinch="true"] .stick-left {
+  transform: rotate(-1.5deg);
+}
+.chopstick-pair[data-pinch="true"] .stick-right {
+  transform: rotate(1.5deg);
+}
+
+/* Belt-and-suspenders: never show under reduced motion (component also renders
+   nothing, but this guards any stray markup). */
+@media (prefers-reduced-motion: reduce) {
+  .chopstick-cursor {
+    display: none;
+  }
+  .chopsticks-active {
+    cursor: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Meme carousel — 3D stage. Transforms are applied per-slide from JS.
 --------------------------------------------------------------------------- */
 .carousel-3d {

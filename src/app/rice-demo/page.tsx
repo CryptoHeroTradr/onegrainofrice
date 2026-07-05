@@ -29,6 +29,22 @@ export default function RiceDemo() {
         >
           Pour $RICE 🍚
         </RiceButton>
+
+        {/* data-grab target: non-interactive, but the chopsticks pinch over it. */}
+        <div
+          data-grab
+          className="border-2 border-porcelain bg-bamboo/15 px-5 py-3 font-mono text-sm text-nori"
+        >
+          hover me — a <code>[data-grab]</code> target (chopsticks pinch)
+        </div>
+
+        {/* text field: native caret returns, typing unaffected */}
+        <input
+          type="text"
+          aria-label="Type here — native cursor test"
+          placeholder="type here — native caret returns"
+          className="border-2 border-porcelain bg-steamed px-4 py-2 font-mono text-sm text-nori placeholder:text-nori/40"
+        />
       </section>
 
       <div className="h-[40vh]" aria-hidden="true" />
