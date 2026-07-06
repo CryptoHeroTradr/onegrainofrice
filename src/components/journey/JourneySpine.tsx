@@ -5,7 +5,6 @@ import { site } from "@/config/site";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useRice } from "@/components/rice/RiceParticles";
 import { RicePile } from "@/components/rice/RicePile";
-import { JourneyNav } from "./JourneyNav";
 import { JourneyHero } from "./JourneyHero";
 import { JourneySection } from "./JourneySection";
 import { useJourneyBowl } from "./useJourneyBowl";
@@ -40,12 +39,10 @@ export function JourneySpine() {
 
   return (
     <>
-      <JourneyNav />
-      <main>
-        <JourneyHero />
+      <JourneyHero />
 
-        {/* Four beats over a shared rising bowl-fill */}
-        <div ref={blockRef} className="relative bg-steamed">
+      {/* Four beats over a shared rising bowl-fill */}
+      <div ref={blockRef} className="relative bg-steamed">
           {/* Sticky fill layer behind the sections (negative margin overlaps them) */}
           <div
             aria-hidden="true"
@@ -85,8 +82,7 @@ export function JourneySpine() {
               <RicePile />
             </div>
           </section>
-        </div>
-      </main>
+      </div>
     </>
   );
 }

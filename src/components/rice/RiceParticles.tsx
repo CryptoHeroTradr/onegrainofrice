@@ -59,6 +59,7 @@ const BOWL_EMIT_STEP = 6; // emit a drip each +6% fill
 export function RiceProvider({ children }: { children: ReactNode }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particles = useRef<Particle[]>([]);
+  const maxParticles = useRef(MAX_PARTICLES); // capped harder on mobile (set in setup)
   const rafRef = useRef<number | null>(null);
   const runningRef = useRef(false);
   const reducedRef = useRef(false);
@@ -152,7 +153,7 @@ export function RiceProvider({ children }: { children: ReactNode }) {
 
   const spawn = useCallback((p: Particle) => {
     const list = particles.current;
-    if (list.length >= MAX_PARTICLES) list.shift(); // drop oldest
+    if (list.length >= maxParticles.current) list.shift(); // drop oldest
     list.push(p);
   }, []);
 
@@ -160,7 +161,7 @@ export function RiceProvider({ children }: { children: ReactNode }) {
   const pour = useCallback<RiceApi["pour"]>(
     ({ x, y, count = 22 }) => {
       if (reducedRef.current) return;
-      const n = Math.min(count, MAX_PARTICLES);
+      const n = Math.min(count, maxParticles.current);
       for (let i = 0; i < n; i++) {
         const size = 1.4 + Math.random() * 2;
         spawn({
@@ -251,6 +252,10 @@ export function RiceProvider({ children }: { children: ReactNode }) {
     const steamed = cs.getPropertyValue("--color-steamed").trim();
     const khaki = cs.getPropertyValue("--color-khaki").trim();
     tints.current = [steamed || "#FBF7EE", khaki || "#C4B370"];
+
+    // Cap particles harder on mobile / touch to protect the frame budget.
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    maxParticles.current = coarse || window.innerWidth < 640 ? 250 : MAX_PARTICLES;
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);

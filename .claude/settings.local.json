@@ -48,7 +48,20 @@
       "Bash(grep -E '^\\\\.git\\(ignore\\)?$')",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(git branch *)",
+      "Bash(git tag *)",
+      "Bash(curl -sI --max-time 12 \"https://cdn.jsdelivr.net/npm/@fontsource/fredoka@5/files/fredoka-latin-600-normal.woff2\")",
+      "Bash(curl -sI --max-time 12 \"https://fonts.googleapis.com/css2?family=Fredoka:wght@600\")",
+      "Bash(node -e \"const s=require\\('./package.json'\\).scripts; console.log\\('placeholders:', s.placeholders\\); console.log\\('gen:memes:', s['gen:memes']\\)\")",
+      "Read(//home/deploy/RiceDAO/**)",
+      "Bash(grep -oE '\"[^\"]{25,140}\"' apps/server/src/charity.ts)",
+      "Bash(grep -oE '>[^<>{}]{35,240}<' apps/web/src/app/lore/page.tsx)",
+      "Bash(grep -oE '>[^<>{}]{35,220}<' apps/web/src/app/page.tsx)",
+      "Bash(curl -s --max-time 8 \"http://127.0.0.1:1112/api/town/leaderboard\")",
+      "Bash(pm2 restart *)",
+      "Bash(curl -s http://localhost:3006/onegrainofrice)",
+      "Bash(curl -s http://localhost:3006/onegrainofrice/classic)"
     ],
     "additionalDirectories": [
       "/home/deploy/onegrainofrice"
