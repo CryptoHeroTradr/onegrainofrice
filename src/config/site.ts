@@ -3,8 +3,16 @@
  * Nothing in `src/components/` hardcodes content.
  */
 
+import type { PlateTint } from "./memes";
+
 /** Rice grains per kilogram — tunable. Drives grainsDonated in the charity DTO. */
 export const GRAINS_PER_KG = 50000;
+
+/** $RICE mint (Solana mainnet). Override via NEXT_PUBLIC_TOKEN_ADDRESS. */
+const CONTRACT =
+  process.env.NEXT_PUBLIC_TOKEN_ADDRESS ?? "2wQq3MrFFHPQnapMt1wnZ2vGkVZDv5ENDCrdLCqFpump";
+/** Jupiter swap link. Override via NEXT_PUBLIC_BUY_URL. */
+const BUY_URL = process.env.NEXT_PUBLIC_BUY_URL ?? `https://jup.ag/swap/SOL-${CONTRACT}`;
 
 export const site = {
   name: "One Grain of Rice",
@@ -14,16 +22,16 @@ export const site = {
   heroTitle: { pre: "1 Grain of", accent: "$RICE." },
   heroTag: "just hold ONE grain.",
 
-  /**
-   * TODO: set your real buy link (Jupiter / pump.fun / Raydium) in .env.local
-   * as NEXT_PUBLIC_BUY_URL, or replace the fallback below.
-   */
-  buyUrl: process.env.NEXT_PUBLIC_BUY_URL ?? "https://jup.ag/#TODO-set-buy-url",
+  /** Canonical token facts. `tokenAddress`/`buyUrl` below alias these. */
+  token: {
+    name: "$RICE",
+    contract: CONTRACT,
+    buyUrl: BUY_URL,
+    chain: "Solana",
+  },
 
-  /** $RICE mint (Solana mainnet). Override via NEXT_PUBLIC_TOKEN_ADDRESS. */
-  tokenAddress:
-    process.env.NEXT_PUBLIC_TOKEN_ADDRESS ??
-    "2wQq3MrFFHPQnapMt1wnZ2vGkVZDv5ENDCrdLCqFpump",
+  buyUrl: BUY_URL,
+  tokenAddress: CONTRACT,
 
   /** On-chain charity wallet — every donation is public and verifiable. */
   charityWallet: "7SY8eauzB9bSJvM3tShxZEGnf354UiAucq9yDWZb3kVj",
@@ -34,6 +42,8 @@ export const site = {
   charity: {
     heading: { lead: "every grain,", accent: "one real meal." },
     sub: "Each grain in the bowl is one meal funded on-chain. As the community gives, the pile grows — and every transfer settles to a public charity wallet you can watch yourself.",
+    mission: "When we reach 100 $RICE, we donate to real hunger relief.",
+    missionTag: "Real rice. Real kitchens. Real people.",
     walletLabel: "on-chain charity wallet",
     grainsLabel: "grains donated",
     stats: {
@@ -43,10 +53,16 @@ export const site = {
     },
   },
 
+  /** Telegram handles (RiceDAO). */
+  handles: {
+    telegramMemes: "@ricecontent",
+    telegramBot: "@RiceDAOgamebot",
+  },
+
   socials: [
+    { id: "telegram", label: "$RICE memes on Telegram (@ricecontent)", href: "https://t.me/ricecontent" },
+    { id: "telegram", label: "Play the game — @RiceDAOgamebot", href: "https://t.me/RiceDAOgamebot" },
     { id: "x", label: "Follow $RICE on X", href: "https://x.com/TODO" },
-    { id: "telegram", label: "Join the $RICE Telegram", href: "https://t.me/TODO" },
-    { id: "discord", label: "Join the $RICE Discord", href: "https://discord.gg/TODO" },
     // Add more here — supported ids: "x" | "telegram" | "discord" | "globe"
   ] as { id: SocialId; label: string; href: string }[],
 
@@ -94,14 +110,55 @@ export const site = {
 
   tokenomics: {
     heading: { lead: "honest", accent: "tokenomics." },
-    sub: "Simple math, printed on paper. No hidden pockets.",
-    /** TODO: replace ALL placeholder values below with the real allocation. */
-    totalSupply: "1,000,000,000 $RICE", // TODO
+    sub: "Every grain the store earns splits four ways — automatically, on-chain, in the open.",
+    contractLabel: "contract address",
+    /** Store-income split (four grains → four bowls). Must total 100. */
+    split: [
+      { label: "Buy $RICE (Jupiter)", pct: 40, plate: "green", note: "buys back on the open market" },
+      { label: "Charity", pct: 30, plate: "blue", note: "to the public charity wallet" },
+      { label: "Treasury", pct: 20, plate: "red", note: "keeps the village running" },
+      { label: "Burn", pct: 10, plate: "green", note: "gone forever, supply tightens" },
+    ] as { label: string; pct: number; plate: PlateTint; note: string }[],
+    /** Kept for the /classic supply-allocation bar (do not remove). */
+    totalSupply: "1,000,000,000 $RICE",
     allocations: [
-      { label: "Liquidity pool", pct: 80, note: "locked — TODO: link proof" }, // TODO
-      { label: "Charity wallet", pct: 10, note: "on-chain, public" }, // TODO
-      { label: "Community & memes", pct: 10, note: "airdrops, bounties, raids" }, // TODO
+      { label: "Liquidity pool", pct: 80, note: "locked" },
+      { label: "Charity wallet", pct: 10, note: "on-chain, public" },
+      { label: "Community & memes", pct: 10, note: "airdrops, bounties, raids" },
     ],
+  },
+
+  /** Earn loop (RiceDAO game economy). */
+  earn: {
+    heading: { lead: "feed the town,", accent: "earn $RICE." },
+    perKg: 0.5,
+    minClaim: 100,
+    cooldownHours: 72,
+    steps: [
+      {
+        title: "Donate rice",
+        body: "Feed the village in the game. Every kilogram you contribute is tracked on-chain.",
+      },
+      {
+        title: "Earn 0.5 $RICE per kg",
+        body: "Your generosity mints rewards — half a $RICE for every kilogram donated.",
+      },
+      {
+        title: "Claim & repeat",
+        body: "Claim once you reach 100 $RICE, then a 72-hour cooldown resets the cycle.",
+      },
+    ],
+  },
+
+  /** Mythic origin — the one-grain folktale RiceDAO is built on. */
+  lore: {
+    heading: { lead: "the legend of", accent: "one grain." },
+    body: [
+      "A village was starving, and a clever girl asked only for rice: one grain today, doubled each day thereafter.",
+      "One became two. Two became four. By the month's end a single grain had multiplied into millions — enough to fill every empty bowl in the land.",
+      "$RICE is that grain, on-chain. Hold one, and you hold the whole idea: small things, compounded by a community, feed the world.",
+    ],
+    tag: "Real rice. Real kitchens. Real people.",
   },
 
   faq: {
@@ -122,6 +179,22 @@ export const site = {
       {
         q: "Is it verifiable on-chain?",
         a: "Everything. The mint address is printed on this page, the charity wallet is public, and every transfer is a permanent on-chain record. Don't trust — verify.",
+      },
+      {
+        q: "Is this a real charity?",
+        a: "Yes. When the community pool reaches 100 $RICE, we donate to real hunger relief — real rice, real kitchens, real people. The charity wallet is public so every drop is auditable.",
+      },
+      {
+        q: "How do donations reach people?",
+        a: "Surplus flows to the public charity wallet, then out to hunger-relief partners as rice and meals. Every hop is on-chain, and the pantry counters (kg, fed today, fed all-time) update live from the game.",
+      },
+      {
+        q: "What is the Village?",
+        a: "The Village is the RiceDAO game — a little town you feed. Donate rice there to earn $RICE (0.5 per kg), and watch the town go from famine to full. Enter it from the BUY / Village links up top.",
+      },
+      {
+        q: "Is $RICE the same token as the game?",
+        a: "Yes — one token. The $RICE you earn feeding the Village is the same mint you can buy on Jupiter, the same one that funds charity. One grain, everywhere.",
       },
     ],
   },

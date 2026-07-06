@@ -520,6 +520,75 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Tokenomics — four grains dropping into four porcelain bowls (Phase 8).
+--------------------------------------------------------------------------- */
+.tk-drop {
+  position: relative;
+  display: flex;
+  height: 92px;
+  width: 96px;
+  align-items: flex-end;
+  justify-content: center;
+}
+.tk-bowl {
+  width: 88px;
+  height: 46px;
+  border-radius: 0 0 46px 46px;
+  background: radial-gradient(ellipse at 50% 0%, #f4f7fc 0%, #e7edf6 60%, #d4ddec 100%);
+  border: 2px solid var(--color-porcelain);
+  border-top-width: 3px;
+}
+.tk-bowl-blue {
+  border-color: var(--color-porcelain);
+}
+.tk-bowl-red {
+  border-color: var(--color-tuna);
+}
+.tk-bowl-green {
+  border-color: var(--color-bamboo);
+}
+.tk-grain {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 7px;
+  height: 13px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--color-khaki);
+  animation: tk-fall 2s ease-in infinite;
+}
+@keyframes tk-fall {
+  0% {
+    transform: translateY(-4px);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  58% {
+    transform: translateY(52px);
+    opacity: 1;
+  }
+  70% {
+    transform: translateY(58px) scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tk-grain {
+    animation: none;
+    top: auto;
+    bottom: 10px;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Meme carousel — 3D stage. Transforms are applied per-slide from JS.
 --------------------------------------------------------------------------- */
 .carousel-3d {
