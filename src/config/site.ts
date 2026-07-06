@@ -13,6 +13,8 @@ const CONTRACT =
   process.env.NEXT_PUBLIC_TOKEN_ADDRESS ?? "2wQq3MrFFHPQnapMt1wnZ2vGkVZDv5ENDCrdLCqFpump";
 /** Jupiter swap link. Override via NEXT_PUBLIC_BUY_URL. */
 const BUY_URL = process.env.NEXT_PUBLIC_BUY_URL ?? `https://jup.ag/swap/SOL-${CONTRACT}`;
+/** RiceDAO governance page — where votes actually happen. */
+const DAO_URL = process.env.NEXT_PUBLIC_DAO_URL ?? "http://209.141.52.60/RiceDAO/dao";
 
 export const site = {
   name: "One Grain of Rice",
@@ -210,6 +212,34 @@ export const site = {
 
   /** RiceDAO full (AI) PFP generator. Override with NEXT_PUBLIC_VILLAGE_PFP_URL. */
   villagePfpUrl: process.env.NEXT_PUBLIC_VILLAGE_PFP_URL ?? "http://209.141.52.60/RiceDAO/pfp",
+
+  /** DAO governance link + a fallback illustrative proposal (Phase 10). The
+      RiceDAO proposals feed is wallet-gated, so with no public endpoint this
+      example renders, clearly flagged `illustrative`. */
+  daoVoteUrl: DAO_URL,
+  dao: {
+    heading: { lead: "grains decide,", accent: "the bowl gives." },
+    sub: "Holders vote by weight — the heavier the bowl, the louder the will of the village.",
+    voteCta: "Vote on RiceDAO",
+    example: {
+      id: "example",
+      question: "Where does the next charity drop go?",
+      options: [
+        { label: "Rice for the coast", votes: 62, plate: "blue" },
+        { label: "Clean-water wells", votes: 38, plate: "green" },
+      ] as { label: string; votes: number; plate: PlateTint }[],
+      illustrative: true,
+    },
+  },
+
+  /** Roadmap terraces (Phase 10). `done` floods the paddy green. */
+  roadmap: [
+    { title: "Plant the seed", detail: "Fair launch on Solana. Liquidity locked, contract public.", done: true },
+    { title: "Grow the village", detail: "RiceDAO game live — feed the town, earn $RICE.", done: true },
+    { title: "First harvest", detail: "Charity milestone reached; first on-chain donation sent.", done: false },
+    { title: "Terrace the hills", detail: "DAO routes surplus to real hunger-relief partners.", done: false },
+    { title: "Fill every bowl", detail: "Sustained, compounding giving — one grain, worldwide.", done: false },
+  ] as { title: string; detail: string; done: boolean }[],
 
   pfp: {
     heading: { lead: "rice-ify", accent: "your PFP." },
