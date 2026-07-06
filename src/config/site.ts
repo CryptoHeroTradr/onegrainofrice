@@ -208,6 +208,21 @@ export const site = {
   /** RiceDAO village/game. Override with NEXT_PUBLIC_VILLAGE_URL. */
   villageUrl: process.env.NEXT_PUBLIC_VILLAGE_URL ?? "http://209.141.52.60/RiceDAO/",
 
+  /** RiceDAO full (AI) PFP generator. Override with NEXT_PUBLIC_VILLAGE_PFP_URL. */
+  villagePfpUrl: process.env.NEXT_PUBLIC_VILLAGE_PFP_URL ?? "http://209.141.52.60/RiceDAO/pfp",
+
+  pfp: {
+    heading: { lead: "rice-ify", accent: "your PFP." },
+    sub: "Drop a picture, stack the toppings, download. It all happens in your browser.",
+    dropLabel: "Drop your image here",
+    dropHint: "or click to choose — PNG / JPG",
+    riceifyLabel: "Rice-ify",
+    downloadLabel: "Download PNG",
+    aiPrompt: "Want the AI version?",
+    aiLinkLabel: "Open the full generator",
+    privacyNote: "100% in your browser. Your image never leaves your device.",
+  },
+
   nav: {
     logo: "🌾 one grain of rice",
     classicLabel: "classic site",
