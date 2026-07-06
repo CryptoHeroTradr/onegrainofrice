@@ -10,7 +10,8 @@
     "placeholders": "node scripts/gen-placeholders.mjs",
     "gen:memes": "node scripts/gen-placeholders.mjs",
     "gen:pfp": "node scripts/gen-pfp.mjs",
-    "gen:brand": "node scripts/gen-brand.mjs"
+    "gen:brand": "node scripts/gen-brand.mjs",
+    "gen:sfx": "node scripts/gen-sfx.mjs"
   },
   "dependencies": {
     "embla-carousel": "^8.6.0",

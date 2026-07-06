@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { site } from "@/config/site";
 import { RiceButton } from "@/components/rice/RiceButton";
+import { SoundToggle } from "@/components/eggs/SoundToggle";
 
 /**
  * Sticky nav: transparent over the hero, then slides in with a solid paper bar
@@ -52,6 +53,7 @@ export function JourneyNav() {
         </div>
 
         <div className="flex items-center gap-3">
+          <SoundToggle className={scrolled ? "text-ink/70 hover:text-ink" : "text-bone/80 hover:text-bone"} />
           <Link
             href={site.classicUrl}
             className={`hidden font-mono text-xs tracking-wider underline underline-offset-4 sm:inline ${

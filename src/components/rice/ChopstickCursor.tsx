@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { playClack } from "@/lib/sound";
 
 /**
  * Chopstick cursor: two thin chopstick SVGs that follow the pointer and pinch
@@ -99,6 +100,7 @@ export function ChopstickCursor() {
     const onDown = () => {
       pressed.current = true;
       applyPinch();
+      playClack();
     };
     const onUp = () => {
       pressed.current = false;

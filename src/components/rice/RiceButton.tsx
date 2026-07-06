@@ -2,6 +2,7 @@
 
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { useRice } from "./RiceParticles";
+import { playPour } from "@/lib/sound";
 
 /**
  * A real <button> that pours rice grains from the click point. Fully
@@ -26,6 +27,7 @@ export const RiceButton = forwardRef<HTMLButtonElement, RiceButtonProps>(functio
       type={type}
       onClick={(e) => {
         pour({ x: e.clientX, y: e.clientY, count: pourCount });
+        playPour();
         onClick?.(e);
       }}
       {...rest}
