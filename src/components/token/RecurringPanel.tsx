@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { useCharityWalletConnection } from "@/components/charity/CharityWalletProvider";
+import { ActiveDcaOrders } from "@/components/token/ActiveDcaOrders";
 import { confirmSignature, connection } from "@/lib/solana";
 import { solscanTx } from "@/lib/payments";
 import { humanizeTradeError, isConfirmTimeout } from "@/lib/tradeErrors";
@@ -77,6 +78,8 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
   const [error, setError] = useState<string | null>(null);
   const [sig, setSig] = useState<string | null>(null);
   const [orderKey, setOrderKey] = useState<string | null>(null);
+  /** Bumped after a create so the orders list below refetches immediately. */
+  const [ordersRefresh, setOrdersRefresh] = useState(0);
 
   // Live SOL/USD (to price the per-cycle $50 minimum), refreshed while mounted.
   useEffect(() => {
@@ -171,6 +174,7 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
       setStatus("confirming");
       await confirmSignature(connection, signature);
       setStatus("success");
+      setOrdersRefresh((n) => n + 1);
       void loadBalance();
       // Read back the created order's on-chain account (best-effort; indexing may lag).
       try {
@@ -187,6 +191,7 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
       // and we NEVER auto-retry (a blind retry is a second on-chain order).
       if (signature && isConfirmTimeout(err)) {
         setStatus("submitted");
+        setOrdersRefresh((n) => n + 1); // the order may have been created; surface it
         void loadBalance();
       } else {
         setError(humanizeTradeError(err));
@@ -397,6 +402,9 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
       {status === "error" && error && (
         <p className="font-mono text-sm font-bold break-words text-tuna">{error}</p>
       )}
+
+      {/* The wallet's open recurring orders, with cancel (and honest pause). */}
+      <ActiveDcaOrders riceMint={riceMint} ticker={ticker} refreshSignal={ordersRefresh} />
     </div>
   );
 }

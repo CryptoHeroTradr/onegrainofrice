@@ -233,11 +233,15 @@ export interface RecurringOrder {
   orderKey: string;
   inputMint: string;
   outputMint: string;
-  inDeposited: string;
-  inWithdrawn: string;
+  /** Raw integer fields (unambiguous). Ratios of these give cycle counts, decimals-free. */
+  rawInDeposited?: string;
+  rawInUsed?: string;
+  rawInAmountPerCycle?: string;
+  rawOutReceived?: string;
+  /** Seconds between cycles. */
   cycleFrequency: string;
-  inAmountPerCycle: string;
-  createdAt: string;
+  createdAt?: string;
+  updatedAt?: string;
   [k: string]: unknown;
 }
 
@@ -255,4 +259,27 @@ export async function fetchRecurringOrders(
     throw new Error(data?.error ?? `Fetching recurring orders failed (${res.status})`);
   }
   return Array.isArray(data.time) ? (data.time as RecurringOrder[]) : [];
+}
+
+/**
+ * Build the UNSIGNED close/cancel transaction for a recurring order
+ * (POST /recurring/v1/cancelOrder). Closing returns the undeployed remainder to
+ * the user's wallet. `orderKey` is the order account from {@link fetchRecurringOrders}.
+ * The user's wallet signs — the site never signs. There is NO native pause on the
+ * program (verified: /recurring/v1/pause 404), so a "pause" is close + recreate.
+ */
+export async function buildCloseRecurring(
+  orderKey: string,
+  userPublicKey: string,
+): Promise<{ transaction: VersionedTransaction; requestId: string }> {
+  const res = await fetch(`${JUP_API}/recurring/v1/cancelOrder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user: userPublicKey, order: orderKey, recurringType: "time" }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.transaction) {
+    throw new Error(data?.error ?? `Cancel build failed (${res.status})`);
+  }
+  return { transaction: deserializeTx(data.transaction as string), requestId: data.requestId };
 }
