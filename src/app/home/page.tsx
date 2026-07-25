@@ -4,7 +4,6 @@ import { Hero } from "@/components/home/Hero";
 import { HomeFooter } from "@/components/journey/HomeFooter";
 import { SushiBeltSection } from "@/components/memes/SushiBeltSection";
 import { TokenInfo } from "@/components/content/TokenInfo";
-import { TradeSection } from "@/components/trade/TradeSection";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 
 /**
@@ -53,10 +52,6 @@ export default function Home() {
             </div>
           </div>
         </section>
-
-        {/* Swap/DCA shell — self-contained, error-bounded, its own wallet tree.
-            Added as a new section; existing sections are untouched. */}
-        <TradeSection />
 
         <TokenInfo />
       </main>

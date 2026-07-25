@@ -3,14 +3,13 @@
 import { Component, type ReactNode } from "react";
 
 /**
- * Isolates the Swap/DCA section from the rest of /home. onegrainofrice is live,
- * so if wallet-adapter, an RPC read, or Jupiter throws while rendering, this
- * boundary swaps in a friendly "temporarily unavailable" card and every other
- * section on the page keeps rendering normally.
+ * Isolates the Jupiter trading portal (swap + DCA tab) from the rest of /home.
+ * onegrainofrice is live, so if wallet-adapter, an RPC read, or Jupiter throws
+ * while rendering, this boundary swaps in a friendly "temporarily unavailable"
+ * card and every other section on the page keeps rendering normally.
  *
- * Wraps the WHOLE section — provider included — so even a crash constructing the
- * wallet context is caught. To see it live, load /home?trade-boom=1: TradeCard
- * throws on purpose and this boundary shows the fallback while the page survives.
+ * Wraps the WHOLE portal — wallet provider included — so even a crash
+ * constructing the wallet context is caught rather than taking down the page.
  */
 interface Props {
   children: ReactNode;
