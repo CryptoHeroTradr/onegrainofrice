@@ -142,3 +142,117 @@ export async function getTokenBalance(
     return 0;
   }
 }
+
+// ───────────────────────────── Recurring (DCA) ──────────────────────────────
+//
+// Jupiter's Recurring API (POST /recurring/v1/createOrder). Same keyless base as
+// the swap. Builds an UNSIGNED deposit-and-schedule transaction the user's wallet
+// signs — the site never signs. After it confirms, the order runs ON-CHAIN via
+// Jupiter's program; there is no server-side schedule. Mirrors the shared
+// @rice/jupiter-dca contract (to be adopted once that package is git-installable).
+
+/** USDC, used only to price SOL for the per-cycle minimum check. */
+export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const USDC_DECIMALS = 6;
+/** Jupiter's cut on recurring orders (0.1%), stated plainly in the UI. */
+export const RECURRING_FEE_BPS = 10;
+/** Live per-order minimum Jupiter enforces (server-side), ~$50. UI warns; API is truth. */
+export const RECURRING_MIN_USD_PER_CYCLE = 50;
+
+function deserializeTx(base64: string): VersionedTransaction {
+  return VersionedTransaction.deserialize(
+    Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)),
+  );
+}
+
+/** Live SOL price in USD via a Jupiter quote (1 SOL → USDC). Null on failure. */
+export async function getSolUsd(signal?: AbortSignal): Promise<number | null> {
+  try {
+    const q = await getQuote({
+      inputMint: SOL_MINT,
+      outputMint: USDC_MINT,
+      amount: toBaseUnits(1, SOL_DECIMALS),
+      slippageBps: 50,
+      signal,
+    });
+    return fromBaseUnits(q.outAmount, USDC_DECIMALS);
+  } catch {
+    return null;
+  }
+}
+
+export interface OpenRecurringParams {
+  inputMint: string;
+  outputMint: string;
+  /** TOTAL to deposit, in input-mint base units (integer string). */
+  inAmount: string;
+  /** How many cycles the deposit is split across (≥ 2). */
+  numberOfOrders: number;
+  /** Seconds between cycles. */
+  interval: number;
+}
+
+/**
+ * Build the UNSIGNED deposit-and-schedule transaction for a time-based recurring
+ * (DCA) order. Returns the tx for the wallet to sign, plus Jupiter's requestId.
+ * Throws with Jupiter's own message (e.g. the ~$50/cycle minimum) on rejection.
+ */
+export async function buildRecurringOrder(
+  params: OpenRecurringParams,
+  userPublicKey: string,
+): Promise<{ transaction: VersionedTransaction; requestId: string }> {
+  const inAmount = Number(params.inAmount);
+  if (!Number.isSafeInteger(inAmount)) {
+    throw new Error("Deposit amount is too large to schedule safely.");
+  }
+  const res = await fetch(`${JUP_API}/recurring/v1/createOrder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user: userPublicKey,
+      inputMint: params.inputMint,
+      outputMint: params.outputMint,
+      params: {
+        time: {
+          inAmount,
+          numberOfOrders: params.numberOfOrders,
+          interval: params.interval,
+        },
+      },
+    }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.transaction) {
+    throw new Error(data?.error ?? `Recurring order build failed (${res.status})`);
+  }
+  return { transaction: deserializeTx(data.transaction as string), requestId: data.requestId };
+}
+
+/** A wallet's recurring order with on-chain state; `orderKey` is its account address. */
+export interface RecurringOrder {
+  orderKey: string;
+  inputMint: string;
+  outputMint: string;
+  inDeposited: string;
+  inWithdrawn: string;
+  cycleFrequency: string;
+  inAmountPerCycle: string;
+  createdAt: string;
+  [k: string]: unknown;
+}
+
+/** A wallet's ACTIVE time-based recurring orders (read-only). */
+export async function fetchRecurringOrders(
+  owner: string,
+  signal?: AbortSignal,
+): Promise<RecurringOrder[]> {
+  const url =
+    `${JUP_API}/recurring/v1/getRecurringOrders?user=${owner}` +
+    `&recurringType=time&orderStatus=active&includeFailedTx=false&page=1`;
+  const res = await fetch(url, { signal });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data) {
+    throw new Error(data?.error ?? `Fetching recurring orders failed (${res.status})`);
+  }
+  return Array.isArray(data.time) ? (data.time as RecurringOrder[]) : [];
+}

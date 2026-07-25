@@ -6,6 +6,7 @@ import { LAMPORTS_PER_SOL, type PublicKey } from "@solana/web3.js";
 import { useCharityWalletConnection } from "@/components/charity/CharityWalletProvider";
 import { confirmSignature, connection } from "@/lib/solana";
 import { solscanTx } from "@/lib/payments";
+import { humanizeTradeError, isConfirmTimeout } from "@/lib/tradeErrors";
 import {
   SOL_MINT,
   SOL_DECIMALS,
@@ -53,36 +54,6 @@ const chip = (active: boolean) =>
 // "submitted" = broadcast but not yet confirmed within the window — an uncertain
 // outcome, NOT a failure (it may still land). Distinct from "success"/"error".
 type Status = "idle" | "quoting" | "signing" | "confirming" | "submitted" | "success" | "error";
-
-/** confirmSignature (lib/solana) throws this on a confirmation timeout — the tx may still land. */
-function isConfirmTimeout(err: unknown): boolean {
-  const m = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
-  return m.includes("timed out") || m.includes("still land") || m.includes("check solscan");
-}
-
-/**
- * Turn a wallet / RPC / Jupiter failure into a sentence the user can act on. A raw
- * RPC error ("custom program error: 0x1771", "Blockhash not found") is never shown.
- */
-function humanizeSwapError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err ?? "");
-  const m = raw.toLowerCase();
-  if (m.includes("user rejected") || m.includes("rejected the request") || m.includes("declined") || m.includes("user denied"))
-    return "You dismissed the wallet — nothing was signed. Press Swap to try again.";
-  if (m.includes("insufficient") && (m.includes("lamport") || m.includes("sol") || m.includes("fee") || m.includes("rent")))
-    return "Not enough SOL to cover network fees. Leave a little SOL (≈0.01) unspent and try again.";
-  if (m.includes("slippage") || m.includes("0x1771") || m.includes("exceeds desired") || m.includes("price impact"))
-    return "The price moved past your slippage tolerance. Re-quote and try again, or nudge slippage up a little.";
-  if (m.includes("on-chain") || m.includes("custom program error") || m.includes("instruction error"))
-    return "The swap failed on-chain — the pool price likely moved. Re-quote and try again; only the network fee was spent.";
-  if (m.includes("blockhash") || m.includes("block height exceeded") || m.includes("expired"))
-    return "The transaction expired before it landed. Re-quote and try again.";
-  if (m.includes("no route") || m.includes("could not find any route") || m.includes("no routes"))
-    return "No swap route for that pair and size right now — try a different amount.";
-  if (m.includes("failed to fetch") || m.includes("networkerror") || m.includes("timeout") || m.includes("429") || m.includes("rate limit") || m.includes("fetch"))
-    return "Couldn't reach the network. Check your connection and try again in a moment.";
-  return "The swap didn't go through. Re-quote and try again — nothing was signed unless your wallet prompted you.";
-}
 
 const num = (v: string) => {
   const n = Number(v);
@@ -257,7 +228,7 @@ export function SwapPanel({
       } catch (err) {
         if (cancelled || (err as Error).name === "AbortError") return;
         setQuoted(null);
-        setError(humanizeSwapError(err)); // never surface a raw quote/RPC error
+        setError(humanizeTradeError(err)); // never surface a raw quote/RPC error
         setStatus((s) => (s === "quoting" ? "idle" : s));
       }
     };
@@ -328,7 +299,7 @@ export function SwapPanel({
         setStatus("submitted");
         void refreshBalances();
       } else {
-        setError(humanizeSwapError(err));
+        setError(humanizeTradeError(err));
         setStatus("error");
       }
     }
@@ -345,7 +316,7 @@ export function SwapPanel({
     } catch (err) {
       if (isConfirmTimeout(err)) setStatus("submitted");
       else {
-        setError(humanizeSwapError(err));
+        setError(humanizeTradeError(err));
         setStatus("error");
       }
     }

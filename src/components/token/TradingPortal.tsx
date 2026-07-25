@@ -4,6 +4,7 @@ import { useState } from "react";
 import { site } from "@/config/site";
 import { CharityWalletProvider } from "@/components/charity/CharityWalletProvider";
 import { SwapPanel } from "@/components/token/SwapPanel";
+import { RecurringPanel } from "@/components/token/RecurringPanel";
 import { TradeErrorBoundary } from "@/components/trade/TradeErrorBoundary";
 import { useRecentTrades, useRiceMarket, type Trade } from "@/hooks/useRiceMarket";
 import { asset } from "@/lib/asset";
@@ -128,7 +129,7 @@ function PortalBody() {
             </div>
           ) : (
             <div role="tabpanel" id="portal-panel-dca" aria-labelledby="portal-tab-dca">
-              <DcaPlaceholder />
+              <RecurringPanel riceMint={MINT} ticker={site.ticker} />
             </div>
           )}
         </div>
@@ -236,19 +237,6 @@ function TabButton({
     >
       {children}
     </button>
-  );
-}
-
-/** DCA tab body — the recurring-buy frame. Wired up in a later phase. */
-function DcaPlaceholder() {
-  return (
-    <div className="border-2 border-dashed border-nori/25 bg-bone px-5 py-12 text-center">
-      <p className="font-display text-xl font-bold text-nori">Recurring buy (DCA)</p>
-      <p className="mx-auto mt-2 max-w-sm font-mono text-sm text-nori/60">
-        Schedule a recurring $RICE buy — deposit once, Jupiter executes on your interval. Coming in a
-        later phase.
-      </p>
-    </div>
   );
 }
 
