@@ -1,0 +1,22 @@
+# MaxMind geoipupdate configuration — TEMPLATE.
+#
+# Copy to /etc/GeoIP.conf and fill in real values, then `chmod 600` it.
+#   sudo cp deploy/geoip/GeoIP.conf.example /etc/GeoIP.conf
+#   sudo chmod 600 /etc/GeoIP.conf
+#   # edit /etc/GeoIP.conf and paste your AccountID + LicenseKey
+#
+# Get a FREE account + license key (GeoLite2) at:
+#   https://www.maxmind.com/en/geolite2/signup
+#   https://www.maxmind.com/en/accounts/current/license-key
+#
+# DO NOT COMMIT the real AccountID / LicenseKey or the downloaded .mmdb.
+# (This file is a template with placeholders and is safe to commit.)
+
+AccountID 0
+LicenseKey 000000000000000000
+
+# We only need country-level data for the grains leaderboard.
+EditionIDs GeoLite2-Country
+
+# nginx (deploy/nginx-geoip2.conf) reads the mmdb from here.
+DatabaseDirectory /usr/share/GeoIP

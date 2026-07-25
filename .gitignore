@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# grains game — SQLite database + WAL/SHM sidecars (runtime data, never committed)
+/data/
+
 # dependencies
 /node_modules
 /.pnp
@@ -35,9 +38,15 @@ yarn-error.log*
 # ...but .env.example is documentation and SHOULD be committed.
 !.env.example
 
+# Filled MaxMind config (real license key) — never commit; template is .example.
+deploy/geoip/GeoIP.conf.local
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code — per-machine local settings (not shared), matching the bot repo.
+.claude/settings.local.json

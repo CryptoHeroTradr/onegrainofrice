@@ -282,6 +282,77 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Grains play area (Phase 4) — chopsticks cursor over the rice-bowl canvas.
+   The landing-page chopsticks are the animated <ChopstickCursor> SVG (mounted
+   globally): while it is active the body carries `chopsticks-active` and the
+   sticks ARE the cursor, so we keep the native one hidden to avoid two cursors.
+   When it is NOT active (prefers-reduced-motion, coarse pointer) this static
+   chopstick cursor image is used instead — `cursor: url(<asset>) <hotspot>, auto`.
+--------------------------------------------------------------------------- */
+.grains-play-area {
+  cursor: url("/onegrainofrice/grains/chopstick-cursor.svg") 6 5, auto;
+}
+body.chopsticks-active .grains-play-area {
+  cursor: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Floating "RICE" text bursts (Phase 5) — meep.cat-style. Nodes are pooled and
+   recycled by <FloatingText>; only the `.active` class animates one.
+--------------------------------------------------------------------------- */
+.grain-floater {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: var(--color-olive-deep);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.grain-floater.active {
+  animation: grain-float 900ms ease-out forwards;
+}
+@keyframes grain-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(0, 0) scale(0.8) rotate(0deg);
+  }
+  15% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(var(--fx, 0), -92px) scale(1.15) rotate(var(--fr, 0deg));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .grain-floater.active {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Live global ticker — reduced-motion cross-fade for the static "latest event"
+   (the scrolling marquee itself is driven by rAF transforms, not CSS).
+--------------------------------------------------------------------------- */
+@keyframes ticker-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ticker-fade {
+  animation: ticker-fade-in 400ms ease-out;
+}
+
+/* ---------------------------------------------------------------------------
    Odometer ticker + rice pile shimmer — Phase 5.
 --------------------------------------------------------------------------- */
 .odometer {
@@ -343,6 +414,39 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Shining gold text — the sweeping-highlight gradient from the RiceDAO site
+   (.ld-shimmer-gold there). Clips to the glyphs, so it must go on the text
+   span itself: on a box it would blank out that box's border and background.
+--------------------------------------------------------------------------- */
+@keyframes gold-shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+.gold-shimmer {
+  background: linear-gradient(
+    90deg,
+    #7a5e1a 0%,
+    #c9a84c 28%,
+    #fff6ce 50%,
+    #c9a84c 72%,
+    #7a5e1a 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: drop-shadow(0 0 12px rgba(201, 168, 76, 0.55));
+  animation: gold-shimmer 2.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gold-shimmer {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Sushi belt — Phase 6.
 --------------------------------------------------------------------------- */
 /* Conveyor track texture: repeating rollers beneath the plates. */
@@ -359,11 +463,85 @@ body {
   border-bottom: 2px solid var(--color-porcelain);
 }
 
+/* ---------------------------------------------------------------------------
+   Google Translate widget: hide ALL of its injected chrome. We drive it from our
+   own nav switcher, so none of its UI should ever be seen.
+
+   The `body { top: 0 }` rules are the important ones: the widget injects a fixed
+   banner iframe at the top of the page and pushes the body down ~40px with an
+   inline `top` style, which would shove the whole site (and the game's absolutely
+   positioned bowl) out of place. Overriding it keeps the layout untouched.
+--------------------------------------------------------------------------- */
+#google_translate_element,
+.goog-te-banner-frame,
+.goog-te-gadget,
+.skiptranslate iframe {
+  display: none !important;
+}
+body {
+  top: 0 !important;
+  position: static !important;
+}
+/* Its hover tooltip/balloon over translated text. */
+#goog-gt-tt,
+.goog-te-balloon-frame {
+  display: none !important;
+}
+/* It highlights translated spans; keep our own typography clean. */
+.goog-text-highlight {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+/* Farmer mascot: the sickle arm swings back and forth on every grain dropped.
+   The class is re-applied per click (see RiceFarmer.react), so the animation
+   restarts even mid-swing during a fast mash. */
+@keyframes sickle-swing {
+  0% {
+    transform: rotate(0deg);
+  }
+  28% {
+    transform: rotate(-40deg);
+  }
+  62% {
+    transform: rotate(24deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+.sickle-swing {
+  animation: sickle-swing 420ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sickle-swing {
+    animation: none;
+  }
+}
+
 .belt-viewport {
   position: relative;
   overflow: hidden;
   perspective: 900px;
-  padding: 1.5rem 0 1.75rem;
+  padding: 3rem 0 3.5rem;
+}
+/* Drag/swipe-to-scrub the belt. `pan-y` hands horizontal gestures to our pointer
+   handlers while the browser keeps vertical scrolling, so swiping the belt
+   sideways never fights scrolling the page. Text/image drag is disabled so a
+   drag scrubs the reel instead of starting a native image drag. */
+.belt-draggable {
+  cursor: grab;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.belt-draggable:active {
+  cursor: grabbing;
+}
+.belt-draggable img,
+.belt-draggable video {
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 .belt-track {
   display: flex;
@@ -372,18 +550,18 @@ body {
 }
 .belt-copy {
   display: flex;
-  gap: 1.5rem;
-  padding: 0 0.75rem;
+  gap: 3rem;
+  padding: 0 1.5rem;
 }
 
 /* One plate: round porcelain dish + the cut-out meme sitting on it. */
 .belt-plate {
   position: relative;
-  width: 172px;
+  width: 344px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 10px;
+  padding-bottom: 20px;
   transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
   transform-origin: center bottom;
 }
@@ -392,17 +570,17 @@ body {
   bottom: 0;
   left: 50%;
   translate: -50% 0;
-  width: 168px;
-  height: 40px;
+  width: 336px;
+  height: 80px;
   border-radius: 50%;
   background: radial-gradient(ellipse at 50% 35%, #f4f7fc 0%, #e7edf6 60%, #d4ddec 100%);
-  box-shadow: 0 8px 14px -6px rgba(20, 17, 13, 0.6);
+  box-shadow: 0 16px 28px -12px rgba(20, 17, 13, 0.6);
   border: 2px solid var(--color-porcelain);
 }
 .belt-dish::after {
   content: "";
   position: absolute;
-  inset: 7px 18px;
+  inset: 14px 36px;
   border-radius: 50%;
   border: 1.5px solid color-mix(in srgb, var(--color-porcelain) 55%, transparent);
 }
@@ -424,22 +602,22 @@ body {
 .belt-meme {
   position: relative;
   z-index: 2;
-  width: 118px;
-  margin-bottom: 6px;
+  width: 236px;
+  margin-bottom: 12px;
 }
 /* Pop the hovered plate forward. */
 .belt-plate-pop {
-  transform: translateY(-10px) scale(1.12);
+  transform: translateY(-20px) scale(1.12);
   z-index: 30;
 }
 
 /* Reduced-motion / touch strip. */
 .belt-strip {
   display: flex;
-  gap: 1.5rem;
+  gap: 3rem;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 1.5rem 0.75rem;
+  padding: 3rem 1.5rem;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }
@@ -460,11 +638,25 @@ body {
   min-height: 100dvh;
 }
 
+/* ---------------------------------------------------------------------------
+   Standard section rhythm — Phase R2. The journey spine (full-viewport
+   scroll-snap beats) is gone; the new home is a normal document, so every
+   section shares one comfortable, even vertical rhythm instead of ad-hoc
+   py-* values and 100vh spacers.
+--------------------------------------------------------------------------- */
+.section {
+  padding-block: clamp(3rem, 8vw, 6rem);
+}
+
 /* Hero ambient: CSS "paddy at golden hour" gradient (always present). */
+/* Hero backdrop: a very dark, near-black gradient. This layer sits absolute
+   inset-0 over the hero section, so it — not the section's own bg — is what you
+   actually see. A faint warm glow is kept behind the grain/wordmark so they
+   still read against the black. */
 .ambient-farm {
   background:
-    radial-gradient(120% 80% at 50% 18%, rgba(196, 179, 112, 0.5) 0%, rgba(20, 17, 13, 0) 55%),
-    linear-gradient(to bottom, #1c1913 0%, #23301c 62%, #2f3d22 100%);
+    radial-gradient(120% 80% at 50% 18%, rgba(196, 179, 112, 0.14) 0%, rgba(0, 0, 0, 0) 55%),
+    linear-gradient(to bottom, #000000 0%, #070605 55%, #14110d 100%);
 }
 
 @keyframes grain-glow {

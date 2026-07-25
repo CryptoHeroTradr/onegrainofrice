@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Two chopsticks converging at a tip near (6,5) = the cursor hotspot. -->
+  <g fill="#14110d" stroke="#fbf7ee" stroke-width="0.6" stroke-linejoin="round">
+    <path d="M6 5 L27 20 L25.2 22.6 L4.4 6.8 Z"/>
+    <path d="M6 5 L29 14 L28 16.8 L5 8.6 Z"/>
+  </g>
+</svg>

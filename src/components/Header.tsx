@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Heart, Menu, X } from "lucide-react";
 import { site } from "@/config/site";
 
@@ -13,6 +15,10 @@ const NAV = [
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  // Path without basePath, so the grains page reads as "/grains" (matches the
+  // next/link href — no doubled prefix).
+  const pathname = usePathname();
+  const onGrains = pathname?.startsWith("/grains") ?? false;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-ink/15 bg-paper/90 text-ink backdrop-blur-sm">
@@ -36,6 +42,16 @@ export function Header() {
                 {item.label}
               </a>
             ))}
+            {/* Game route (basePath auto-applied by next/link → href "/grains"). */}
+            <Link
+              href="/"
+              aria-current={onGrains ? "page" : undefined}
+              className={`font-display text-sm font-bold tracking-wide uppercase transition-colors hover:text-olive ${
+                onGrains ? "text-olive" : "text-ink/80"
+              }`}
+            >
+              GRAINS
+            </Link>
           </nav>
         </div>
 
@@ -77,6 +93,16 @@ export function Header() {
               {item.label}
             </a>
           ))}
+          <Link
+            href="/grains"
+            onClick={() => setOpen(false)}
+            aria-current={onGrains ? "page" : undefined}
+            className={`block py-3 font-mono text-sm font-bold tracking-widest ${
+              onGrains ? "text-olive" : "text-ink/80"
+            }`}
+          >
+            🍚 GRAINS
+          </Link>
         </nav>
       )}
     </header>

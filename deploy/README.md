@@ -4,6 +4,13 @@ The app is mounted under **basePath `/onegrainofrice`** and runs on **port 3006*
 behind the shared nginx gateway (the `ip-rice` default server for `:80`), next
 to CXMZ (`/CXMZ/`) and RiceDAO (`/RiceDAO/`).
 
+> **Grains game (GeoIP2 + WebSocket + pm2):** the production edge for the rice
+> clicker at `/onegrainofrice/grains` — GeoIP2 country headers, the WS proxy to
+> `:3007`, geoipupdate, and the finalized pm2 ecosystem — is documented in
+> **[docs/grains/DEPLOY.md](../docs/grains/DEPLOY.md)**. The nginx block below is
+> superseded by [nginx-onegrainofrice.location](nginx-onegrainofrice.location)
+> (app + WS) once that runbook is applied.
+
 ## App process (pm2) — already running
 
 Registered with pm2 as `onegrainofrice`, matching the other apps:

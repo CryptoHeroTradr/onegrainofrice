@@ -1,6 +1,6 @@
-import Link from "next/link";
-import { Globe, Heart, MessageCircle, Send } from "lucide-react";
+import { Globe, MessageCircle, Send } from "lucide-react";
 import { site, type SocialId } from "@/config/site";
+import { asset } from "@/lib/asset";
 import { CopyAddress } from "@/components/primitives/CopyAddress";
 import { SoundToggle } from "@/components/eggs/SoundToggle";
 
@@ -31,15 +31,9 @@ export function HomeFooter() {
     <footer className="grain border-t border-paper/10 bg-nori py-12 text-steamed">
       <div className="mx-auto max-w-[1180px] px-6">
         <div className="flex flex-col items-center gap-6 text-center">
-          <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-sm border-2 border-steamed/50 text-olive">
-              <Heart size={16} fill="currentColor" aria-hidden="true" />
-            </span>
-            <div className="text-left">
-              <p className="font-display-round text-xl font-bold">{site.ticker}</p>
-              <p className="font-mono text-xs text-steamed/60">the meme coin with a pulse.</p>
-            </div>
-          </div>
+          <a href={asset("/home")} className="font-display-round text-2xl font-bold tracking-tight">
+            {site.nav.logo}
+          </a>
 
           <ul className="flex items-center gap-3">
             {site.socials.map((social, i) => (
@@ -67,9 +61,6 @@ export function HomeFooter() {
           </div>
 
           <div className="flex items-center gap-4 font-mono text-xs text-steamed/60">
-            <Link href={site.classicUrl} className="underline underline-offset-4 hover:text-steamed">
-              {site.nav.classicLabel}
-            </Link>
             <span className="flex items-center gap-1">
               sound
               <SoundToggle className="text-steamed/70 hover:text-steamed" />

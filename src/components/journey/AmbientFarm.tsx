@@ -24,7 +24,7 @@ export function AmbientFarm() {
       {/* Optional muted loop over the gradient */}
       {showLoop && (
         <video
-          className="absolute inset-0 h-full w-full object-cover opacity-50"
+          className="absolute inset-0 h-full w-full object-cover opacity-15"
           autoPlay
           muted
           loop

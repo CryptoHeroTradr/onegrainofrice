@@ -1,121 +1,133 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { site } from "@/config/site";
-import { asset } from "@/lib/asset";
-import { CHARITY_FALLBACK, type CharityDTO } from "@/lib/charity";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useRice } from "./RiceParticles";
-import { Odometer } from "./Odometer";
-import { CopyAddress } from "@/components/primitives/CopyAddress";
 
 /**
- * rAF count-up from the previous value to `target`, ease-out. Under reduced
- * motion the duration is 0 so it jumps straight to the final number. State is
- * only updated inside the rAF callback (never synchronously in the effect).
+ * The rice bowl — a self-contained, always-satisfying VISUAL. No network calls,
+ * no external data of any kind. One blue-and-white porcelain bowl that fills
+ * with grains, driven by three "alive" sources:
+ *
+ *   a) Auto-accrual — grains drip in on a timer until the bowl is heaped, then
+ *      it idles with a gentle settling shimmer.
+ *   b) Scroll-reactive — fill also advances as the section scrolls through view
+ *      (0.4 → heaped → slight overflow), so scrolling visibly piles rice.
+ *   c) Interaction — tapping / pinch-grabbing the bowl tosses in a handful.
+ *
+ * The pile only ever grows (drivers combine monotonically), starts ~40% full so
+ * it always reads as a pile, and the "grains and counting" number is purely
+ * decorative flavor — NOT a donation metric.
+ *
+ * Reduced motion: a static heaped bowl — no drips, no shimmer, no counter.
  */
-function useCountUp(target: number, reduced: boolean): number {
-  const [val, setVal] = useState(0);
-  const fromRef = useRef(0);
-  const rafRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const from = fromRef.current;
-    if (from === target) return;
-    const start = performance.now();
-    const dur = reduced ? 0 : 1200;
-    const tick = (now: number) => {
-      const t = dur === 0 ? 1 : Math.min(1, (now - start) / dur);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setVal(Math.round(from + (target - from) * eased));
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = target;
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [target, reduced]);
-
-  return val;
-}
-
-function StatChip({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="border-2 border-porcelain/60 bg-steamed px-4 py-2 text-center">
-      <div className="font-display-round text-2xl font-bold text-bamboo">
-        {value.toLocaleString("en-US")}
-      </div>
-      <div className="font-mono text-[0.65rem] font-bold tracking-widest text-nori/60 uppercase">
-        {label}
-      </div>
-    </div>
-  );
-}
+// Fill level (0 = empty, 1 = level with the rim, >1 = heaped/overflow).
+const REST = 0.4; // visible non-empty resting state on first paint
+const FULL = 1; // rim
+const HEAP_MAX = 1.2; // most the heap can overflow
+const IDLE_AT = 0.98; // stop dripping once effectively full (idle shimmer takes over)
 
 export function RicePile() {
   const reduced = usePrefersReducedMotion();
   const { pour } = useRice();
-  const [dto, setDto] = useState<CharityDTO>(CHARITY_FALLBACK);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const bowlRef = useRef<HTMLDivElement>(null);
 
-  // Poll the same-origin proxy; keep last-good on failure, never break.
+  const [level, setLevel] = useState(REST);
+  const [grains, setGrains] = useState(4321);
+
+  // Mirror level into a ref so the accrual timer can read it without resubscribing.
+  const levelRef = useRef(level);
   useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await fetch(asset("/api/charity"), { cache: "no-store" });
-        if (!res.ok) throw new Error("bad status");
-        const data = (await res.json()) as CharityDTO;
-        if (alive) setDto(data);
-      } catch {
-        /* keep last-good dto */
-      }
-    };
-    load();
-    const id = setInterval(load, 60_000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
+    levelRef.current = level;
+  }, [level]);
 
-  const progress = Math.max(0, Math.min(1, dto.progressPercent / 100));
-  const grains = useCountUp(dto.grainsDonated, reduced);
-
-  // Pile fill transforms (transition-driven; instant under reduced motion).
-  const fillTranslate = (1 - progress) * 150;
-  const transition = reduced ? "none" : "transform 850ms cubic-bezier(0.22,0.61,0.36,1)";
-
-  const onPinch = (e: React.PointerEvent) => {
-    // Delight only — no state change. Reduced motion: pour() self-no-ops.
-    pour({ x: e.clientX, y: e.clientY, count: 16 });
+  // Pour a small burst of grains into the bowl (if it's on screen).
+  const dripIntoBowl = (count: number) => {
+    const el = bowlRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.bottom <= 0 || r.top >= window.innerHeight) return;
+    pour({
+      x: r.left + r.width / 2 + (Math.random() - 0.5) * r.width * 0.4,
+      y: r.top + r.height * 0.08,
+      count,
+    });
   };
 
+  // (a) Auto-accrual: drip toward full, then idle. The decorative counter keeps
+  // ticking ("and counting") even after the bowl is heaped.
+  useEffect(() => {
+    if (reduced) return;
+    const id = setInterval(() => {
+      setLevel((l) => (l < FULL ? Math.min(FULL, l + 0.035) : l));
+      setGrains((g) => g + 36 + Math.floor(Math.random() * 40));
+      if (levelRef.current < IDLE_AT) dripIntoBowl(4);
+    }, 700);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reduced]);
+
+  // (b) Scroll-reactive: map the section's pass through the viewport to fill.
+  useEffect(() => {
+    if (reduced) return;
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const el = rootRef.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const vh = window.innerHeight || 1;
+        const p = Math.max(0, Math.min(1, (vh - rect.top) / (vh + rect.height)));
+        const scrollLevel = REST + p * (HEAP_MAX - REST);
+        setLevel((l) => Math.max(l, scrollLevel));
+      });
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [reduced]);
+
+  // (c) Interaction: toss in a handful. No-op under reduced motion (static bowl).
+  const onPinch = (e: React.PointerEvent) => {
+    if (reduced) return;
+    setLevel((l) => Math.min(HEAP_MAX, l + 0.08));
+    setGrains((g) => g + 180 + Math.floor(Math.random() * 80));
+    pour({ x: e.clientX, y: e.clientY, count: 18 });
+  };
+
+  // Reduced motion → static heaped bowl regardless of the (unused) level state.
+  const displayLevel = reduced ? FULL : level;
+  const inBowl = Math.min(displayLevel, 1); // fill can't clip above the rim
+  const heapScale = Math.min(displayLevel, HEAP_MAX); // heap overflows past the rim
+  const fillTranslate = (1 - inBowl) * 150;
+  const transition = reduced ? "none" : "transform 420ms cubic-bezier(0.22,0.61,0.36,1)";
+
   return (
-    <div className="mx-auto flex max-w-xl flex-col items-center gap-6 text-center">
-      {/* Ticker */}
+    <div ref={rootRef} className="mx-auto flex max-w-xl flex-col items-center gap-6 text-center">
+      {/* Meme/token-native copy — the "one grain becomes many" thesis */}
       <div>
-        <div className="flex items-baseline justify-center gap-2">
-          <Odometer
-            value={grains}
-            reducedMotion={reduced}
-            className="text-4xl font-bold text-khaki sm:text-5xl"
-          />
-          <span className="font-mono text-xs font-bold tracking-widest text-nori/60 uppercase">
-            {site.charity.grainsLabel}
-          </span>
-        </div>
+        <h2 className="font-display-round text-4xl font-bold text-nori sm:text-5xl">
+          one grain <span className="text-bamboo">becomes many.</span>
+        </h2>
+        <p className="mx-auto mt-3 max-w-md font-mono text-sm text-nori/70">
+          scroll to pile it higher — or tap the bowl to toss in a handful.
+        </p>
       </div>
 
       {/* Bowl + growing rice pile */}
       <div
+        ref={bowlRef}
         data-grab
         onPointerDown={onPinch}
         className="relative w-full max-w-sm cursor-pointer select-none"
-        aria-label="Rice bowl — the pile grows with donations"
+        aria-label="A heaping bowl of rice"
       >
         <svg viewBox="0 0 360 300" className="w-full" role="img" aria-hidden="true">
           <defs>
@@ -131,7 +143,7 @@ export function RicePile() {
           {/* Back rim */}
           <ellipse cx="180" cy="166" rx="138" ry="30" fill="#e7edf6" stroke="var(--color-porcelain)" strokeWidth="2.5" />
 
-          {/* In-bowl fill, clipped, rising with progress */}
+          {/* In-bowl fill, clipped, rising with the fill level */}
           <g clipPath="url(#bowlInterior)">
             <g style={{ transform: `translateY(${fillTranslate}px)`, transition }}>
               <rect x="30" y="150" width="300" height="170" fill="url(#riceGrad)" />
@@ -139,16 +151,16 @@ export function RicePile() {
             </g>
           </g>
 
-          {/* Heap above the rim, scaling with progress */}
+          {/* Heap above the rim, scaling with the fill level (overflows past 1) */}
           <g
             style={{
-              transform: `scaleY(${progress})`,
+              transform: `scaleY(${heapScale})`,
               transformOrigin: "180px 168px",
               transition,
             }}
           >
             <path d="M70 168 Q180 60 290 168 Q180 150 70 168 Z" fill="url(#riceGrad)" />
-            {/* Idle shimmer grains (motion only) */}
+            {/* Idle settling shimmer (motion only) */}
             {!reduced && (
               <g className="rice-shimmer">
                 <ellipse cx="150" cy="120" rx="4" ry="1.8" fill="var(--color-steamed)" transform="rotate(20 150 120)" />
@@ -177,25 +189,16 @@ export function RicePile() {
         </svg>
       </div>
 
-      {/* Stat chips */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatChip value={dto.totalKg} label={site.charity.stats.totalKg} />
-        <StatChip value={dto.fedToday} label={site.charity.stats.fedToday} />
-        <StatChip value={dto.fedAllTime} label={site.charity.stats.fedAllTime} />
-      </div>
-
-      {/* Charity wallet */}
-      <div>
-        <p className="mb-2 font-mono text-xs font-bold tracking-widest text-nori/60 uppercase">
-          {site.charity.walletLabel}
-        </p>
-        <CopyAddress address={site.charityWallet} />
-      </div>
-
-      {dto.fallback && (
-        <p className="font-mono text-[0.7rem] text-nori/40">
-          live data unavailable — showing recent totals
-        </p>
+      {/* Decorative flavor counter — NOT a donation metric. Motion only. */}
+      {!reduced && (
+        <div>
+          <div className="font-display-round text-3xl font-bold text-bamboo sm:text-4xl">
+            {grains.toLocaleString("en-US")}
+          </div>
+          <div className="font-mono text-[0.65rem] font-bold tracking-widest text-nori/50 uppercase">
+            grains and counting
+          </div>
+        </div>
       )}
     </div>
   );

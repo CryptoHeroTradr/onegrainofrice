@@ -2,18 +2,21 @@ import { ChevronDown } from "lucide-react";
 import { site } from "@/config/site";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 
+type FaqItem = { q: string; a: string };
+
 /**
  * Native <details>/<summary> accordion — keyboard and screen-reader
- * accessible with zero JS.
+ * accessible with zero JS. Defaults to the full `site.faq.items` list (used by
+ * /classic); the new home passes a curated subset via `items`.
  */
-export function Faq() {
+export function Faq({ items = site.faq.items }: { items?: readonly FaqItem[] } = {}) {
   return (
     <section id="faq" className="grain-paper vignette-paper bg-bone py-16 text-ink sm:py-24">
       <div className="mx-auto max-w-3xl px-4 sm:px-6">
         <SectionHeading lead={site.faq.heading.lead} accent={site.faq.heading.accent} tone="dark" />
 
         <div className="mt-10 space-y-4">
-          {site.faq.items.map((item) => (
+          {items.map((item) => (
             <details
               key={item.q}
               className="group border-2 border-ink/15 bg-paper open:border-olive"

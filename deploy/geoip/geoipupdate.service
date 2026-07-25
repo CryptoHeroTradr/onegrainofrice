@@ -1,0 +1,17 @@
+# Weekly refresh of the MaxMind GeoLite2 database (oneshot; the timer drives it).
+# Install: sudo cp deploy/geoip/geoipupdate.{service,timer} /etc/systemd/system/
+#          sudo systemctl daemon-reload
+#          sudo systemctl enable --now geoipupdate.timer
+#
+# After a refresh nginx picks up the new .mmdb automatically via `auto_reload`
+# in deploy/nginx-geoip2.conf — no nginx reload needed.
+[Unit]
+Description=Refresh MaxMind GeoLite2 databases (geoipupdate)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/geoipupdate
+# Reads /etc/GeoIP.conf for AccountID / LicenseKey / EditionIDs / DatabaseDirectory.
+Nice=10

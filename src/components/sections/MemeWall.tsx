@@ -1,14 +1,21 @@
 import { site } from "@/config/site";
 import { memes } from "@/config/memes";
-import { MemeCollage } from "@/components/MemeCollage";
-import { MemeCarousel } from "@/components/MemeCarousel";
+import { MemeWallSurfaces } from "@/components/sections/MemeWallSurfaces";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 import { resolveAsset, memePlaceholder } from "@/lib/resolveAsset";
 
+/**
+ * The meme wall. SERVER component: it resolves the FALLBACK deck (the real file if it
+ * is in public/, else the generated placeholder) with resolveAsset, which reads the
+ * filesystem and so cannot run on the client.
+ *
+ * That resolved deck is the fallback and nothing more. WHICH memes actually render is
+ * decided one level down, in MemeWallSurfaces, where the pool is fetched ONCE for
+ * every surface on this wall. See that file for why the fetch does not live in the
+ * carousel any more.
+ */
 export function MemeWall() {
-  // Server-side: swap each src for the real file if present, else the .svg
-  // placeholder. Client components (carousel) then receive resolved paths.
-  const resolved = memes.map((m) => ({
+  const fallback = memes.map((m) => ({
     ...m,
     src: resolveAsset(m.src, memePlaceholder(m.id)),
   }));
@@ -25,18 +32,7 @@ export function MemeWall() {
           {site.memeWall.sub}
         </p>
 
-        {/* Row 1 — static collage */}
-        <div className="mt-10">
-          <MemeCollage memes={resolved} />
-        </div>
-
-        {/* Row 2 — interactive carousel */}
-        <div className="mt-10">
-          <p className="mb-1 font-mono text-xs font-bold tracking-widest text-ink/50 uppercase">
-            swipe the gallery →
-          </p>
-          <MemeCarousel memes={resolved} />
-        </div>
+        <MemeWallSurfaces fallback={fallback} />
       </div>
     </section>
   );

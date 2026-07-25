@@ -1,3 +1,15 @@
 allowBuilds:
+  better-sqlite3: true
+  # Optional native accelerators pulled in by the @solana/* packages (the /charity
+  # donate flow). All three have pure-JS fallbacks and nothing here needs the
+  # native speedup, so we skip compiling them.
+  bigint-buffer: false
+  bufferutil: false
+  esbuild: true
   sharp: true
   unrs-resolver: true
+  utf-8-validate: false
+onlyBuiltDependencies:
+  - better-sqlite3
+  - sharp
+  - unrs-resolver

@@ -2,11 +2,11 @@
 
 import { useSyncExternalStore } from "react";
 import { Volume2, VolumeX } from "lucide-react";
-import { isSoundOn, subscribeSound, toggleSound } from "@/lib/sound";
+import { isSoundOn, soundServerSnapshot, subscribeSound, toggleSound } from "@/lib/sound";
 
 /** Single global sound on/off toggle (muted by default). SSR-safe. */
 export function SoundToggle({ className = "" }: { className?: string }) {
-  const on = useSyncExternalStore(subscribeSound, isSoundOn, () => false);
+  const on = useSyncExternalStore(subscribeSound, isSoundOn, soundServerSnapshot);
 
   return (
     <button

@@ -11,10 +11,14 @@ export const GRAINS_PER_KG = 50000;
 /** $RICE mint (Solana mainnet). Override via NEXT_PUBLIC_TOKEN_ADDRESS. */
 const CONTRACT =
   process.env.NEXT_PUBLIC_TOKEN_ADDRESS ?? "2wQq3MrFFHPQnapMt1wnZ2vGkVZDv5ENDCrdLCqFpump";
-/** Jupiter swap link. Override via NEXT_PUBLIC_BUY_URL. */
-const BUY_URL = process.env.NEXT_PUBLIC_BUY_URL ?? `https://jup.ag/swap/SOL-${CONTRACT}`;
+/** Wrapped SOL mint — the sell side of the Jupiter swap. */
+const SOL_MINT = "So11111111111111111111111111111111111111112";
+/** Jupiter swap link (SOL → $RICE). Override via NEXT_PUBLIC_BUY_URL. */
+const BUY_URL =
+  process.env.NEXT_PUBLIC_BUY_URL ??
+  `https://jup.ag/swap?sell=${SOL_MINT}&buy=${CONTRACT}`;
 /** RiceDAO governance page — where votes actually happen. */
-const DAO_URL = process.env.NEXT_PUBLIC_DAO_URL ?? "http://209.141.52.60/RiceDAO/dao";
+const DAO_URL = process.env.NEXT_PUBLIC_DAO_URL ?? "https://game.1grainofrice.com/RiceDAO/dao";
 
 export const site = {
   name: "One Grain of Rice",
@@ -62,9 +66,8 @@ export const site = {
   },
 
   socials: [
-    { id: "telegram", label: "$RICE memes on Telegram (@ricecontent)", href: "https://t.me/ricecontent" },
-    { id: "telegram", label: "Play the game — @RiceDAOgamebot", href: "https://t.me/RiceDAOgamebot" },
-    { id: "x", label: "Follow $RICE on X", href: "https://x.com/TODO" },
+    { id: "telegram", label: "$RICE on Telegram", href: "https://t.me/sol1grainofrice" },
+    { id: "x", label: "Follow $RICE on X", href: "https://x.com/1grainproject" },
     // Add more here — supported ids: "x" | "telegram" | "discord" | "globe"
   ] as { id: SocialId; label: string; href: string }[],
 
@@ -208,10 +211,10 @@ export const site = {
   },
 
   /** RiceDAO village/game. Override with NEXT_PUBLIC_VILLAGE_URL. */
-  villageUrl: process.env.NEXT_PUBLIC_VILLAGE_URL ?? "http://209.141.52.60/RiceDAO/",
+  villageUrl: process.env.NEXT_PUBLIC_VILLAGE_URL ?? "https://game.1grainofrice.com/RiceDAO/",
 
   /** RiceDAO full (AI) PFP generator. Override with NEXT_PUBLIC_VILLAGE_PFP_URL. */
-  villagePfpUrl: process.env.NEXT_PUBLIC_VILLAGE_PFP_URL ?? "http://209.141.52.60/RiceDAO/pfp",
+  villagePfpUrl: process.env.NEXT_PUBLIC_VILLAGE_PFP_URL ?? "https://game.1grainofrice.com/RiceDAO/pfp",
 
   /** DAO governance link + a fallback illustrative proposal (Phase 10). The
       RiceDAO proposals feed is wallet-gated, so with no public endpoint this

@@ -1,0 +1,42 @@
+# Scope: the primary nav bar (JourneyNav) + the classic nav with its hamburger
+# (Header). Adding the GRAINS link only. Ignore the game, WS server, DB, nginx,
+# and all unrelated pages.
+
+# Build output / deps / lockfiles
+.next/
+node_modules/
+out/
+build/
+coverage/
+*.tsbuildinfo
+pnpm-lock.yaml
+
+# The game + its backend (explicitly out of scope for this change)
+src/app/grains/
+src/components/grains/
+src/hooks/useGrainsSocket.ts
+src/lib/grains/
+server/
+scripts/grains-*.ts
+deploy/
+docs/grains/
+
+# Unrelated pages / sections / assets
+src/app/pfp/
+src/app/classic/
+src/app/play/
+src/app/api/
+src/components/pfp/
+src/components/memes/
+src/components/dao/
+src/components/roadmap/
+src/components/content/
+src/components/sections/
+src/components/eggs/
+src/components/home/
+src/components/brand/
+src/lib/pfp/
+public/
+
+# Editor
+*.code-workspace

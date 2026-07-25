@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(pm2 list *)",
+      "Bash(pnpm build *)",
+      "Bash(pm2 reload *)",
+      "Bash(curl -s http://127.0.0.1:3006/onegrainofrice/home)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(curl -s -H \"Host: 1grainofrice.com\" http://127.0.0.1:3006/onegrainofrice/home)",
+      "Bash(grep -o \"Market Cap.\\\\{0,120\\\\}Meals Provided\" .next/server/app/home.html)",
+      "Bash(grep -o 'Market Cap.\\\\{0,400\\\\}')",
+      "Bash(npx eslint *)"
+    ]
+  }
+}

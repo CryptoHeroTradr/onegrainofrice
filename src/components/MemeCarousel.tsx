@@ -19,7 +19,17 @@ const MIN_OPACITY = 0.6;
 /** Deterministic sticker tilt so SSR and client agree (no Math.random). */
 const TILTS = [-2.5, 1.5, -1, 2, -1.5, 2.5, -2];
 
-export function MemeCarousel({ memes }: { memes: Meme[] }) {
+/**
+ * Presentational. It renders the deck it is handed and fetches nothing.
+ *
+ * It used to fetch the pool itself, which meant the meme wall had two sources of
+ * truth — the carousel on the pool, the collage on the hardcoded list — and a meme
+ * removed by an admin would disappear from one and survive in the other. The fetch
+ * now happens once, in MemeWallSurfaces, and every surface is fed from it.
+ *
+ * @param memes The deck to render: pool memes, or the hardcoded fallback.
+ */
+export function MemeCarousel({ memes: deck }: { memes: Meme[] }) {
   const reducedMotion = usePrefersReducedMotion();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const tweenNodes = useRef<HTMLElement[]>([]);
@@ -124,6 +134,13 @@ export function MemeCarousel({ memes }: { memes: Meme[] }) {
     };
   }, [emblaApi, setTweenNodes, tweenDepth]);
 
+  // The deck arrives asynchronously and is a different LENGTH than the fallback.
+  // Embla measures its snap points once at init, so it must be told to remeasure —
+  // otherwise it keeps the old count and the last slides are unreachable.
+  useEffect(() => {
+    emblaApi?.reInit();
+  }, [emblaApi, deck]);
+
   const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
   const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
   const scrollTo = useCallback((i: number) => emblaApi?.scrollTo(i), [emblaApi]);
@@ -151,12 +168,12 @@ export function MemeCarousel({ memes }: { memes: Meme[] }) {
     >
       <div className="carousel-3d overflow-hidden py-8 sm:py-10" ref={emblaRef}>
         <div className="embla-container flex touch-pan-y touch-pinch-zoom">
-          {memes.map((meme, i) => (
+          {deck.map((meme, i) => (
             <div
               key={meme.id}
               role="group"
               aria-roledescription="slide"
-              aria-label={`${i + 1} of ${memes.length}: ${meme.caption ?? meme.alt}`}
+              aria-label={`${i + 1} of ${deck.length}: ${meme.caption ?? meme.alt}`}
               className="embla-slide min-w-0 flex-[0_0_72%] px-3 sm:flex-[0_0_45%] sm:px-4 md:flex-[0_0_320px]"
             >
               <div className="embla-slide-inner">
@@ -168,6 +185,7 @@ export function MemeCarousel({ memes }: { memes: Meme[] }) {
                   tape={i % 2 === 0}
                   variant={meme.photo ? "photo" : "cutout"}
                   aspect={meme.photo ? "aspect-[4/3]" : "aspect-[4/5]"}
+                  srcIsFinal={meme.pooled}
                 />
               </div>
             </div>
@@ -188,7 +206,7 @@ export function MemeCarousel({ memes }: { memes: Meme[] }) {
 
         {/* Dot indicator */}
         <div className="flex items-center gap-1" aria-hidden="true">
-          {memes.map((meme, i) => (
+          {deck.map((meme, i) => (
             <button
               key={meme.id}
               type="button"

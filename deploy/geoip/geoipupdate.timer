@@ -1,0 +1,14 @@
+# Runs geoipupdate.service weekly. MaxMind publishes GeoLite2 updates a couple
+# of times a week; weekly is plenty for country-level accuracy.
+[Unit]
+Description=Weekly MaxMind GeoLite2 refresh
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+# Spread load / avoid every server hitting MaxMind at the same minute.
+RandomizedDelaySec=1h
+# Catch up if the box was off at the scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

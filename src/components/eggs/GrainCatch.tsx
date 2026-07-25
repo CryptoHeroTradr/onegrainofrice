@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { site } from "@/config/site";
 import { asset } from "@/lib/asset";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { getHighScore, recordScore } from "@/lib/highscore";
@@ -211,10 +210,7 @@ export function GrainCatch() {
       )}
 
       <p className="mt-8 text-center font-mono text-xs text-nori/50">
-        High score is session-only.{" "}
-        <a href={site.villageUrl} target="_blank" rel="noopener noreferrer" className="underline">
-          Play the real village →
-        </a>
+        High score is session-only.
       </p>
     </section>
   );

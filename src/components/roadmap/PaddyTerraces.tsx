@@ -6,13 +6,16 @@ import { site } from "@/config/site";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 
+type Milestone = { title: string; detail: string; done: boolean };
+
 /**
  * Roadmap as terraced paddies stepping up a hillside. Each terrace is a
- * milestone from site.roadmap[]: `done` ones are flooded green, upcoming ones
- * dry. Terraces scroll-reveal in; under reduced motion they render revealed
- * with no transition.
+ * milestone: `done` ones are flooded green, upcoming ones dry. Terraces
+ * scroll-reveal in; under reduced motion they render revealed with no
+ * transition. Defaults to the full `site.roadmap` (used by /classic-style
+ * callers); the new home passes a scrubbed subset via `items`.
  */
-export function PaddyTerraces() {
+export function PaddyTerraces({ items = site.roadmap }: { items?: readonly Milestone[] } = {}) {
   const reduced = usePrefersReducedMotion();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const refs = useRef<(HTMLLIElement | null)[]>([]);
@@ -35,7 +38,7 @@ export function PaddyTerraces() {
   }, [reduced]);
 
   return (
-    <section id="roadmap" className="grain bg-nori py-20 text-steamed sm:py-28">
+    <section id="roadmap" className="section grain bg-nori text-steamed">
       <div className="mx-auto max-w-[1180px] px-6">
         <div className="text-center">
           <div className="flex justify-center">
@@ -50,7 +53,7 @@ export function PaddyTerraces() {
         </div>
 
         <ol className="mx-auto mt-14 max-w-3xl">
-          {site.roadmap.map((m, i) => (
+          {items.map((m, i) => (
             <li
               key={m.title}
               data-i={i}

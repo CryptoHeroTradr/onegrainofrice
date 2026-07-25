@@ -31,6 +31,17 @@ export type Meme = {
   belt?: boolean;
   /** Porcelain plate tint on the belt. Default cycles blue→red→green. */
   plate?: PlateTint;
+  /**
+   * This meme came from the shared media pool (/media/), not from public/.
+   *
+   * Its `src` is therefore already a final URL and must NOT go through asset():
+   * the pool lives at the server root, outside this app's basePath, and its
+   * filenames are content hashes served immutable for a year. See lib/mediaPool.ts.
+   *
+   * Never set on the memes below — they ARE the fallback deck, and they are
+   * build output like any other asset in public/.
+   */
+  pooled?: boolean;
 };
 
 export const memes: Meme[] = [

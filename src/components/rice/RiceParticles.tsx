@@ -20,13 +20,35 @@ import {
 export type RiceApi = {
   /** Cascade `count` grains from a point (viewport coords), falling with gravity. */
   pour: (opts: { x: number; y: number; count?: number }) => void;
+  /**
+   * Fire a HOSE of grains from a point: a tight arcing jet, sprayed sideways in
+   * `dir` (1 = right, -1 = left), that grows as it flies and sails clear off the
+   * screen. Unlike `pour` (which only rains downward), these launch up and out.
+   *
+   * `rx`/`ry` are the grain's STARTING ellipse radii — callers pass the size of
+   * the grains they already render (the game passes its bowl-grain size) and the
+   * jet swells from there.
+   */
+  hose: (opts: {
+    x: number;
+    y: number;
+    count?: number;
+    dir?: 1 | -1;
+    rx?: number;
+    ry?: number;
+  }) => void;
   /** Drive an element's .bowl-fill level (0–100) and drip grains into it. */
   fillBowl: (el: HTMLElement, pct: number) => void;
   /** Drop a single faint grain at the pointer (cursor trail). */
   trail: (x: number, y: number) => void;
 };
 
-const NOOP: RiceApi = { pour: () => {}, fillBowl: () => {}, trail: () => {} };
+const NOOP: RiceApi = {
+  pour: () => {},
+  hose: () => {},
+  fillBowl: () => {},
+  trail: () => {},
+};
 const RiceContext = createContext<RiceApi>(NOOP);
 
 /** Consume the rice API. Returns no-ops if used outside a provider. */
@@ -46,6 +68,12 @@ type Particle = {
   life: number; // seconds remaining
   maxLife: number;
   color: 0 | 1; // index into tints
+  /** Fractional growth per second (0.8 ⇒ +80%/s). Omitted ⇒ fixed size. */
+  grow?: number;
+  /** Per-particle overrides. The firehose needs a gentler arc and no horizontal
+   *  damping so its grains actually reach the edge of the screen. */
+  gravity?: number;
+  drag?: number;
 };
 
 const MAX_PARTICLES = 600;
@@ -94,17 +122,26 @@ export function RiceProvider({ children }: { children: ReactNode }) {
   const step = useCallback((dt: number) => {
     const list = particles.current;
     const floor = sizeRef.current.h + 40;
+    // Grains that fly clear of the viewport are retired, so the firehose (whose
+    // grains are deliberately fast enough to exit) can't accumulate off-screen.
+    const leftEdge = -240;
+    const rightEdge = sizeRef.current.w + 240;
     const dragK = 1 - DRAG * dt;
     let write = 0;
     for (let i = 0; i < list.length; i++) {
       const p = list[i];
-      p.vy += GRAVITY * dt;
-      p.vx *= dragK;
+      p.vy += (p.gravity ?? GRAVITY) * dt;
+      p.vx *= p.drag != null ? 1 - p.drag * dt : dragK;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vr * dt;
+      if (p.grow) {
+        const s = 1 + p.grow * dt;
+        p.rx *= s;
+        p.ry *= s;
+      }
       p.life -= dt;
-      if (p.life > 0 && p.y < floor) {
+      if (p.life > 0 && p.y < floor && p.x > leftEdge && p.x < rightEdge) {
         list[write++] = p;
       }
     }
@@ -143,7 +180,13 @@ export function RiceProvider({ children }: { children: ReactNode }) {
   }, [step, draw]);
 
   const ensureRunning = useCallback(() => {
-    if (reducedRef.current || hiddenRef.current) return;
+    // Only the hidden-tab check gates the loop now. It also bailed on reduced
+    // motion, which meant that even once `hose` spawned grains the RAF loop never
+    // started and nothing was ever drawn. The ambient emitters (pour/trail) still
+    // decline to spawn under reduced motion, so the loop simply stays idle unless
+    // an explicit, user-earned effect puts grains in it — and it self-halts the
+    // moment the list empties.
+    if (hiddenRef.current) return;
     if (runningRef.current) return;
     runningRef.current = true;
     lastRef.current = 0;
@@ -176,6 +219,60 @@ export function RiceProvider({ children }: { children: ReactNode }) {
           life: 1.1 + Math.random() * 1.1,
           maxLife: 2.2,
           color: Math.random() < 0.5 ? 0 : 1,
+        });
+      }
+      ensureRunning();
+    },
+    [spawn, ensureRunning],
+  );
+
+  // Firehose: grains erupt UPWARD and out to the sides, like a firework. `dir`
+  // leans the fan left or right (alternating per trigger), the wide cone throws
+  // the edges out sideways, and gravity arcs everything back down on its own.
+  // Each grain also swells as it flies, which reads as rushing toward the viewer.
+  // `drag: 0` plus a light gravity let the spray carry clear off screen rather
+  // than stalling mid-air.
+  const hose = useCallback<RiceApi["hose"]>(
+    ({ x, y, count = 50, dir = 1, rx, ry }) => {
+      // NOT gated on reduced motion, unlike the ambient `pour`/`trail` decoration.
+      // This is the payoff the player deliberately earned by mashing, the rice
+      // bowl it erupts from animates under reduced motion anyway, and silently
+      // dropping it left reduced-motion users convinced the feature was broken.
+      // Under reduced motion it's toned down: fewer grains, gentler throw.
+      const calm = reducedRef.current;
+      const n = Math.min(calm ? Math.ceil(count / 2) : count, maxParticles.current);
+      // Screen angles: 0° = right, +90° = DOWN, -90° = UP. Fire UPWARD and out to
+      // the side — a firework, not a dump. `dir` leans the cone left or right, and
+      // the wide spread carries the edges of the fan out sideways. Gravity still
+      // arcs them back down on their own, which is what makes it read as a burst.
+      const center = -90 + dir * 30;
+      const cone = 96; // wide fan: up through the diagonals and out to the sides
+
+      for (let i = 0; i < n; i++) {
+        const t = i / Math.max(1, n - 1) - 0.5;
+        const deg = center + t * cone + (Math.random() - 0.5) * 10;
+        const a = (deg * Math.PI) / 180;
+        const speed = (560 + Math.random() * 440) * (calm ? 0.6 : 1);
+
+        const fallback = 2 + Math.random() * 2.2;
+        const grainRx = rx ?? fallback;
+        const grainRy = ry ?? fallback * (0.4 + Math.random() * 0.2);
+
+        spawn({
+          x: x + (Math.random() - 0.5) * 18,
+          y: y + (Math.random() - 0.5) * 18,
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed,
+          rx: grainRx,
+          ry: grainRy,
+          rot: Math.random() * Math.PI,
+          vr: (Math.random() - 0.5) * 12,
+          life: 1.8 + Math.random() * 0.9,
+          maxLife: 2.7,
+          color: Math.random() < 0.5 ? 0 : 1,
+          grow: 1.35, // +135%/s — the "rushing at the camera" cue
+          gravity: 340,
+          drag: 0,
         });
       }
       ensureRunning();
@@ -323,7 +420,10 @@ export function RiceProvider({ children }: { children: ReactNode }) {
     };
   }, [ensureRunning, trail]);
 
-  const api = useMemo<RiceApi>(() => ({ pour, fillBowl, trail }), [pour, fillBowl, trail]);
+  const api = useMemo<RiceApi>(
+    () => ({ pour, hose, fillBowl, trail }),
+    [pour, hose, fillBowl, trail],
+  );
 
   return (
     <RiceContext.Provider value={api}>

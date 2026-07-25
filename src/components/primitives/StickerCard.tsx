@@ -20,6 +20,10 @@ export function StickerCard({
   sizes,
   variant = "cutout",
   aspect = "aspect-[4/5]",
+  videoSrc,
+  poster,
+  onError,
+  srcIsFinal = false,
 }: {
   src: string;
   alt: string;
@@ -30,20 +34,57 @@ export function StickerCard({
   sizes?: string;
   variant?: "cutout" | "photo";
   aspect?: string;
+  /** When set, the framed (photo) card plays this muted looping video instead
+   *  of a still image (used for video/GIF memes on the sushi belt). */
+  videoSrc?: string;
+  /** Poster still shown while the video loads. */
+  poster?: string;
+  /** Fired when the image/video fails to load (so the belt can skip it). */
+  onError?: () => void;
+  /**
+   * `src` is already a final URL — do NOT put it through asset().
+   *
+   * Used by the shared media pool (/media/…), which is not build output. Two
+   * reasons, and they are the same two the /api/ carve-out inside asset() exists
+   * for:
+   *   - the pool is served by nginx at the server ROOT, outside the app, so it
+   *     must never be prefixed with the app's basePath;
+   *   - pool filenames are content hashes and are served `immutable` for a year.
+   *     Stamping them with ?v=<build> would mint a brand-new URL on every deploy
+   *     and throw that cache away, for a file whose bytes cannot have changed.
+   */
+  srcIsFinal?: boolean;
 }) {
+  // The one place the decision is made; every <Image>/<video> below reads it.
+  const url = (path: string) => (srcIsFinal ? path : asset(path));
   if (variant === "photo") {
     return (
       <figure className="sticker relative" style={{ transform: `rotate(${rotation}deg)` }}>
         <div className="bg-bone p-1.5">
           <div className={`relative ${aspect} overflow-hidden bg-paper-dark`}>
-            <Image
-              src={asset(src)}
-              alt={alt}
-              fill
-              sizes={sizes ?? "(min-width: 768px) 320px, 70vw"}
-              priority={priority}
-              className="object-cover"
-            />
+            {videoSrc ? (
+              <video
+                src={url(videoSrc)}
+                poster={poster ? url(poster) : undefined}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                onError={onError}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : (
+              <Image
+                src={url(src)}
+                alt={alt}
+                fill
+                sizes={sizes ?? "(min-width: 768px) 320px, 70vw"}
+                priority={priority}
+                onError={onError}
+                className="object-cover"
+              />
+            )}
             {caption && (
               <figcaption className="absolute inset-x-0 top-0 bg-olive/90 px-2 py-1 text-center font-mono text-[0.55rem] font-bold uppercase tracking-wider text-bone sm:text-[0.65rem]">
                 {caption}
@@ -63,11 +104,12 @@ export function StickerCard({
     <figure className="relative" style={{ transform: `rotate(${rotation}deg)` }}>
       <div className={`sticker-cutout relative ${aspect}`}>
         <Image
-          src={asset(src)}
+          src={url(src)}
           alt={alt}
           fill
           sizes={sizes ?? "(min-width: 768px) 320px, 70vw"}
           priority={priority}
+          onError={onError}
           className="object-contain"
         />
       </div>
