@@ -32,6 +32,19 @@ if [ ! -f .env.local ]; then
   exit 1
 fi
 
+# GUARD: never build the directory the live site is serving. If HEAD's sha equals
+# what ./.next points at, the rm+rebuild below would DESTROY the running build
+# (a dirty tree at the live sha is the usual way to hit this). Commit first so HEAD
+# advances to a new sha, then build — the new build lands beside the live one and
+# promote.sh swaps atomically.
+LIVE_LINK="$(readlink .next 2>/dev/null || true)"
+if [ -n "$LIVE_LINK" ] && [ "$OUT" = "$LIVE_LINK" ]; then
+  echo "!! REFUSING: builds/$SHA is the CURRENTLY-LIVE build (./.next -> $LIVE_LINK)." >&2
+  echo "   Building it would overwrite the running site. Commit your changes so HEAD" >&2
+  echo "   advances to a new sha, then re-run. (dirty files: $DIRTY)" >&2
+  exit 1
+fi
+
 mkdir -p builds
 rm -rf "$OUT"
 

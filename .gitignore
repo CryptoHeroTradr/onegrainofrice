@@ -16,7 +16,9 @@
 # testing
 /coverage
 
-# next.js
+# next.js — the trailing-slash form only matches a directory; after the first
+# promote ./.next is a SYMLINK into builds/, so ignore that form too.
+/.next
 /.next/
 /out/
 # build/deploy separation: per-commit build outputs (deploy/build.sh). Never

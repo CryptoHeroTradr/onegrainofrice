@@ -34,6 +34,13 @@ const MAX_SLIPPAGE_PCT = 50;
 const PRESETS = [0.1, 0.5, 1];
 /** Leave enough SOL for fees/rent when the user taps MAX on the SOL side. */
 const SOL_FEE_BUFFER = 0.01;
+/**
+ * Above this price impact (percent) the panel doesn't just show the number — it
+ * makes the user acknowledge it before the swap can be signed. Mirrors the bot
+ * executor's guard (maxPriceImpactPct 0.03): on a ~$105K-cap token a modest order
+ * moves the price itself, and a slippage tolerance is NOT a price-impact guard.
+ */
+const IMPACT_WARN_PCT = 3;
 
 /** Small pill/chip button, olive when active. */
 const chip = (active: boolean) =>
@@ -43,7 +50,39 @@ const chip = (active: boolean) =>
       : "border-nori/30 text-nori/70 hover:border-nori"
   }`;
 
-type Status = "idle" | "quoting" | "signing" | "confirming" | "success" | "error";
+// "submitted" = broadcast but not yet confirmed within the window — an uncertain
+// outcome, NOT a failure (it may still land). Distinct from "success"/"error".
+type Status = "idle" | "quoting" | "signing" | "confirming" | "submitted" | "success" | "error";
+
+/** confirmSignature (lib/solana) throws this on a confirmation timeout — the tx may still land. */
+function isConfirmTimeout(err: unknown): boolean {
+  const m = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
+  return m.includes("timed out") || m.includes("still land") || m.includes("check solscan");
+}
+
+/**
+ * Turn a wallet / RPC / Jupiter failure into a sentence the user can act on. A raw
+ * RPC error ("custom program error: 0x1771", "Blockhash not found") is never shown.
+ */
+function humanizeSwapError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  const m = raw.toLowerCase();
+  if (m.includes("user rejected") || m.includes("rejected the request") || m.includes("declined") || m.includes("user denied"))
+    return "You dismissed the wallet — nothing was signed. Press Swap to try again.";
+  if (m.includes("insufficient") && (m.includes("lamport") || m.includes("sol") || m.includes("fee") || m.includes("rent")))
+    return "Not enough SOL to cover network fees. Leave a little SOL (≈0.01) unspent and try again.";
+  if (m.includes("slippage") || m.includes("0x1771") || m.includes("exceeds desired") || m.includes("price impact"))
+    return "The price moved past your slippage tolerance. Re-quote and try again, or nudge slippage up a little.";
+  if (m.includes("on-chain") || m.includes("custom program error") || m.includes("instruction error"))
+    return "The swap failed on-chain — the pool price likely moved. Re-quote and try again; only the network fee was spent.";
+  if (m.includes("blockhash") || m.includes("block height exceeded") || m.includes("expired"))
+    return "The transaction expired before it landed. Re-quote and try again.";
+  if (m.includes("no route") || m.includes("could not find any route") || m.includes("no routes"))
+    return "No swap route for that pair and size right now — try a different amount.";
+  if (m.includes("failed to fetch") || m.includes("networkerror") || m.includes("timeout") || m.includes("429") || m.includes("rate limit") || m.includes("fetch"))
+    return "Couldn't reach the network. Check your connection and try again in a moment.";
+  return "The swap didn't go through. Re-quote and try again — nothing was signed unless your wallet prompted you.";
+}
 
 const num = (v: string) => {
   const n = Number(v);
@@ -122,6 +161,9 @@ export function SwapPanel({
   const [sig, setSig] = useState<string | null>(null);
   /** True when the balance read failed, so 0 is "unknown", not "empty". */
   const [rpcDown, setRpcDown] = useState(false);
+  /** The user has acknowledged a high price-impact quote (see IMPACT_WARN_PCT).
+   *  Reset whenever the priced inputs change, so an ack never carries to a new quote. */
+  const [impactAck, setImpactAck] = useState(false);
 
   // Custom slippage, in basis points — null while the box holds something out
   // of range, in which case the quote falls back to the last preset rather than
@@ -197,7 +239,9 @@ export function SwapPanel({
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
-      setStatus((s) => (s === "success" || s === "error" ? s : "quoting"));
+      // Only drive the idle↔quoting indicator; a background re-quote must NEVER clobber
+      // an in-flight or finished SWAP (signing/confirming/submitted/success/error).
+      setStatus((s) => (s === "idle" || s === "quoting" ? "quoting" : s));
       try {
         const q = await getQuote({
           inputMint: inMint,
@@ -209,12 +253,12 @@ export function SwapPanel({
         if (cancelled) return;
         setQuoted({ key: quoteKey, quote: q });
         setError(null);
-        setStatus("idle");
+        setStatus((s) => (s === "quoting" ? "idle" : s));
       } catch (err) {
         if (cancelled || (err as Error).name === "AbortError") return;
         setQuoted(null);
-        setError((err as Error).message);
-        setStatus("idle");
+        setError(humanizeSwapError(err)); // never surface a raw quote/RPC error
+        setStatus((s) => (s === "quoting" ? "idle" : s));
       }
     };
 
@@ -242,6 +286,16 @@ export function SwapPanel({
     [quote],
   );
 
+  // High price impact — gate the swap behind an explicit acknowledgement.
+  const highImpact = priceImpact != null && priceImpact > IMPACT_WARN_PCT;
+  // A change to the priced inputs starts fresh: drop a stale acknowledgement AND clear a
+  // finished/pending swap result so the panel returns to quoting (the 20s poll, which does
+  // not change quoteKey, never triggers this — it leaves a result on screen).
+  useEffect(() => {
+    setImpactAck(false);
+    setStatus((s) => (s === "success" || s === "error" || s === "submitted" ? "idle" : s));
+  }, [quoteKey]);
+
   const busy = status === "signing" || status === "confirming";
   // Compare with a one-base-unit tolerance: the balance and the typed amount
   // are both floats, and an exact "spend everything" must not fail on the last
@@ -251,22 +305,51 @@ export function SwapPanel({
 
   const swap = useCallback(async () => {
     if (!publicKey || !quote) return;
+    if (highImpact && !impactAck) return; // gated behind the high-impact acknowledgement
     setError(null);
     setSig(null);
     setStatus("signing");
+    // Captured the instant the wallet broadcasts, BEFORE we confirm — so a confirm
+    // timeout can still show the user exactly what to check.
+    let signature: string | undefined;
     try {
       const tx = await buildSwapTransaction({ quote, userPublicKey: publicKey.toBase58() });
-      const signature = await sendTransaction(tx, connection);
+      signature = await sendTransaction(tx, connection); // wallet signs + sends
+      setSig(signature);
       setStatus("confirming");
       await confirmSignature(connection, signature);
-      setSig(signature);
       setStatus("success");
       void refreshBalances();
     } catch (err) {
-      setError((err as Error).message);
-      setStatus("error");
+      // Uncertain-outcome discipline (same as the bot): a confirm timeout AFTER a send
+      // is NOT a failure — the swap may still land. Show the signature; NEVER auto-retry
+      // (a blind retry on a swap the user may have signed is a double-buy).
+      if (signature && isConfirmTimeout(err)) {
+        setStatus("submitted");
+        void refreshBalances();
+      } else {
+        setError(humanizeSwapError(err));
+        setStatus("error");
+      }
     }
-  }, [publicKey, quote, sendTransaction, refreshBalances]);
+  }, [publicKey, quote, highImpact, impactAck, sendTransaction, refreshBalances]);
+
+  /** Re-poll confirmation for the SAME signature — never re-signs or re-sends. */
+  const recheck = useCallback(async () => {
+    if (!sig) return;
+    setStatus("confirming");
+    try {
+      await confirmSignature(connection, sig);
+      setStatus("success");
+      void refreshBalances();
+    } catch (err) {
+      if (isConfirmTimeout(err)) setStatus("submitted");
+      else {
+        setError(humanizeSwapError(err));
+        setStatus("error");
+      }
+    }
+  }, [sig, refreshBalances]);
 
   const riceIcon = <TokenMark src={logoSrc} alt={`${ticker} logo`} />;
   const solIcon = <SolMark />;
@@ -397,7 +480,7 @@ export function SwapPanel({
           <Row
             label="price impact"
             value={priceImpact == null ? "—" : `${priceImpact.toFixed(2)}%`}
-            danger={priceImpact != null && priceImpact > 5}
+            danger={highImpact}
           />
           {route && <Row label="route" value={route} />}
         </dl>
@@ -466,21 +549,49 @@ export function SwapPanel({
         )}
       </div>
 
+      {/* High price-impact warning + acknowledgement — the swap can't be signed
+          until this is checked. Slippage tolerance does NOT cover this. */}
+      {highImpact && priceImpact != null && (
+        <div className="border-2 border-tuna bg-tuna/10 px-3 py-3">
+          <p className="font-mono text-sm font-bold text-tuna">
+            ⚠ High price impact — {priceImpact.toFixed(2)}%
+          </p>
+          <p className="mt-1 font-mono text-xs leading-relaxed text-nori/80">
+            This order alone moves the price about {priceImpact.toFixed(1)}% against you — separate
+            from slippage. $RICE is a thin market; a smaller amount usually gets a better rate. To
+            swap anyway, acknowledge below.
+          </p>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 font-mono text-sm font-bold text-nori">
+            <input
+              type="checkbox"
+              checked={impactAck}
+              onChange={(e) => setImpactAck(e.target.checked)}
+              className="size-4 accent-tuna"
+            />
+            I understand the {priceImpact.toFixed(2)}% price impact
+          </label>
+        </div>
+      )}
+
       {/* Action */}
       {connected ? (
         <button
           type="button"
           onClick={swap}
-          disabled={busy || !quote || insufficient}
+          disabled={busy || !quote || insufficient || status === "submitted" || (highImpact && !impactAck)}
           className="inline-flex min-h-13 items-center justify-center bg-olive px-6 font-mono text-base font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep disabled:cursor-not-allowed disabled:bg-nori/30"
         >
           {insufficient
             ? `INSUFFICIENT ${inSymbol.replace("$", "")}`
-            : status === "signing"
-              ? "APPROVE IN WALLET…"
-              : status === "confirming"
-                ? "CONFIRMING…"
-                : `SWAP ${inSymbol.replace("$", "")} → ${outSymbol.replace("$", "")}`}
+            : status === "submitted"
+              ? "AWAITING CONFIRMATION…"
+              : highImpact && !impactAck
+                ? "ACKNOWLEDGE IMPACT TO SWAP"
+                : status === "signing"
+                  ? "APPROVE IN WALLET…"
+                  : status === "confirming"
+                    ? "CONFIRMING…"
+                    : `SWAP ${inSymbol.replace("$", "")} → ${outSymbol.replace("$", "")}`}
         </button>
       ) : (
         <button
@@ -506,6 +617,34 @@ export function SwapPanel({
         </p>
       )}
 
+      {/* Submitted but not yet confirmed — an uncertain outcome, NOT a failure.
+          Show the signature, don't re-swap (that could buy twice), let them check. */}
+      {status === "submitted" && sig && (
+        <div className="border-2 border-nori/40 bg-steamed px-3 py-2.5">
+          <p className="font-mono text-sm font-bold text-nori">
+            ⏳ Sent — awaiting confirmation. It may still land; this isn&apos;t a failure.
+          </p>
+          <p className="mt-1 font-mono text-xs leading-relaxed text-nori/70">
+            Don&apos;t swap again — that could buy twice. Check it:{" "}
+            <a
+              href={solscanTx(sig)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              view on Solscan →
+            </a>
+          </p>
+          <button
+            type="button"
+            onClick={recheck}
+            className="mt-2 min-h-9 border-2 border-nori px-3 font-mono text-xs font-bold tracking-widest text-nori transition-colors hover:bg-nori hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
+          >
+            RE-CHECK STATUS
+          </button>
+        </div>
+      )}
+
       {rpcDown && (
         <p className="font-mono text-sm font-bold text-tuna">
           Couldn&apos;t read your balances — the Solana RPC is unreachable or rate-limited. Swaps
@@ -513,7 +652,7 @@ export function SwapPanel({
         </p>
       )}
 
-      {error && status !== "success" && (
+      {error && status !== "success" && status !== "submitted" && (
         <p className="font-mono text-sm font-bold break-words text-tuna">{error}</p>
       )}
 
