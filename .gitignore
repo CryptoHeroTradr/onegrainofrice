@@ -19,6 +19,10 @@
 # next.js
 /.next/
 /out/
+# build/deploy separation: per-commit build outputs (deploy/build.sh). Never
+# committed — they are build artifacts, like .next. The live ./.next is a symlink
+# into one of these after the first promote (deploy/promote.sh).
+/builds/
 
 # production
 /build

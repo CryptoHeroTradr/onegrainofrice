@@ -22,7 +22,54 @@ pm2 save
 
 Useful ops: `pm2 restart onegrainofrice` · `pm2 logs onegrainofrice` · `pm2 stop onegrainofrice`.
 
-After pulling new code: `pnpm install && pnpm build && pm2 restart onegrainofrice`.
+## Deploying new code — build and deploy are SEPARATE
+
+> The old `pnpm build && pm2 restart` built **in place**: `next build` overwrote
+> the same `./.next` the live process was serving, so for a few minutes the
+> running site referenced chunks that no longer existed on disk (stale-chunk
+> 404s). Building was, in effect, deploying. **That flow is retired.** Use the
+> two scripts below.
+
+**1. Build (safe — never touches the live site):**
+
+```bash
+deploy/build.sh
+```
+
+Writes a complete, self-consistent build to `builds/<git-short-sha>/` via
+`NEXT_DIST_DIR` (see `next.config.ts`). It never writes `./.next`, never restarts
+pm2, and never touches `oneg-grains-ws` (:3007). Run it as often as you like,
+including while the site is live. It verifies the build (`BUILD_ID`, manifests,
+static chunks) and prints the promote command.
+
+**2. Promote (a separate, deliberate act — you run it, watching):**
+
+```bash
+deploy/promote.sh <sha>     # the sha build.sh just printed
+```
+
+Repoints `./.next -> builds/<sha>` and `pm2 restart onegrainofrice`. Because each
+build is internally consistent there is **no stale-chunk 404 window** — the only
+gap is the ~1s restart 502. It stamps a `DEPLOYED` marker (deployed id, repo HEAD,
+dirty-file count, timestamp) and prints it, so a deploy can always say what it
+shipped. The **first** promote migrates `./.next` from a real directory to a
+symlink, preserving the current live build as `builds/premigrate-<old-build-id>`
+so there is a rollback floor.
+
+**Rollback (one command — the previous build is kept, never deleted):**
+
+```bash
+deploy/promote.sh <previous-sha>
+```
+
+`builds/` is git-ignored (build artifacts, like `.next`). Prune old builds
+manually when disk warrants; never delete the build `./.next` currently points at
+or its immediate predecessor.
+
+> Note: nginx fronts the live site at **1grainofrice.com** (`location / ->
+> 127.0.0.1:3006`, `NEXT_PUBLIC_BASE_PATH=""`, app served at root). The
+> `/onegrainofrice`-prefix section below is the older shared-IP gateway and is
+> not the live path.
 
 ## nginx route — needs root (run these once)
 

@@ -55,6 +55,12 @@ const BUILD_ID = resolveBuildId();
 
 const nextConfig: NextConfig = {
   basePath: basePath || undefined,
+  // Build/deploy separation (see deploy/build.sh): when NEXT_DIST_DIR is set, the
+  // build is written there (builds/<sha>) instead of ./.next, so a build never
+  // touches what the live `next start` process serves. Unset — i.e. every normal
+  // or live invocation — leaves Next's default ".next" untouched (the key is not
+  // even present), so live behaviour is byte-identical.
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   generateBuildId: () => BUILD_ID,
   // Expose the resolved basePath + build stamp to components so asset()
   // (src/lib/asset.ts) can prefix image sources and version them. next/image
