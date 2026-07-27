@@ -3,9 +3,7 @@
 import { useState } from "react";
 import { site } from "@/config/site";
 import { CharityWalletProvider } from "@/components/charity/CharityWalletProvider";
-import { SwapPanel } from "@/components/token/SwapPanel";
-import { RecurringPanel } from "@/components/token/RecurringPanel";
-import { TradeErrorBoundary } from "@/components/trade/TradeErrorBoundary";
+import { SwapPanel, RecurringPanel, TradeErrorBoundary } from "@/components/dca";
 import { useRecentTrades, useRiceMarket, type Trade } from "@/hooks/useRiceMarket";
 import { asset } from "@/lib/asset";
 

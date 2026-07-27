@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { LAMPORTS_PER_SOL, type PublicKey } from "@solana/web3.js";
 import { useCharityWalletConnection } from "@/components/charity/CharityWalletProvider";
+import { useDcaFrame } from "@/components/dca/frame";
 import { confirmSignature, connection } from "@/lib/solana";
 import { solscanTx } from "@/lib/payments";
 import { humanizeTradeError, isConfirmTimeout } from "@/lib/tradeErrors";
@@ -16,7 +17,7 @@ import {
   getQuote,
   getTokenBalance,
   toBaseUnits,
-  type QuoteResponse,
+  type Quote,
 } from "@/lib/jupiter";
 
 /**
@@ -109,6 +110,7 @@ export function SwapPanel({
   const { publicKey, sendTransaction } = useWallet();
   const { connected, connecting, connect, disconnect, shortAddress } =
     useCharityWalletConnection();
+  const frame = useDcaFrame();
 
   const [payRice, setPayRice] = useState(false); // false = SOL→RICE (buy)
   const [amount, setAmount] = useState("0.1");
@@ -126,7 +128,7 @@ export function SwapPanel({
   // Quotes are stored WITH the input key they priced, so a quote is never shown
   // for an amount/direction/slippage the user has since changed (no effect has
   // to null it out on every keystroke — the key simply stops matching).
-  const [quoted, setQuoted] = useState<{ key: string; quote: QuoteResponse } | null>(null);
+  const [quoted, setQuoted] = useState<{ key: string; quote: Quote } | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [sig, setSig] = useState<string | null>(null);
@@ -245,17 +247,14 @@ export function SwapPanel({
   /** Only ever the quote for the CURRENT inputs. */
   const quote = quoted?.key === quoteKey ? quoted.quote : null;
 
-  const outAmount = quote ? fromBaseUnits(quote.outAmount, outDecimals) : null;
-  const minReceived = quote ? fromBaseUnits(quote.otherAmountThreshold, outDecimals) : null;
+  // The shared package normalises Jupiter's payload, so these read as what they mean rather than
+  // as Jupiter's field names: `expectedOut`/`minReceived` instead of outAmount/otherAmountThreshold,
+  // and `route` already extracted to AMM labels. The untouched Jupiter response rides along on
+  // `.raw` for buildSwap, which is the only thing that needs it.
+  const outAmount = quote ? fromBaseUnits(quote.expectedOut, outDecimals) : null;
+  const minReceived = quote ? fromBaseUnits(quote.minReceived, outDecimals) : null;
   const priceImpact = quote ? Number(quote.priceImpactPct) * 100 : null;
-  const route = useMemo(
-    () =>
-      quote?.routePlan
-        ?.map((r) => r.swapInfo?.label)
-        .filter(Boolean)
-        .join(" → ") || null,
-    [quote],
-  );
+  const route = useMemo(() => quote?.route.join(" → ") || null, [quote]);
 
   // High price impact — gate the swap behind an explicit acknowledgement.
   const highImpact = priceImpact != null && priceImpact > IMPACT_WARN_PCT;
@@ -334,27 +333,41 @@ export function SwapPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Wallet row */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-2 border-nori/30 bg-bone px-3 py-2.5">
-        <span className="font-mono text-sm font-bold tracking-wide text-nori/70 uppercase">
-          wallet:{" "}
-          <strong className={connected ? "text-nori" : "text-nori/70"}>
-            {connected ? shortAddress : "disconnected"}
-          </strong>
-        </span>
-        <button
-          type="button"
-          onClick={connected ? disconnect : connect}
-          disabled={connecting}
-          className={
-            connected
-              ? "min-h-10 border-2 border-nori px-4 font-mono text-sm font-bold tracking-widest text-nori transition-colors hover:bg-nori hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
-              : "min-h-10 bg-olive px-4 font-mono text-sm font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
-          }
-        >
-          {connecting ? "CONNECTING…" : connected ? "DISCONNECT" : "CONNECT"}
-        </button>
-      </div>
+      {/* Wallet row. See RecurringPanel: a frame that can't sign has nothing to connect to, so it
+          states the linked wallet rather than opening an empty wallet picker. */}
+      {frame.canSign ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-2 border-nori/30 bg-bone px-3 py-2.5">
+          <span className="font-mono text-sm font-bold tracking-wide text-nori/70 uppercase">
+            wallet:{" "}
+            <strong className={connected ? "text-nori" : "text-nori/70"}>
+              {connected ? shortAddress : "disconnected"}
+            </strong>
+          </span>
+          <button
+            type="button"
+            onClick={connected ? disconnect : connect}
+            disabled={connecting}
+            className={
+              connected
+                ? "min-h-10 border-2 border-nori px-4 font-mono text-sm font-bold tracking-widest text-nori transition-colors hover:bg-nori hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
+                : "min-h-10 bg-olive px-4 font-mono text-sm font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
+            }
+          >
+            {connecting ? "CONNECTING…" : connected ? "DISCONNECT" : "CONNECT"}
+          </button>
+        </div>
+      ) : (
+        <div className="border-2 border-nori/30 bg-bone px-3 py-2.5">
+          <span className="font-mono text-sm font-bold tracking-wide text-nori/70 uppercase">
+            wallet:{" "}
+            <strong className="text-nori">
+              {frame.readOnlyOwner
+                ? `${frame.readOnlyOwner.slice(0, 4)}…${frame.readOnlyOwner.slice(-4)}`
+                : "not linked"}
+            </strong>
+          </span>
+        </div>
+      )}
 
       {/* You pay */}
       <TokenField
@@ -544,8 +557,18 @@ export function SwapPanel({
         </div>
       )}
 
-      {/* Action */}
-      {connected ? (
+      {/* Action. A swap is a signature; this frame either has one available or hands over to a
+          frame that does. The quote stays live either way, so what the user is looking at when
+          they tap is the same route they will be offered on arrival. */}
+      {!frame.canSign ? (
+        <button
+          type="button"
+          onClick={() => frame.handOff({ kind: "swap" })}
+          className="inline-flex min-h-13 items-center justify-center bg-olive px-6 font-mono text-base font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
+        >
+          {frame.handOffLabel}
+        </button>
+      ) : connected ? (
         <button
           type="button"
           onClick={swap}

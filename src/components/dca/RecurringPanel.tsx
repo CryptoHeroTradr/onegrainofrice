@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { useCharityWalletConnection } from "@/components/charity/CharityWalletProvider";
-import { ActiveDcaOrders } from "@/components/token/ActiveDcaOrders";
+import { ActiveDcaOrders } from "@/components/dca/ActiveDcaOrders";
+import { useDcaFrame } from "@/components/dca/frame";
 import { confirmSignature, connection } from "@/lib/solana";
 import { solscanTx } from "@/lib/payments";
 import { humanizeTradeError, isConfirmTimeout } from "@/lib/tradeErrors";
@@ -30,6 +31,12 @@ import {
  * Rails mirror the bot's spirit (Phase 16c), enforced BEFORE building the tx:
  * interval ≥ 1 min; per-cycle ≥ Jupiter's ~$50 minimum; per-cycle + total capped so
  * a fat-finger can't schedule the whole wallet. Jupiter's 0.1% fee is stated plainly.
+ *
+ * FRAMES: identical component on the website and in the Telegram Mini App. Where the frame cannot
+ * sign (Telegram's webview has no wallet — see components/dca/frame.tsx), every input still works
+ * and every rail is still enforced; only the final button changes, from "start" to a hand-off that
+ * carries the composed schedule to the browser. The validation a user sees is therefore the same
+ * validation in both places, because it is the same code — not a Telegram-shaped copy of it.
  */
 
 const MIN_INTERVAL_MINUTES = 1; // Jupiter accepts lower, but a sub-minute DCA is nonsensical (bot's rail).
@@ -61,14 +68,40 @@ function humanDuration(seconds: number): string {
   return `~${fmt(seconds / 86_400, 1)} days`;
 }
 
-export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker: string }) {
+/** A schedule handed over from another frame, already in human units. */
+export interface RecurringPrefill {
+  readonly total: number;
+  readonly perCycle: number;
+  readonly intervalSeconds: number;
+}
+
+/** Seconds → the largest whole unit that divides them, so "86400" arrives as "1 day", not "1440 min". */
+function splitInterval(seconds: number): { value: string; unit: IntervalUnit } {
+  for (const u of [...INTERVAL_UNITS].reverse()) {
+    if (seconds % u.secs === 0 && seconds >= u.secs) return { value: String(seconds / u.secs), unit: u.key };
+  }
+  return { value: String(Math.max(1, Math.round(seconds / 60))), unit: "min" };
+}
+
+export function RecurringPanel({
+  riceMint,
+  ticker,
+  prefill,
+}: {
+  riceMint: string;
+  ticker: string;
+  /** A schedule composed in another frame (the Mini App) and handed here to be signed. */
+  prefill?: RecurringPrefill | undefined;
+}) {
   const { publicKey, sendTransaction } = useWallet();
   const { connected, connecting, connect, disconnect, shortAddress } = useCharityWalletConnection();
+  const frame = useDcaFrame();
 
-  const [totalStr, setTotalStr] = useState("5");
-  const [perCycleStr, setPerCycleStr] = useState("1");
-  const [intervalStr, setIntervalStr] = useState("1");
-  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>("day");
+  const prefilledInterval = prefill ? splitInterval(prefill.intervalSeconds) : null;
+  const [totalStr, setTotalStr] = useState(prefill ? String(prefill.total) : "5");
+  const [perCycleStr, setPerCycleStr] = useState(prefill ? String(prefill.perCycle) : "1");
+  const [intervalStr, setIntervalStr] = useState(prefilledInterval?.value ?? "1");
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(prefilledInterval?.unit ?? "day");
 
   const [solUsd, setSolUsd] = useState<number | null>(null);
   const [solBalance, setSolBalance] = useState<number | null>(null);
@@ -93,24 +126,34 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
     };
   }, []);
 
-  // SOL balance on connect (so the total can be checked against it).
+  /**
+   * Whose SOL we are spending.
+   *
+   * The connected wallet where there is one; otherwise the frame's proven read-only address. A
+   * balance is public information, so reading it needs no connection and no permission — and it is
+   * what lets the Mini App enforce "not enough SOL" while composing, instead of the user finding
+   * out only after they have switched apps to sign.
+   */
+  const ownerAddress = publicKey ? publicKey.toBase58() : frame.readOnlyOwner;
+
+  // SOL balance (so the total can be checked against it).
   const loadBalance = useCallback(async () => {
-    if (!publicKey) return;
+    if (!ownerAddress) return;
     try {
-      const lamports = await connection.getBalance(publicKey);
+      const lamports = await connection.getBalance(new PublicKey(ownerAddress));
       setSolBalance(lamports / LAMPORTS_PER_SOL);
       setRpcDown(false);
     } catch {
       setRpcDown(true);
     }
-  }, [publicKey]);
+  }, [ownerAddress]);
   useEffect(() => {
-    if (!publicKey) {
+    if (!ownerAddress) {
       setSolBalance(null);
       return;
     }
     void loadBalance();
-  }, [publicKey, loadBalance]);
+  }, [ownerAddress, loadBalance]);
 
   // ── Derived schedule ───────────────────────────────────────────────────────
   const total = num(totalStr);
@@ -204,27 +247,42 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Wallet row */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-2 border-nori/30 bg-bone px-3 py-2.5">
-        <span className="font-mono text-sm font-bold tracking-wide text-nori/70 uppercase">
-          wallet:{" "}
-          <strong className={connected ? "text-nori" : "text-nori/70"}>
-            {connected ? shortAddress : "disconnected"}
-          </strong>
-        </span>
-        <button
-          type="button"
-          onClick={connected ? disconnect : connect}
-          disabled={connecting}
-          className={
-            connected
-              ? "min-h-10 border-2 border-nori px-4 font-mono text-sm font-bold tracking-widest text-nori transition-colors hover:bg-nori hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
-              : "min-h-10 bg-olive px-4 font-mono text-sm font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
-          }
-        >
-          {connecting ? "CONNECTING…" : connected ? "DISCONNECT" : "CONNECT WALLET"}
-        </button>
-      </div>
+      {/* Wallet row. Where the frame can't sign there is nothing to connect TO, so it states the
+          linked wallet instead of offering a button that would open a wallet picker with no
+          wallets in it. */}
+      {frame.canSign ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-2 border-nori/30 bg-bone px-3 py-2.5">
+          <span className="font-mono text-sm font-bold tracking-wide text-nori/70 uppercase">
+            wallet:{" "}
+            <strong className={connected ? "text-nori" : "text-nori/70"}>
+              {connected ? shortAddress : "disconnected"}
+            </strong>
+          </span>
+          <button
+            type="button"
+            onClick={connected ? disconnect : connect}
+            disabled={connecting}
+            className={
+              connected
+                ? "min-h-10 border-2 border-nori px-4 font-mono text-sm font-bold tracking-widest text-nori transition-colors hover:bg-nori hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
+                : "min-h-10 bg-olive px-4 font-mono text-sm font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep"
+            }
+          >
+            {connecting ? "CONNECTING…" : connected ? "DISCONNECT" : "CONNECT WALLET"}
+          </button>
+        </div>
+      ) : (
+        <div className="border-2 border-nori/30 bg-bone px-3 py-2.5">
+          <span className="font-mono text-sm font-bold tracking-wide text-nori/70 uppercase">
+            wallet:{" "}
+            <strong className="text-nori">
+              {frame.readOnlyOwner
+                ? `${frame.readOnlyOwner.slice(0, 4)}…${frame.readOnlyOwner.slice(-4)}`
+                : "not linked"}
+            </strong>
+          </span>
+        </div>
+      )}
 
       {/* Total deposit */}
       <Field
@@ -326,7 +384,22 @@ export function RecurringPanel({ riceMint, ticker }: { riceMint: string; ticker:
         <p className="font-mono text-sm font-bold break-words text-tuna">{validationError}</p>
       )}
 
-      {connected ? (
+      {/* THE HAND-OFF. This frame cannot sign, so the composed schedule travels to one that can,
+          rather than the button lying about what it will do. Enabled on the same `canCreate` as
+          the real thing: a schedule that would be refused here would be refused there too, and
+          learning that after switching apps is a worse place to learn it. */}
+      {!frame.canSign ? (
+        <button
+          type="button"
+          onClick={() =>
+            frame.handOff({ kind: "dca-create", perCycle, total: depositSol, intervalSeconds })
+          }
+          disabled={!complete || validationError != null}
+          className="inline-flex min-h-13 items-center justify-center bg-olive px-6 font-mono text-base font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep disabled:cursor-not-allowed disabled:bg-nori/30"
+        >
+          {frame.handOffLabel}
+        </button>
+      ) : connected ? (
         <button
           type="button"
           onClick={create}

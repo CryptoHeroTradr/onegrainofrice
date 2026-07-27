@@ -15,9 +15,12 @@
     "gen:memes": "node scripts/gen-placeholders.mjs",
     "gen:pfp": "node scripts/gen-pfp.mjs",
     "gen:brand": "node scripts/gen-brand.mjs",
-    "gen:sfx": "node scripts/gen-sfx.mjs"
+    "gen:sfx": "node scripts/gen-sfx.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@rice/jupiter-dca": "github:CryptoHeroTradr/jupiter-dca#v0.1.2",
     "@solana/spl-token": "^0.4.15",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",
@@ -49,6 +52,7 @@
     "eslint-config-next": "16.2.10",
     "sharp": "^0.35.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

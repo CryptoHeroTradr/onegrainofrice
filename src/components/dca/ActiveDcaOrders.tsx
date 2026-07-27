@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { useDcaFrame } from "@/components/dca/frame";
 import { confirmSignature, connection } from "@/lib/solana";
 import { humanizeTradeError, isConfirmTimeout } from "@/lib/tradeErrors";
 import {
@@ -24,6 +25,13 @@ import {
  * Cancel takes no confirmation dialog: the wallet's own approval IS the
  * confirmation. Because the close is on-chain and user-signed, it works even if
  * this site — or the bot — is entirely down.
+ *
+ * FRAMES: this list is READ-ONLY by nature, so it renders identically on the website and in the
+ * Telegram Mini App — and it is fetched the same way in both, straight from Jupiter, keyed by the
+ * wallet address. That is precisely why an order created in one frame shows up in the other, and
+ * why closing it in one makes it vanish from the other: there is no database of orders anywhere in
+ * this system to disagree with the chain. Only the CANCEL button differs — where the frame cannot
+ * sign, it hands the order off to a frame that can.
  */
 
 const REFRESH_MS = 30_000;
@@ -125,13 +133,17 @@ export function ActiveDcaOrders({
   refreshSignal: number;
 }) {
   const { publicKey, sendTransaction } = useWallet();
+  const frame = useDcaFrame();
   const [orders, setOrders] = useState<RecurringOrder[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ key: string; msg: string } | null>(null);
   const [rowSubmitted, setRowSubmitted] = useState<{ key: string; sig: string } | null>(null);
 
-  const owner = publicKey ? publicKey.toBase58() : null;
+  // The connected wallet, or — in a frame that cannot connect one — the address the user proved
+  // they own. Reading someone's open orders needs neither a connection nor a permission: they are
+  // public on-chain accounts, and this is the same public read the website performs.
+  const owner = publicKey ? publicKey.toBase58() : frame.readOnlyOwner;
 
   const load = useCallback(async () => {
     if (!owner) return;
@@ -236,14 +248,26 @@ export function ActiveDcaOrders({
                   <Row label="next cycle" value={humanNextCycle(d.nextMs)} />
                 </dl>
 
-                <button
-                  type="button"
-                  onClick={() => void cancel(o.orderKey)}
-                  disabled={busy}
-                  className="mt-3 min-h-10 border-2 border-tuna px-4 font-mono text-sm font-bold tracking-widest text-tuna transition-colors hover:bg-tuna hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tuna disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {busy ? "APPROVE IN WALLET…" : "CANCEL / TURN OFF"}
-                </button>
+                {frame.canSign ? (
+                  <button
+                    type="button"
+                    onClick={() => void cancel(o.orderKey)}
+                    disabled={busy}
+                    className="mt-3 min-h-10 border-2 border-tuna px-4 font-mono text-sm font-bold tracking-widest text-tuna transition-colors hover:bg-tuna hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tuna disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy ? "APPROVE IN WALLET…" : "CANCEL / TURN OFF"}
+                  </button>
+                ) : (
+                  // Closing returns real funds and needs a real signature. This frame has no
+                  // wallet, so it hands the specific order over rather than showing a dead button.
+                  <button
+                    type="button"
+                    onClick={() => frame.handOff({ kind: "dca-cancel", orderKey: o.orderKey })}
+                    className="mt-3 min-h-10 border-2 border-tuna px-4 font-mono text-sm font-bold tracking-widest text-tuna transition-colors hover:bg-tuna hover:text-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-tuna"
+                  >
+                    CANCEL IN BROWSER ↗
+                  </button>
+                )}
 
                 {rowSubmitted?.key === o.orderKey && (
                   <p className="mt-2 font-mono text-xs font-bold text-nori/70">

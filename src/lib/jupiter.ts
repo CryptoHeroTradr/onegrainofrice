@@ -1,35 +1,59 @@
 import { Connection, PublicKey, VersionedTransaction } from "@solana/web3.js";
+import {
+  quote as jupQuote,
+  buildSwap as jupBuildSwap,
+  buildOpenRecurring as jupBuildOpenRecurring,
+  fetchOrders as jupFetchOrders,
+  buildCloseRecurring as jupBuildCloseRecurring,
+  WSOL_MINT,
+  RECURRING_FEE_BPS,
+  RECURRING_MIN_USD_PER_ORDER,
+  type Quote,
+  type JupiterQuoteResponse,
+  type RecurringOrder,
+  type BuiltTransaction,
+} from "@rice/jupiter-dca";
 
 /**
- * Jupiter aggregator client for the /home trading portal (SOL ⇄ $RICE).
+ * THE SITE'S ADAPTER OVER `@rice/jupiter-dca` — not a second Jupiter client.
  *
- * Uses Jupiter's keyless "lite" tier, which is CORS-open and needs no API key —
- * the browser talks to Jupiter directly, exactly like jup.ag does. Set
- * NEXT_PUBLIC_JUPITER_API to a Pro endpoint (https://api.jup.ag) if a key-based
- * plan is added later; the paths are identical.
+ * Every call to Jupiter, from every frame (the /home portal, the standalone /dca page, and the
+ * Telegram Mini App at /tma), goes through the shared package. This file exists only to hold the
+ * things that are deliberately NOT the package's job:
  *
- * Flow: quote() prices the route → buildSwapTransaction() asks Jupiter to
- * assemble a ready-to-sign VersionedTransaction for the connected wallet → the
- * wallet signs and submits it. No server of ours is in the loop and no custody
- * ever leaves the user's wallet.
+ *   * decimals ⇄ human units — the package takes and returns base units on purpose, because a
+ *     decimals convention is a UI decision and putting one in a shared client is how two consumers
+ *     end up rounding differently;
+ *   * RPC reads (balances, mint decimals) — the package makes no RPC calls at all;
+ *   * a SOL/USD price, which we derive from a Jupiter quote rather than adding a price feed.
+ *
+ * It re-exports the package's constants rather than restating them, so there is exactly one
+ * definition of the recurring fee and the per-order minimum in this codebase.
+ *
+ * WHAT USED TO BE HERE: a parallel implementation of quote/swap/recurring, carrying the comment
+ * "mirrors the shared @rice/jupiter-dca contract (to be adopted once that package is
+ * git-installable)". It is installable now, and a mirror is a fork that has not diverged YET —
+ * so it is gone rather than kept in sync by hand.
+ *
+ * The invariant travels with the package: every builder returns an UNSIGNED transaction. Nothing
+ * in this file signs, and no server of ours is ever in the signing path.
  */
 
-const JUP_API = process.env.NEXT_PUBLIC_JUPITER_API ?? "https://lite-api.jup.ag";
-
 /** Wrapped SOL — Jupiter's stand-in for native SOL on both sides of a route. */
-export const SOL_MINT = "So11111111111111111111111111111111111111112";
+export const SOL_MINT = WSOL_MINT;
 export const SOL_DECIMALS = 9;
 
-export interface QuoteResponse {
-  inputMint: string;
-  inAmount: string;
-  outputMint: string;
-  outAmount: string;
-  otherAmountThreshold: string;
-  priceImpactPct: string;
-  routePlan: Array<{ swapInfo?: { label?: string } }>;
-  [k: string]: unknown;
-}
+/** USDC, used only to price SOL for the per-cycle minimum check. */
+export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const USDC_DECIMALS = 6;
+
+/** Jupiter's cut on recurring orders, and its live per-order minimum. Both from the package. */
+export { RECURRING_FEE_BPS };
+export const RECURRING_MIN_USD_PER_CYCLE = RECURRING_MIN_USD_PER_ORDER;
+
+export type { Quote, RecurringOrder };
+/** Kept as an alias so existing call sites reading `quote.raw` stay honest about the shape. */
+export type QuoteResponse = JupiterQuoteResponse;
 
 /** Human units → base units (integer string) for the given decimals. */
 export function toBaseUnits(uiAmount: number, decimals: number): string {
@@ -43,8 +67,9 @@ export function fromBaseUnits(raw: string, decimals: number): number {
 
 /**
  * Price a swap. `amount` is in the INPUT mint's base units.
- * Throws with Jupiter's own message when no route exists (illiquid pair, dust
- * amount, etc.) so the UI can surface something actionable.
+ *
+ * Returns the package's richer {@link Quote} (route labels, minReceived, the untouched Jupiter
+ * payload under `.raw`) rather than the bare Jupiter response the old local client returned.
  */
 export async function getQuote({
   inputMint,
@@ -58,55 +83,104 @@ export async function getQuote({
   amount: string;
   slippageBps: number;
   signal?: AbortSignal;
-}): Promise<QuoteResponse> {
-  const url =
-    `${JUP_API}/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}` +
-    `&amount=${amount}&slippageBps=${slippageBps}&restrictIntermediateTokens=true`;
-  const res = await fetch(url, { signal });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data || data.error) {
-    throw new Error(data?.error ?? `Quote failed (${res.status})`);
-  }
-  return data as QuoteResponse;
+}): Promise<Quote> {
+  return jupQuote(inputMint, outputMint, amount, slippageBps, signal ? { signal } : {});
 }
 
 /**
- * Ask Jupiter to build the swap transaction for `userPublicKey`, returned
- * deserialized and ready for `sendTransaction`. Jupiter handles the wSOL
- * wrap/unwrap and creates the destination token account when missing.
+ * Ask Jupiter to build the swap transaction for `userPublicKey`, deserialized and ready for
+ * `sendTransaction`. Jupiter handles the wSOL wrap/unwrap and creates the destination token
+ * account when missing. UNSIGNED — the wallet signs.
  */
 export async function buildSwapTransaction({
   quote,
   userPublicKey,
 }: {
-  quote: QuoteResponse;
+  quote: Quote;
   userPublicKey: string;
 }): Promise<VersionedTransaction> {
-  const res = await fetch(`${JUP_API}/swap/v1/swap`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      quoteResponse: quote,
-      userPublicKey,
-      wrapAndUnwrapSol: true,
-      dynamicComputeUnitLimit: true,
-      // Let Jupiter size the priority fee, capped so a congested block can't
-      // quietly eat a large chunk of a small swap.
-      prioritizationFeeLamports: {
-        priorityLevelWithMaxLamports: {
-          maxLamports: 1_000_000,
-          priorityLevel: "high",
-        },
-      },
-    }),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data?.swapTransaction) {
-    throw new Error(data?.error ?? `Swap build failed (${res.status})`);
+  const { transaction } = await jupBuildSwap(quote, userPublicKey);
+  return transaction;
+}
+
+/** Live SOL price in USD via a Jupiter quote (1 SOL → USDC). Null on failure. */
+export async function getSolUsd(signal?: AbortSignal): Promise<number | null> {
+  try {
+    const q = await getQuote({
+      inputMint: SOL_MINT,
+      outputMint: USDC_MINT,
+      amount: toBaseUnits(1, SOL_DECIMALS),
+      slippageBps: 50,
+      signal,
+    });
+    return fromBaseUnits(q.expectedOut, USDC_DECIMALS);
+  } catch {
+    return null;
   }
-  return VersionedTransaction.deserialize(
-    Uint8Array.from(atob(data.swapTransaction as string), (c) => c.charCodeAt(0)),
+}
+
+export interface OpenRecurringParams {
+  inputMint: string;
+  outputMint: string;
+  /** TOTAL to deposit, in input-mint base units (integer string). */
+  inAmount: string;
+  /** How many cycles the deposit is split across (≥ 2). */
+  numberOfOrders: number;
+  /** Seconds between cycles. */
+  interval: number;
+}
+
+/**
+ * Build the UNSIGNED deposit-and-schedule transaction for a time-based recurring (DCA) order.
+ * Throws with Jupiter's own message (e.g. the ~$50/cycle minimum) on rejection, which
+ * `humanizeTradeError` passes through verbatim because it is already user-ready.
+ */
+export async function buildRecurringOrder(
+  params: OpenRecurringParams,
+  userPublicKey: string,
+): Promise<BuiltTransaction> {
+  const inAmount = Number(params.inAmount);
+  if (!Number.isSafeInteger(inAmount)) {
+    throw new Error("Deposit amount is too large to schedule safely.");
+  }
+  return jupBuildOpenRecurring(
+    {
+      inputMint: params.inputMint,
+      outputMint: params.outputMint,
+      inAmount: params.inAmount,
+      numberOfOrders: params.numberOfOrders,
+      interval: params.interval,
+    },
+    userPublicKey,
   );
+}
+
+/**
+ * A wallet's ACTIVE time-based recurring orders (read-only).
+ *
+ * THE SAME CALL THE MINI APP MAKES, against the same on-chain orders. This is why an order
+ * created in one frame appears in the other: neither frame has a database of orders, they both
+ * ask Jupiter about the same wallet.
+ */
+export async function fetchRecurringOrders(
+  owner: string,
+  signal?: AbortSignal,
+): Promise<RecurringOrder[]> {
+  return jupFetchOrders(owner, signal ? { signal } : {});
+}
+
+/**
+ * Build the UNSIGNED close/cancel transaction for a recurring order. Closing returns the
+ * undeployed remainder to the user's wallet. The user's wallet signs — the site never signs.
+ *
+ * There is NO native pause on the program (verified: /recurring/v1/pause → 404), which is why the
+ * shared package has no `buildPauseRecurring` and the UI says so plainly instead of faking one.
+ */
+export async function buildCloseRecurring(
+  orderKey: string,
+  userPublicKey: string,
+): Promise<BuiltTransaction> {
+  return jupBuildCloseRecurring(orderKey, userPublicKey);
 }
 
 /** Mint decimals, straight from the chain. Falls back to `fallback` on RPC failure. */
@@ -141,145 +215,4 @@ export async function getTokenBalance(
   } catch {
     return 0;
   }
-}
-
-// ───────────────────────────── Recurring (DCA) ──────────────────────────────
-//
-// Jupiter's Recurring API (POST /recurring/v1/createOrder). Same keyless base as
-// the swap. Builds an UNSIGNED deposit-and-schedule transaction the user's wallet
-// signs — the site never signs. After it confirms, the order runs ON-CHAIN via
-// Jupiter's program; there is no server-side schedule. Mirrors the shared
-// @rice/jupiter-dca contract (to be adopted once that package is git-installable).
-
-/** USDC, used only to price SOL for the per-cycle minimum check. */
-export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-export const USDC_DECIMALS = 6;
-/** Jupiter's cut on recurring orders (0.1%), stated plainly in the UI. */
-export const RECURRING_FEE_BPS = 10;
-/** Live per-order minimum Jupiter enforces (server-side), ~$50. UI warns; API is truth. */
-export const RECURRING_MIN_USD_PER_CYCLE = 50;
-
-function deserializeTx(base64: string): VersionedTransaction {
-  return VersionedTransaction.deserialize(
-    Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)),
-  );
-}
-
-/** Live SOL price in USD via a Jupiter quote (1 SOL → USDC). Null on failure. */
-export async function getSolUsd(signal?: AbortSignal): Promise<number | null> {
-  try {
-    const q = await getQuote({
-      inputMint: SOL_MINT,
-      outputMint: USDC_MINT,
-      amount: toBaseUnits(1, SOL_DECIMALS),
-      slippageBps: 50,
-      signal,
-    });
-    return fromBaseUnits(q.outAmount, USDC_DECIMALS);
-  } catch {
-    return null;
-  }
-}
-
-export interface OpenRecurringParams {
-  inputMint: string;
-  outputMint: string;
-  /** TOTAL to deposit, in input-mint base units (integer string). */
-  inAmount: string;
-  /** How many cycles the deposit is split across (≥ 2). */
-  numberOfOrders: number;
-  /** Seconds between cycles. */
-  interval: number;
-}
-
-/**
- * Build the UNSIGNED deposit-and-schedule transaction for a time-based recurring
- * (DCA) order. Returns the tx for the wallet to sign, plus Jupiter's requestId.
- * Throws with Jupiter's own message (e.g. the ~$50/cycle minimum) on rejection.
- */
-export async function buildRecurringOrder(
-  params: OpenRecurringParams,
-  userPublicKey: string,
-): Promise<{ transaction: VersionedTransaction; requestId: string }> {
-  const inAmount = Number(params.inAmount);
-  if (!Number.isSafeInteger(inAmount)) {
-    throw new Error("Deposit amount is too large to schedule safely.");
-  }
-  const res = await fetch(`${JUP_API}/recurring/v1/createOrder`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user: userPublicKey,
-      inputMint: params.inputMint,
-      outputMint: params.outputMint,
-      params: {
-        time: {
-          inAmount,
-          numberOfOrders: params.numberOfOrders,
-          interval: params.interval,
-        },
-      },
-    }),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data?.transaction) {
-    throw new Error(data?.error ?? `Recurring order build failed (${res.status})`);
-  }
-  return { transaction: deserializeTx(data.transaction as string), requestId: data.requestId };
-}
-
-/** A wallet's recurring order with on-chain state; `orderKey` is its account address. */
-export interface RecurringOrder {
-  orderKey: string;
-  inputMint: string;
-  outputMint: string;
-  /** Raw integer fields (unambiguous). Ratios of these give cycle counts, decimals-free. */
-  rawInDeposited?: string;
-  rawInUsed?: string;
-  rawInAmountPerCycle?: string;
-  rawOutReceived?: string;
-  /** Seconds between cycles. */
-  cycleFrequency: string;
-  createdAt?: string;
-  updatedAt?: string;
-  [k: string]: unknown;
-}
-
-/** A wallet's ACTIVE time-based recurring orders (read-only). */
-export async function fetchRecurringOrders(
-  owner: string,
-  signal?: AbortSignal,
-): Promise<RecurringOrder[]> {
-  const url =
-    `${JUP_API}/recurring/v1/getRecurringOrders?user=${owner}` +
-    `&recurringType=time&orderStatus=active&includeFailedTx=false&page=1`;
-  const res = await fetch(url, { signal });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data) {
-    throw new Error(data?.error ?? `Fetching recurring orders failed (${res.status})`);
-  }
-  return Array.isArray(data.time) ? (data.time as RecurringOrder[]) : [];
-}
-
-/**
- * Build the UNSIGNED close/cancel transaction for a recurring order
- * (POST /recurring/v1/cancelOrder). Closing returns the undeployed remainder to
- * the user's wallet. `orderKey` is the order account from {@link fetchRecurringOrders}.
- * The user's wallet signs — the site never signs. There is NO native pause on the
- * program (verified: /recurring/v1/pause 404), so a "pause" is close + recreate.
- */
-export async function buildCloseRecurring(
-  orderKey: string,
-  userPublicKey: string,
-): Promise<{ transaction: VersionedTransaction; requestId: string }> {
-  const res = await fetch(`${JUP_API}/recurring/v1/cancelOrder`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user: userPublicKey, order: orderKey, recurringType: "time" }),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data?.transaction) {
-    throw new Error(data?.error ?? `Cancel build failed (${res.status})`);
-  }
-  return { transaction: deserializeTx(data.transaction as string), requestId: data.requestId };
 }
