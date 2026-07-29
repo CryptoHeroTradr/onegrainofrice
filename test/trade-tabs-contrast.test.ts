@@ -71,14 +71,16 @@ describe("an unselected tab is legible wherever the strip is dropped", () => {
   });
 
   it("is visible on the DARK page body — the case that was broken", () => {
-    // /dca and the Telegram webview both render the strip on `bg-ink`. The old unselected label
-    // measured 1.02 here; the chip now separates itself from the body by an order of magnitude.
+    // /dca renders the strip on `bg-ink`. (The Telegram frame did too, until it was given /home's
+    // bone surface — see tma-frame-contrast.test.ts. /dca still has no surface of its own, so this
+    // remains the live case rather than a historical one.) The old unselected label measured 1.02
+    // here; the chip now separates itself from the body by an order of magnitude.
     expect(contrast(BONE, INK)).toBeGreaterThanOrEqual(7);
     // And the label is still legible once you are looking at the chip, on that same page.
     expect(contrast(OLIVE_DEEP, BONE)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it("is visible on the LIGHT card, which is where /home renders it", () => {
+  it("is visible on the LIGHT surface, which is where /home and the Telegram frame render it", () => {
     // The chip nearly matches the card there (bone on steamed), which is fine and deliberate: on a
     // light surface the label carries the contrast, and the border draws the control's edge.
     expect(contrast(OLIVE_DEEP, STEAMED)).toBeGreaterThanOrEqual(4.5);

@@ -142,27 +142,27 @@ export function TelegramMiniApp() {
   }
 
   if (inTelegram === null) {
-    return <main className="px-4 py-8 font-mono text-sm text-paper/70">Loading…</main>;
+    return <main className="min-h-screen bg-bone px-4 py-8 font-mono text-sm text-nori/60">Loading…</main>;
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-3 py-4">
+    <main className="mx-auto flex min-h-screen w-full max-w-xl flex-col gap-4 bg-bone px-3 py-4 text-nori">
       <header>
-        <h1 className="font-display text-2xl font-bold text-paper">Your {site.ticker} DCA</h1>
-        <p className="mt-1 font-mono text-xs leading-relaxed text-paper/70">
+        <h1 className="font-display text-2xl font-bold text-nori">Your {site.ticker} DCA</h1>
+        <p className="mt-1 font-mono text-xs leading-relaxed text-nori/70">
           Runs on Jupiter, on-chain, from your own wallet. I hold no key and can&apos;t sign for
           you — approving happens in your wallet, in your browser.
         </p>
       </header>
 
       {identity.state === "loading" && (
-        <p className="font-mono text-sm font-bold text-paper/70">Checking your linked wallet…</p>
+        <p className="font-mono text-sm font-bold text-nori/70">Checking your linked wallet…</p>
       )}
 
       {identity.state === "error" && (
         <div className="border-2 border-tuna/40 bg-tuna/10 px-3 py-2.5">
           <p className="font-mono text-sm font-bold text-tuna">{identity.message}</p>
-          <p className="mt-1 font-mono text-xs text-paper/70">
+          <p className="mt-1 font-mono text-xs text-nori/70">
             Close and reopen this from /dca in the bot. If it keeps happening, your Telegram session
             may have expired.
           </p>
@@ -188,7 +188,7 @@ export function TelegramMiniApp() {
           off works perfectly — the link only decides whether we can show existing orders back. */}
       <DcaWorkspace frame={frame} />
 
-      <p className="font-mono text-[11px] leading-relaxed text-paper/60">
+      <p className="font-mono text-[11px] leading-relaxed text-nori/60">
         Why the browser? Telegram&apos;s in-app view has no wallet extension, so nothing here can be
         signed. Rather than hold a key for you — which would make this custodial — the composed
         order is carried out to your browser, where your own wallet approves it.
