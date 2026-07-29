@@ -7,6 +7,7 @@ import { RecurringPanel, type RecurringPrefill } from "@/components/dca/Recurrin
 import { DcaDashboard } from "@/components/dca/DcaDashboard";
 import { TradeErrorBoundary } from "@/components/dca/TradeErrorBoundary";
 import { DcaFrameProvider, type DcaFrame } from "@/components/dca/frame";
+import { TradeTabs, type TradeTabItem } from "@/components/dca/TradeTabs";
 import { site } from "@/config/site";
 import { asset } from "@/lib/asset";
 
@@ -51,15 +52,15 @@ export function DcaWorkspace({
    * a new axis. Telegram's webview therefore keeps the two tabs it has always had, and the frame
    * gains no knowledge of what it is being used for.
    */
-  const tabs: readonly (readonly [Tab, string])[] = frame.canSign
+  const tabs: readonly TradeTabItem<Tab>[] = frame.canSign
     ? ([
-        ["dca", "RECURRING"],
-        ["swap", "SWAP"],
-        ["bot", "BOT"],
+        { key: "dca", label: "RECURRING" },
+        { key: "swap", label: "SWAP" },
+        { key: "bot", label: "BOT" },
       ] as const)
     : ([
-        ["dca", "RECURRING"],
-        ["swap", "SWAP"],
+        { key: "dca", label: "RECURRING" },
+        { key: "swap", label: "SWAP" },
       ] as const);
 
   return (
@@ -67,24 +68,7 @@ export function DcaWorkspace({
       <DcaFrameProvider frame={frame}>
         <TradeErrorBoundary>
           <div className="flex flex-col gap-4">
-            <div className="flex gap-2" role="tablist" aria-label="Trade or schedule">
-              {tabs.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === key}
-                  onClick={() => setTab(key)}
-                  className={`min-h-11 flex-1 border-2 px-4 font-mono text-sm font-bold tracking-widest transition-colors ${
-                    tab === key
-                      ? "border-olive bg-olive text-bone"
-                      : "border-nori/30 text-nori/70 hover:border-nori"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <TradeTabs tabs={tabs} active={tab} onSelect={setTab} label="Trade or schedule" />
 
             {tab === "dca" && <RecurringPanel riceMint={MINT} ticker={site.ticker} prefill={prefill} />}
             {tab === "swap" && <SwapPanel riceMint={MINT} ticker={site.ticker} logoSrc={TOKEN_LOGO} />}

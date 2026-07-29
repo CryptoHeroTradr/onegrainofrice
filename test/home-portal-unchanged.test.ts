@@ -35,14 +35,43 @@ const gitShow = (ref: string, path: string): string | null => {
 };
 
 describe("the /home trading portal is byte-identical to its last verified state", () => {
-  it("TradingPortal.tsx has not been touched by the dashboard work", () => {
+  it("everything in TradingPortal.tsx except the tab strip is byte-identical to the baseline", () => {
+    // The portal was byte-pinned outright until the tab-legibility fix, which had to touch it:
+    // /home and /dca now share one tab component, so the two frames cannot drift apart on which
+    // state reads as selected. Rather than drop the pin — the thing that catches ACCIDENTAL drift —
+    // it is narrowed to the two regions that were never in scope, and they are compared whole:
+    //
+    //   * the rendered panels and the market/activity card beside them,
+    //   * every helper below them, to the end of the file.
+    //
+    // What is deliberately outside the pin is the strip itself, its `TABS` table and the import
+    // that brings the shared component in. Those are the change; the assertions below cover their
+    // behaviour (same ids, same order, same panels).
     const before = gitShow(BASELINE, PORTAL);
     if (before === null) return;
+    const now = readFileSync(join(ROOT, PORTAL), "utf8");
+    const from = (src: string, start: string, end?: string): string =>
+      end ? src.slice(src.indexOf(start), src.indexOf(end)) : src.slice(src.indexOf(start));
+
     expect(
-      readFileSync(join(ROOT, PORTAL), "utf8"),
-      "the /home portal changed. It was verified working in a real browser at " +
-        `${BASELINE}; the bot dashboard is meant to be additive.`,
-    ).toBe(before);
+      from(now, '{tab === "swap" ?', "function Metric({"),
+      "the /home portal changed where it renders its panels — only the tab strip was in scope",
+    ).toBe(from(before, '{tab === "swap" ?', "function TabButton({"));
+
+    expect(
+      from(now, "function Metric({"),
+      "the /home portal's helpers changed — only the tab strip was in scope",
+    ).toBe(from(before, "function Metric({"));
+  });
+
+  it("keeps the panels' tab wiring exactly as it was — same ids, same order", () => {
+    // The tab strip is allowed to look different. It is not allowed to point somewhere else: the
+    // panels below identify themselves by these ids, and a rename would silently unlabel them.
+    const now = readFileSync(join(ROOT, PORTAL), "utf8");
+    for (const id of ["portal-tab-swap", "portal-panel-swap", "portal-tab-dca", "portal-panel-dca"]) {
+      expect(now, `${id} disappeared from the /home portal`).toContain(id);
+    }
+    expect(now.indexOf('key: "swap"')).toBeLessThan(now.indexOf('key: "dca"')); // Swap first, as before
   });
 
   it("the panels it mounts have not been touched either", () => {

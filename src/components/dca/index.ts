@@ -17,6 +17,7 @@ export { SwapPanel } from "./SwapPanel";
 export { RecurringPanel, type RecurringPrefill } from "./RecurringPanel";
 export { ActiveDcaOrders } from "./ActiveDcaOrders";
 export { TradeErrorBoundary } from "./TradeErrorBoundary";
+export { TradeTabs, type TradeTabItem } from "./TradeTabs";
 export {
   DcaFrameProvider,
   useDcaFrame,

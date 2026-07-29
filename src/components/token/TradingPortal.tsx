@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { site } from "@/config/site";
 import { CharityWalletProvider } from "@/components/charity/CharityWalletProvider";
-import { SwapPanel, RecurringPanel, TradeErrorBoundary } from "@/components/dca";
+import { SwapPanel, RecurringPanel, TradeErrorBoundary, TradeTabs, type TradeTabItem } from "@/components/dca";
 import { useRecentTrades, useRiceMarket, type Trade } from "@/hooks/useRiceMarket";
 import { asset } from "@/lib/asset";
 
@@ -47,6 +47,12 @@ function fmtAgo(ts: number | null): string {
 }
 
 type Tab = "swap" | "dca";
+
+/** The portal's two tabs, with the ids its panels point back at via aria-labelledby. */
+const TABS: readonly TradeTabItem<Tab>[] = [
+  { key: "swap", label: "Swap", id: "portal-tab-swap", controls: "portal-panel-swap" },
+  { key: "dca", label: "DCA", id: "portal-tab-dca", controls: "portal-panel-dca" },
+];
 
 /**
  * Isolates the live trading terminal from the rest of /home: if wallet-adapter,
@@ -107,18 +113,16 @@ function PortalBody() {
       {/* Swap on the left, market + activity on the right. */}
       <div className="mt-4 grid gap-4 lg:grid-cols-[0.95fr_1fr]">
         <div className={CARD}>
-          {/* Swap · DCA tabs — the swap is live; DCA is the frame it drops into. */}
-          <div
-            role="tablist"
-            aria-label="Trade mode"
-            className="mb-4 flex border-2 border-nori/30 bg-bone"
-          >
-            <TabButton id="swap" active={tab === "swap"} onSelect={setTab}>
-              Swap
-            </TabButton>
-            <TabButton id="dca" active={tab === "dca"} onSelect={setTab}>
-              DCA
-            </TabButton>
+          {/* Swap · DCA tabs — the shared strip, so /home and /dca cannot drift apart on
+              which state reads as selected. Ids and order are unchanged; the panels below still
+              point back at these tabs by id. */}
+          <div className="mb-4">
+            <TradeTabs
+              tabs={TABS}
+              active={tab}
+              onSelect={setTab}
+              label="Trade mode"
+            />
           </div>
 
           {tab === "swap" ? (
@@ -207,34 +211,6 @@ function PortalBody() {
         </div>
       </div>
     </div>
-  );
-}
-
-function TabButton({
-  id,
-  active,
-  onSelect,
-  children,
-}: {
-  id: Tab;
-  active: boolean;
-  onSelect: (t: Tab) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      id={`portal-tab-${id}`}
-      aria-selected={active}
-      aria-controls={`portal-panel-${id}`}
-      onClick={() => onSelect(id)}
-      className={`min-h-11 flex-1 font-mono text-sm font-bold tracking-widest uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive-deep ${
-        active ? "bg-olive text-bone" : "bg-transparent text-nori/70 hover:bg-olive/15 hover:text-nori"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
