@@ -18,4 +18,11 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
   },
+  // The same `@/*` -> `src/*` alias tsconfig and Next use. Without it a test can only import
+  // modules that happen to have no internal imports, which quietly limits what is testable to the
+  // leaves — and the modules worth testing here (the bot-bridge client, the formatters) are not
+  // leaves. Declared once, so a test imports a module exactly the way the app does.
+  resolve: {
+    alias: { "@": new URL("./src/", import.meta.url).pathname },
+  },
 });

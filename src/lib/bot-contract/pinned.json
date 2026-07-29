@@ -1,0 +1,9 @@
+{
+  "repo": "github:CryptoHeroTradr/ricebuybot",
+  "localCheckout": "/home/deploy/ricebuybot-src",
+  "path": "src/site-bridge/dashboard-contract.ts",
+  "ref": "b662971157fa06755d78eeb62ac4ba611298c273",
+  "refSubject": "Phase 9: site write bridge, dashboard contract, min-buy floor on edit",
+  "sha256": "e874b2043d0a568c15b8adb59cf3cd5ba759232520ab71996f2f98760a5ad97f",
+  "vendoredAt": "2026-07-29"
+}

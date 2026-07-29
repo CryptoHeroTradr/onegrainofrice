@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CharityWalletProvider } from "@/components/charity/CharityWalletProvider";
 import { SwapPanel } from "@/components/dca/SwapPanel";
 import { RecurringPanel, type RecurringPrefill } from "@/components/dca/RecurringPanel";
+import { DcaDashboard } from "@/components/dca/DcaDashboard";
 import { TradeErrorBoundary } from "@/components/dca/TradeErrorBoundary";
 import { DcaFrameProvider, type DcaFrame } from "@/components/dca/frame";
 import { site } from "@/config/site";
@@ -27,7 +28,7 @@ import { asset } from "@/lib/asset";
 const MINT = site.token.contract;
 const TOKEN_LOGO = asset("/rice-token-logo.png");
 
-type Tab = "swap" | "dca";
+type Tab = "swap" | "dca" | "bot";
 
 export function DcaWorkspace({
   frame,
@@ -41,18 +42,33 @@ export function DcaWorkspace({
 }) {
   const [tab, setTab] = useState<Tab>(initialTab);
 
+  /**
+   * THE BOT TAB IS OFFERED ONLY WHERE A WALLET CAN SIGN, and `canSign` is the honest test for it.
+   *
+   * Reading the bot's dashboard is proof-gated: the bot will not hand a wallet's schedules to
+   * whoever asks, so the caller signs a nonce it minted. A frame with no wallet to sign with cannot
+   * complete that exchange — which is the same capability the trading panels already branch on, not
+   * a new axis. Telegram's webview therefore keeps the two tabs it has always had, and the frame
+   * gains no knowledge of what it is being used for.
+   */
+  const tabs: readonly (readonly [Tab, string])[] = frame.canSign
+    ? ([
+        ["dca", "RECURRING"],
+        ["swap", "SWAP"],
+        ["bot", "BOT"],
+      ] as const)
+    : ([
+        ["dca", "RECURRING"],
+        ["swap", "SWAP"],
+      ] as const);
+
   return (
     <CharityWalletProvider>
       <DcaFrameProvider frame={frame}>
         <TradeErrorBoundary>
           <div className="flex flex-col gap-4">
             <div className="flex gap-2" role="tablist" aria-label="Trade or schedule">
-              {(
-                [
-                  ["dca", "RECURRING"],
-                  ["swap", "SWAP"],
-                ] as const
-              ).map(([key, label]) => (
+              {tabs.map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
@@ -70,11 +86,9 @@ export function DcaWorkspace({
               ))}
             </div>
 
-            {tab === "dca" ? (
-              <RecurringPanel riceMint={MINT} ticker={site.ticker} prefill={prefill} />
-            ) : (
-              <SwapPanel riceMint={MINT} ticker={site.ticker} logoSrc={TOKEN_LOGO} />
-            )}
+            {tab === "dca" && <RecurringPanel riceMint={MINT} ticker={site.ticker} prefill={prefill} />}
+            {tab === "swap" && <SwapPanel riceMint={MINT} ticker={site.ticker} logoSrc={TOKEN_LOGO} />}
+            {tab === "bot" && <DcaDashboard />}
           </div>
         </TradeErrorBoundary>
       </DcaFrameProvider>

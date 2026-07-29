@@ -49,7 +49,12 @@ describe("there is exactly one Jupiter client", () => {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) walk(full);
         else if (/\.tsx?$/.test(entry.name) && full !== join(ROOT, "src/lib/jupiter.ts")) {
-          if (read(full).includes("@rice/jupiter-dca")) offenders.push(full.replace(`${ROOT}/`, ""));
+          // codeOf, not read: an import is code, and a file that MENTIONS the package while
+          // explaining why it does not use it is not an offender. This grep read raw text until
+          // src/lib/bot-contract explained (in prose) why it is a vendored copy rather than a git
+          // dependency like this package — and tripped on the explanation, which is precisely the
+          // way a check teaches people to delete documentation. Same rule as everywhere else here.
+          if (codeOf(full).includes("@rice/jupiter-dca")) offenders.push(full.replace(`${ROOT}/`, ""));
         }
       }
     };
