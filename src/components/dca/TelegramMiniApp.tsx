@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DcaWorkspace } from "@/components/dca/DcaWorkspace";
 import { handOffUrl, WEB_FRAME, type DcaFrame, type HandOffIntent } from "@/components/dca/frame";
-import { isTelegramMiniApp, openExternal, telegramWebApp } from "@/lib/telegram";
+import { isTelegramMiniApp, openExternal, telegramLaunchDetected, telegramWebApp } from "@/lib/telegram";
 import { site } from "@/config/site";
 
 /**
@@ -46,12 +46,22 @@ export function TelegramMiniApp() {
   // Resolved on the client only: `window.Telegram` cannot exist during SSR, and guessing would
   // render the wrong frame for a moment and then swap it under the user.
   const [inTelegram, setInTelegram] = useState<boolean | null>(null);
+  /**
+   * Telegram launched us but gave us no identity — the state that used to be INVISIBLE.
+   *
+   * Detection failing looked exactly like "this user is in a normal browser", so the app rendered
+   * the web frame inside Telegram and nobody could tell from the screen that anything was wrong.
+   * Now the two are told apart, and this one says so.
+   */
+  const [launchedWithoutIdentity, setLaunchedWithoutIdentity] = useState(false);
 
   useEffect(() => {
     const wa = telegramWebApp();
     wa?.ready();
     wa?.expand();
-    setInTelegram(isTelegramMiniApp());
+    const isMiniApp = isTelegramMiniApp();
+    setInTelegram(isMiniApp);
+    setLaunchedWithoutIdentity(!isMiniApp && telegramLaunchDetected());
   }, []);
 
   // Ask the bot who we are. The ONLY server call this app makes, and it returns an address.
@@ -119,34 +129,40 @@ export function TelegramMiniApp() {
   if (inTelegram === false) {
     return (
       <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-8">
-        <h1 className="font-display text-2xl font-bold text-nori">Recurring {site.ticker} buys</h1>
+        <h1 className="font-display text-2xl font-bold text-paper">Recurring {site.ticker} buys</h1>
+        {launchedWithoutIdentity && (
+          <p className="border-2 border-tuna/50 bg-tuna/10 px-3 py-2.5 font-mono text-xs leading-relaxed font-bold text-tuna">
+            Telegram opened this page but didn&apos;t pass a Mini App session, so it&apos;s showing
+            the ordinary website. Open it from the bot&apos;s DCA button rather than a plain link.
+          </p>
+        )}
         <DcaWorkspace frame={WEB_FRAME} />
       </main>
     );
   }
 
   if (inTelegram === null) {
-    return <main className="px-4 py-8 font-mono text-sm text-nori/60">Loading…</main>;
+    return <main className="px-4 py-8 font-mono text-sm text-paper/70">Loading…</main>;
   }
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-3 py-4">
       <header>
-        <h1 className="font-display text-2xl font-bold text-nori">Your {site.ticker} DCA</h1>
-        <p className="mt-1 font-mono text-xs leading-relaxed text-nori/70">
+        <h1 className="font-display text-2xl font-bold text-paper">Your {site.ticker} DCA</h1>
+        <p className="mt-1 font-mono text-xs leading-relaxed text-paper/70">
           Runs on Jupiter, on-chain, from your own wallet. I hold no key and can&apos;t sign for
           you — approving happens in your wallet, in your browser.
         </p>
       </header>
 
       {identity.state === "loading" && (
-        <p className="font-mono text-sm font-bold text-nori/60">Checking your linked wallet…</p>
+        <p className="font-mono text-sm font-bold text-paper/70">Checking your linked wallet…</p>
       )}
 
       {identity.state === "error" && (
         <div className="border-2 border-tuna/40 bg-tuna/10 px-3 py-2.5">
           <p className="font-mono text-sm font-bold text-tuna">{identity.message}</p>
-          <p className="mt-1 font-mono text-xs text-nori/70">
+          <p className="mt-1 font-mono text-xs text-paper/70">
             Close and reopen this from /dca in the bot. If it keeps happening, your Telegram session
             may have expired.
           </p>
@@ -172,7 +188,7 @@ export function TelegramMiniApp() {
           off works perfectly — the link only decides whether we can show existing orders back. */}
       <DcaWorkspace frame={frame} />
 
-      <p className="font-mono text-[11px] leading-relaxed text-nori/50">
+      <p className="font-mono text-[11px] leading-relaxed text-paper/60">
         Why the browser? Telegram&apos;s in-app view has no wallet extension, so nothing here can be
         signed. Rather than hold a key for you — which would make this custodial — the composed
         order is carried out to your browser, where your own wallet approves it.
