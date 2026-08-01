@@ -13,13 +13,15 @@
  * the full site lives at `/home`, so "Home" is a real route and the section
  * anchors are written absolute against it (`/home#…`) to work from any page.
  * "Memes" is the /memes gallery route.
+ *
+ * `emoji` is rendered by the 🌾 Menu dropdown (see components/journey/SiteMenu).
  */
 export const homeNavLinks = [
-  { label: "Home", href: "/home" },
-  { label: "Memes", href: "/memes" },
-  { label: "PFP & Meme Gen", href: "/pfp" },
-  { label: "Charity", href: "/charity" },
-  { label: "Token", href: "/home#tokenomics" },
+  { label: "Home", href: "/home", emoji: "🏠" },
+  { label: "Memes", href: "/memes", emoji: "😂" },
+  { label: "PFP & Meme Gen", href: "/pfp", emoji: "🎨" },
+  { label: "Charity", href: "/charity", emoji: "❤️" },
+  { label: "Token", href: "/home#tokenomics", emoji: "💰" },
 ] as const;
 
 /**

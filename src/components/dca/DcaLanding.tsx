@@ -2,6 +2,7 @@
 
 import { DcaWorkspace } from "@/components/dca/DcaWorkspace";
 import { WEB_FRAME } from "@/components/dca/frame";
+import { SiteMenu } from "@/components/journey/SiteMenu";
 import { site } from "@/config/site";
 
 /**
@@ -45,6 +46,10 @@ export function DcaLanding({
 
   return (
     <main className="mx-auto flex w-full max-w-xl flex-col gap-5 px-4 py-8">
+      {/* This page carries no site bar of its own, so the 🌾 Menu is the way
+          back into the rest of the site (notably for a Telegram hand-off, which
+          lands here cold). Static, not fixed — nothing here scrolls under it. */}
+      <SiteMenu className="self-start" />
       <header>
         <h1 className="font-display text-3xl font-bold text-nori">
           Recurring {site.ticker} buys

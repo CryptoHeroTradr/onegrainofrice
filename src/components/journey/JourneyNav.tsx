@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { Menu, X } from "lucide-react";
 import { site } from "@/config/site";
 import { asset } from "@/lib/asset";
-import { homeNavLinks } from "@/config/home";
+import { SiteMenu } from "@/components/journey/SiteMenu";
 import { useRice } from "@/components/rice/RiceParticles";
 import { playPour } from "@/lib/sound";
 import { SoundToggle } from "@/components/eggs/SoundToggle";
@@ -22,16 +20,17 @@ const NAV_SOCIAL_CLASS =
 /**
  * Sticky nav: transparent over the hero, then a solid paper bar once scrolled.
  *
- * Desktop (lg+): logo · Grains Game · section links | socials · contract · mute · Buy.
- * Mobile: logo · contract+copy · mute · hamburger — the hamburger menu holds
- * everything else (Grains Game, Memes, PFP & Meme Gen, Token, socials, Buy).
+ * Every route link lives in the "🌾 Menu" dropdown (see SiteMenu) at ALL
+ * breakpoints — there is no row of inline links any more, and no mobile-only
+ * hamburger. The bar itself is: logo · 🌾 Menu | socials · contract · language ·
+ * mute · Buy, with the last four collapsing into the menu's footer on mobile.
  *
- * "🍚 Grains Game" points at "/" — the landing page IS the clicker game (the
- * main site lives at /home), so it's a next/link route, not a section anchor.
+ * The menu's "🍚 Grains Game" points at "/" — the landing page IS the clicker
+ * game (the main site lives at /home), so it's a route, not a section anchor.
+ * That landing page renders no nav, so the menu never appears on it.
  */
 export function JourneyNav() {
   const [scrolled, setScrolled] = useState(false);
-  const [open, setOpen] = useState(false);
   const { pour } = useRice();
 
   useEffect(() => {
@@ -44,37 +43,40 @@ export function JourneyNav() {
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-        scrolled || open
+        scrolled
           ? "translate-y-0 border-b border-ink/15 bg-steamed/95 text-ink backdrop-blur-sm"
           : "-translate-y-1 border-b border-transparent bg-transparent text-bone"
       }`}
     >
       <div className="mx-auto flex h-16 max-w-[1180px] items-center justify-between gap-2 px-3 sm:gap-4 sm:px-6 lg:h-24">
-        <div className="flex min-w-0 items-center gap-6">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-4 lg:gap-6">
           <a
             href={asset("/home")}
             className="whitespace-nowrap font-display-round text-sm font-bold tracking-tight sm:text-base lg:text-lg"
           >
             {site.nav.logo}
           </a>
-          {/* Desktop nav links: the grains game first, then the section anchors. */}
-          <nav aria-label="Main" className="hidden items-center gap-5 lg:flex">
-            <Link
-              href="/"
-              className="font-mono text-sm font-bold tracking-widest uppercase transition-colors hover:text-tuna"
-            >
-              🍚 Grains Game
-            </Link>
-            {homeNavLinks.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                className="font-mono text-sm font-bold tracking-widest uppercase transition-colors hover:text-tuna"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
+          {/* Every nav link lives here, at every breakpoint. The footer slot
+              carries the items the bar drops below lg (socials, language, Buy). */}
+          <SiteMenu
+            footerClassName="lg:hidden"
+            footer={
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <SocialLinks className="flex items-center gap-2" linkClassName={NAV_SOCIAL_CLASS} />
+                  <LanguageSwitcher />
+                </div>
+                <a
+                  href={site.buyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center justify-center bg-olive px-5 font-mono text-sm font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep"
+                >
+                  BUY {site.ticker}
+                </a>
+              </div>
+            }
+          />
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -89,8 +91,8 @@ export function JourneyNav() {
             className="inline-flex"
           />
           <LanguageSwitcher className="hidden lg:block" />
-          <SoundToggle className={scrolled || open ? "text-ink/70 hover:text-ink" : "text-bone/80 hover:text-bone"} />
-          {/* Buy — desktop only (in the hamburger on mobile). A real anchor to
+          <SoundToggle className={scrolled ? "text-ink/70 hover:text-ink" : "text-bone/80 hover:text-bone"} />
+          {/* Buy — desktop only (in the 🌾 Menu footer on mobile). A real anchor to
               the Jupiter swap (site.buyUrl), matching the hero's Buy image, with
               the same decorative rice pour on click. */}
           <a
@@ -112,65 +114,8 @@ export function JourneyNav() {
               className="h-16 w-auto sm:h-20"
             />
           </a>
-          {/* Hamburger — mobile only. */}
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            aria-label={open ? "Close menu" : "Open menu"}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center lg:hidden ${
-              scrolled || open ? "text-ink" : "text-bone"
-            }`}
-          >
-            {open ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
-          </button>
         </div>
       </div>
-
-      {/* Mobile menu — GRAINS, section links, socials, and the Buy CTA. */}
-      {open && (
-        <nav
-          id="mobile-nav"
-          aria-label="Mobile"
-          className="border-t border-ink/10 bg-steamed/95 px-4 py-3 text-ink backdrop-blur lg:hidden"
-        >
-          <div className="flex flex-col">
-            <Link
-              href="/"
-              onClick={() => setOpen(false)}
-              className="py-2.5 font-mono text-sm font-bold tracking-widest text-ink/80 uppercase"
-            >
-              🍚 Grains Game
-            </Link>
-            {homeNavLinks.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className="py-2.5 font-mono text-sm font-bold tracking-widest text-ink/80 uppercase"
-              >
-                {item.label}
-              </a>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-ink/10 pt-3">
-            <div className="flex items-center gap-2">
-              <SocialLinks className="flex items-center gap-2" linkClassName={NAV_SOCIAL_CLASS} />
-              <LanguageSwitcher />
-            </div>
-            <a
-              href={site.buyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setOpen(false)}
-              className="inline-flex min-h-11 items-center bg-olive px-5 font-mono text-sm font-bold tracking-widest text-bone transition-colors hover:bg-olive-deep"
-            >
-              BUY {site.ticker}
-            </a>
-          </div>
-        </nav>
-      )}
     </header>
   );
 }
