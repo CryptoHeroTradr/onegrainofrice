@@ -1,27 +1,21 @@
 "use client";
 
-// /pfp — the $RICE PFP Generator, a faithful clone of RiceDAO's /pfp page.
-// The Layer Composer is the MAIN, always-mounted editor; the Rice Art Generator
-// is an optional panel toggled above it (toggling never unmounts the composer,
-// so no layer settings are lost). Adapted for onegrainofrice: RiceDAO's Navbar /
-// PageScroller / landing primitives are swapped for the site's own chrome, and
-// image srcs resolve under the app basePath. The AI features are backed by Next
-// route handlers under /onegrainofrice/api/pfp/*.
+// /pfp — the $RICE PFP Generator. The Layer Composer is the whole page: its
+// tools live behind one 🧰 Canvas Tools dropdown and its AI work behind one
+// 🌟 Generate button, so this file is just the frame around it.
+//
+// It was previously two modes — the composer plus a "Rice Art Generator" panel
+// toggled above it — with AI Enhance, Rice Art and Generate New PFP as three
+// separate processes. They are now one process; see components/pfp/GenerateModal.
+// The AI is backed by a Next route handler at /onegrainofrice/api/pfp/generate.
 
-import { useRef, useState } from "react";
 import { JourneyNav } from "@/components/journey/JourneyNav";
 import { HomeFooter } from "@/components/journey/HomeFooter";
 import { C, SERIF } from "@/components/landing/ui";
 import { asset } from "@/lib/asset";
-import { useGameWallet } from "@/components/WalletProvider";
-import { LayerComposer, type LayerComposerHandle } from "@/components/pfp/LayerComposer";
-import { RiceArtGenerator } from "@/components/pfp/RiceArtGenerator";
+import { LayerComposer } from "@/components/pfp/LayerComposer";
 
 export default function PfpPage() {
-  const [riceOpen, setRiceOpen] = useState(false);
-  const composerRef = useRef<LayerComposerHandle>(null);
-  const { walletAddress } = useGameWallet();
-
   return (
     <>
       <PageStyles />
@@ -44,47 +38,13 @@ export default function PfpPage() {
 
         {/* ── WORKSPACE ────────────────────────────────────────────────────── */}
         <section className="pfp-workspace">
-          {/* Mode bar: composer is always on; rice art is a toggle. */}
-          <div className="pfp-mode-bar">
-            <span className="pfp-mode-main">🎨 Layer Composer</span>
-            <button
-              type="button"
-              className="pfp-mode-toggle"
-              onClick={() => setRiceOpen((v) => !v)}
-              style={
-                riceOpen ? { background: C.gold, color: C.dark, borderColor: C.gold } : undefined
-              }
-            >
-              🌾 Rice Art Generator {riceOpen ? "▲" : "▼"}
-            </button>
-          </div>
-
-          {/* Privacy note — surfaced near the AI features. */}
+          {/* Privacy note — the one line that matters, next to the tools. */}
           <p className="pfp-privacy">
-            🔒 The <b>Layer Composer</b> runs fully in your browser — composing &amp; downloading
-            never leave your device, no API key needed. Images you send to <b>AI Enhance</b>, the{" "}
-            <b>Rice Art Generator</b>, or <b>Generate PFP</b> are processed by OpenAI, so those
-            images do leave your browser.
+            🔒 Composing and downloading run fully in your browser and never leave your device.
+            Only <b>Generate</b> sends your image anywhere — it goes to OpenAI.
           </p>
 
-          {/* Rice Art panel — toggled; the composer below stays mounted. */}
-          {riceOpen && (
-            <div className="pfp-rice-panel">
-              <p className="pfp-rice-note">
-                🌾 Rice art is built <b>from your current composition</b> as a reference (once
-                you&apos;ve added a photo/layers). Empty canvas → generates from the prompt alone.
-              </p>
-              <RiceArtGenerator
-                walletAddress={walletAddress}
-                getLayers={() => composerRef.current?.getLayers() ?? []}
-                getSource={() => composerRef.current?.getFlattened() ?? ""}
-                onAddImage={(src) => composerRef.current?.addImage(src, "Rice Art")}
-              />
-            </div>
-          )}
-
-          {/* Main editor — always mounted (state preserved across rice toggle). */}
-          <LayerComposer ref={composerRef} />
+          <LayerComposer />
         </section>
       </main>
 
@@ -122,29 +82,12 @@ function PageStyles() {
           background:${C.bg}; padding:clamp(1.25rem,4vw,2.5rem) clamp(0.75rem,3vw,2rem) clamp(3rem,8vh,5rem);
           max-width:1200px; margin:0 auto; width:100%;
         }
-        .pfp-mode-bar { display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; margin-bottom:1.25rem; }
-        .pfp-mode-main {
-          color:${C.dark}; background:${C.gold}; border-radius:999px;
-          padding:0.5rem 1.2rem; font-size:0.95rem; font-weight:600; font-family:system-ui,sans-serif;
-        }
-        .pfp-mode-toggle {
-          border:1px solid ${C.gold}; border-radius:999px; padding:0.5rem 1.2rem;
-          font-size:0.95rem; font-weight:600; cursor:pointer; color:${C.white};
-          background:transparent; font-family:system-ui,sans-serif; transition:all .15s ease;
-        }
-        .pfp-mode-toggle:hover { color:${C.gold}; }
         .pfp-privacy {
-          color:${C.muted}; font-size:0.82rem; line-height:1.55; margin:0 0 1.5rem;
+          color:${C.muted}; font-size:0.82rem; line-height:1.55; margin:0 0 1.25rem;
           border:1px solid rgba(201,168,76,0.3); border-radius:12px; padding:0.85rem 1rem;
           background:rgba(10,8,5,0.55);
         }
         .pfp-privacy b { color:${C.gold}; }
-        .pfp-rice-panel {
-          border:1px solid rgba(201,168,76,0.3); border-radius:14px;
-          padding:1.25rem; margin-bottom:1.5rem; background:rgba(10,8,5,0.55);
-        }
-        .pfp-rice-note { color:${C.muted}; font-size:0.85rem; margin:0 0 1rem; line-height:1.5; }
-        .pfp-rice-note b { color:${C.gold}; }
       `,
       }}
     />

@@ -1,17 +1,22 @@
-// Server-only PFP AI helper. Mirrors RiceDAO's apps/server/src/routes/pfp.ts
-// (same prompts, same model calls) but as a plain module the Next route handlers
-// import — the OpenAI key is read here from process.env and NEVER shipped to the
-// browser. Do NOT import this from a client component.
+// Server-only PFP AI helper: the OpenAI client and the two calls that reach it.
+// The key is read here from process.env and NEVER shipped to the browser — do
+// NOT import this from a client component.
+//
+// Prompts deliberately live elsewhere (lib/pfp/prompts), because the browser
+// needs the look list to render the picker and must not pull `openai` in to
+// get it.
 
 import OpenAI from "openai";
 
 export const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 export const aiEnabled = !!OPENAI_KEY;
 
-// Models — same defaults as RiceDAO (all gpt-image-1), overridable via env.
-export const PFP_EDIT_MODEL = process.env.PFP_EDIT_MODEL ?? "gpt-image-1";
-export const PFP_GEN_MODEL = process.env.PFP_GEN_MODEL ?? "gpt-image-1";
-export const PFP_PFP_MODEL = process.env.PFP_PFP_MODEL ?? "gpt-image-1";
+// The image model. There used to be three env knobs (PFP_EDIT_MODEL /
+// PFP_GEN_MODEL / PFP_PFP_MODEL) for three endpoints that all defaulted to
+// gpt-image-1; there is one process now, so there is one knob. PFP_PFP_MODEL is
+// still honoured so an existing deployment's setting keeps working.
+export const PFP_PFP_MODEL =
+  process.env.PFP_MODEL ?? process.env.PFP_PFP_MODEL ?? "gpt-image-1";
 
 let client: OpenAI | null = null;
 /** Lazily construct the OpenAI client (only when a key is present). */
@@ -20,75 +25,6 @@ export function getOpenAI(): OpenAI | null {
   if (!client) client = new OpenAI({ apiKey: OPENAI_KEY });
   return client;
 }
-
-export type EnhanceStyle = "realistic" | "anime" | "painting" | "pixel" | "custom";
-
-const ENHANCE_PROMPTS: Record<Exclude<EnhanceStyle, "custom">, string> = {
-  realistic:
-    "Make this character portrait photorealistic. Keep all elements: hat, accessories, bowl. Improve lighting, shadows, and make the positioning natural and believable. Cinematic portrait photography style.",
-  anime:
-    "Convert this to anime/manga art style. Keep all character elements and accessories. Clean lines, expressive eyes, vibrant colors.",
-  painting:
-    "Transform into a traditional Asian watercolor painting. Keep the character elements. Soft brushstrokes, warm colors, artistic.",
-  pixel:
-    "Convert to pixel art style, 32x32 grid aesthetic. Keep character recognizable. Game sprite feel.",
-};
-
-export function buildEnhancePrompt(style: EnhanceStyle, customPrompt?: string): string {
-  if (style === "custom") return (customPrompt ?? "").trim();
-  return ENHANCE_PROMPTS[style];
-}
-
-// ── Art generator prompt construction ────────────────────────────────────────
-const ART_STYLE_PROMPTS: Record<string, string> = {
-  "sacred-grain":
-    "Cosmic, spiritual composition with a DNA-helix motif and divine light.",
-  "paddy-fields":
-    "Aerial rice-field photography aesthetic, terraced paddies, golden hour.",
-  "degen-rice":
-    "Chaotic meme energy, bold saturated colors, internet-degenerate vibe.",
-  "ancient-scroll":
-    "Aged parchment with ink-brush art and traditional calligraphic flourishes.",
-  "neon-rice":
-    "Cyberpunk neon, glowing grains against a dark moody background.",
-};
-
-const COLOR_PALETTES: Record<string, string> = {
-  golden: "warm golds and amber",
-  midnight: "deep blues and silvers",
-  crimson: "crimson red and black",
-  jade: "jade greens and gold",
-  custom: "a custom color palette",
-};
-
-export function buildArtPrompt(opts: {
-  style: string;
-  grainStyle: string;
-  colorPalette: string;
-  customPrompt?: string;
-}): string {
-  const stylePrompt =
-    opts.style === "custom"
-      ? (opts.customPrompt ?? "").trim()
-      : ART_STYLE_PROMPTS[opts.style] ?? "";
-  const palette = COLOR_PALETTES[opts.colorPalette] ?? opts.colorPalette;
-  const grain = opts.grainStyle || "white rice";
-  return [
-    `A ${opts.style.replace(/-/g, " ")} artistic image featuring ${grain} rice grains`,
-    `in a ${palette} color palette.`,
-    stylePrompt,
-    "Suitable for a crypto project profile picture. High quality digital art.",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-export const PFP_BASE_PROMPT =
-  "Render this character as a high-quality, realistic profile picture for the $RICE rice-farming crypto project. " +
-  "Keep every element from the composition — the character/photo, hats, rice bowls, and any accessories — but place, " +
-  "scale and angle them naturally and believably for one cohesive portrait. Extend and complete the scene with a full, " +
-  "immersive background that fits a golden, mystical rice-harvest theme — fill the ENTIRE frame edge to edge with no " +
-  "empty, flat or transparent areas (generative fill). Cinematic lighting, rich detail, cohesive art direction, 1:1 square.";
 
 // dall-e-3 supports 1024x1024, 1024x1792 (portrait), 1792x1024 (landscape).
 // gpt-image-1 uses 1536×1024 / 1024×1536.

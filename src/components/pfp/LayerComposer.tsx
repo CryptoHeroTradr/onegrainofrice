@@ -17,7 +17,6 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import JSZip from "jszip";
 import { C, SERIF } from "@/components/landing/ui";
 import { PFP_ASSET_CATEGORIES, findAsset } from "./assets";
 import {
@@ -30,17 +29,13 @@ import {
   type Layer,
 } from "./types";
 import {
-  canvasToBlob,
-  downloadBlob,
   downloadUrl,
   emojiDataUrl,
   fileToDataUrl,
   imageForAsset,
   loadImage,
 } from "./imaging";
-import { AiEnhanceModal } from "./AiEnhanceModal";
-import { GeneratePfpModal } from "./GeneratePfpModal";
-import { useGameWallet } from "@/components/WalletProvider";
+import { GenerateModal } from "./GenerateModal";
 
 // Runtime layer: shared Layer + the size it was added at (for the Scale slider)
 // and an optional off-screen mask canvas (white = visible, black = erased).
@@ -80,6 +75,31 @@ interface Box {
 
 type Tool = "select" | "eraser";
 type DragMode = "move" | "resize" | "rotate" | "crop";
+
+/**
+ * The Canvas Tools menu. Everything that used to sit permanently around the
+ * canvas — a toolbar, two sub-bars and two side columns — is now one dropdown,
+ * and each entry opens a mini panel over the workspace. The canvas gets the
+ * space back; the order below is the order in the menu.
+ */
+type ToolPanel =
+  | "layers"
+  | "upload"
+  | "background"
+  | "assets"
+  | "canvas"
+  | "masks"
+  | "export";
+
+const TOOL_MENU: { id: ToolPanel; emoji: string; label: string; hint: string }[] = [
+  { id: "layers", emoji: "🗂", label: "Layers", hint: "stack, select & transform" },
+  { id: "upload", emoji: "⬆", label: "Upload Photo", hint: "add your own image" },
+  { id: "background", emoji: "🎨", label: "Add Background", hint: "colour or gradient" },
+  { id: "assets", emoji: "🌾", label: "Add Assets", hint: "hats & rice bowls" },
+  { id: "canvas", emoji: "📐", label: "Canvas Size", hint: "grow, shrink or set exact" },
+  { id: "masks", emoji: "⌫", label: "Layer Masks", hint: "select & erase" },
+  { id: "export", emoji: "⬇", label: "Export PFP", hint: "download the PNG" },
+];
 interface DragState {
   mode: DragMode;
   id: string;
@@ -172,15 +192,13 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
   const [cropMode, setCropMode] = useState(false);
   const cropRect = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  // AI enhance modal
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiSource, setAiSource] = useState("");
-
-  // Generate New PFP modal
+  // Generate modal (one process — see GenerateModal).
   const [genOpen, setGenOpen] = useState(false);
   const [genSource, setGenSource] = useState("");
-  const [genLayers, setGenLayers] = useState<unknown[]>([]);
-  const { walletAddress } = useGameWallet();
+
+  // Canvas Tools dropdown: which tool's mini panel is open, if any.
+  const [openTool, setOpenTool] = useState<ToolPanel | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const selected = layers.find((l) => l.id === selectedId) ?? null;
 
@@ -794,74 +812,22 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
     downloadUrl(flatten().toDataURL("image/png"), "pfp-ricedao.png");
   }, [flatten]);
 
-  const exportAllLayers = useCallback(async () => {
-    if (layers.length === 0) return;
-    const zip = new JSZip();
-    const ordered = [...layers].sort((a, b) => a.zIndex - b.zIndex);
-    const manifest = { canvasSize, layers: [] as Record<string, unknown>[] };
-    for (let i = 0; i < ordered.length; i++) {
-      const l = ordered[i];
-      const filename = `layer-${i}-${l.kind}.png`;
-      const c = flatten(l.id);
-      // eslint-disable-next-line no-await-in-loop
-      const blob = await canvasToBlob(c);
-      zip.file(filename, blob);
-      manifest.layers.push({
-        name: l.name,
-        filename,
-        x: l.x,
-        y: l.y,
-        width: l.width,
-        height: l.height,
-        rotation: l.rotation,
-        flipX: l.flipX,
-        flipY: l.flipY,
-        zIndex: l.zIndex,
-      });
-    }
-    zip.file("manifest.json", JSON.stringify(manifest, null, 2));
-    const out = await zip.generateAsync({ type: "blob" });
-    downloadBlob(out, "pfp-layers.zip");
-  }, [layers, canvasSize, flatten]);
-
-  const openAi = useCallback(() => {
-    setAiSource(flatten().toDataURL("image/png"));
-    setAiOpen(true);
-  }, [flatten]);
-
   const openGenerate = useCallback(() => {
     setGenSource(flatten().toDataURL("image/png"));
-    setGenLayers(buildManifest(layers));
     setGenOpen(true);
-  }, [flatten, layers]);
+  }, [flatten]);
 
-  const onAiResult = useCallback(
+  /**
+   * A generated image lands on the canvas as an ordinary photo layer — movable,
+   * maskable, exportable like anything else. It is added, not swapped in: the
+   * old AI Enhance replaced the whole stack, which quietly threw away work.
+   */
+  const onGenerated = useCallback(
     (dataUrl: string) => {
-      setAiOpen(false);
-      ensureImage(dataUrl);
-      const id = nextId();
-      setLayers([
-        {
-          id,
-          kind: "photo",
-          name: "AI Enhanced",
-          src: dataUrl,
-          x: 0,
-          y: 0,
-          width: canvasSize,
-          height: canvasSize,
-          baseWidth: canvasSize,
-          baseHeight: canvasSize,
-          rotation: 0,
-          flipX: false,
-          flipY: false,
-          zIndex: 0,
-          visible: true,
-        },
-      ]);
-      setSelectedId(id);
+      setGenOpen(false);
+      void addPhoto(dataUrl, "Generated");
     },
-    [canvasSize, ensureImage],
+    [addPhoto],
   );
 
   const layerList = useMemo(() => [...layers].sort((a, b) => b.zIndex - a.zIndex), [layers]);
@@ -895,7 +861,7 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
     <div style={{ width: "100%" }}>
       <ComposerStyles />
 
-      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
+      {/* ── Toolbar: one menu, one action ───────────────────────────────────── */}
       <div className="pfp-toolbar">
         <input
           ref={fileInputRef}
@@ -904,130 +870,265 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
           style={{ display: "none" }}
           onChange={(e) => onUpload(e.target.files?.[0])}
         />
-        <button type="button" className="pfp-btn pfp-btn-gold" onClick={() => fileInputRef.current?.click()}>
-          ⬆ Upload Photo
-        </button>
 
-        <span className="pfp-divider" />
-        <button
-          type="button"
-          className="pfp-btn"
-          onClick={() => setTool("select")}
-          style={tool === "select" ? activeToggle : undefined}
-        >
-          ↖ Select
-        </button>
-        <button
-          type="button"
-          className="pfp-btn"
-          onClick={() => {
-            setTool("eraser");
-            setCropMode(false);
-          }}
-          style={tool === "eraser" ? activeToggle : undefined}
-        >
-          ⌫ Erase
-        </button>
-
-        <div style={{ flex: 1 }} />
-        <button type="button" className="pfp-btn pfp-btn-gold" onClick={exportPng}>
-          ⬇ Export PFP
-        </button>
-        <button type="button" className="pfp-btn" onClick={exportAllLayers}>
-          📦 Export All Layers
-        </button>
-        <button type="button" className="pfp-btn pfp-btn-glow" onClick={openAi}>
-          ✨ AI Enhance
-        </button>
-        <button type="button" className="pfp-btn pfp-btn-gold" onClick={openGenerate}>
-          🌟 Generate New PFP
-        </button>
-      </div>
-
-      {/* ── Eraser toolbar ──────────────────────────────────────────────────── */}
-      {tool === "eraser" && (
-        <div className="pfp-subbar">
-          <span style={{ color: C.gold }}>{eraserRestore ? "↩ Restore" : "⌫ Eraser"}</span>
-          {!selected && <span style={{ color: "#e08c8c" }}>Select a layer first.</span>}
-          <label className="pfp-inline">
-            Size
-            <input type="range" min={5} max={100} step={1} value={eraserSize} onChange={(e) => setEraserSize(Number(e.target.value))} />
-            <span style={{ color: C.gold, width: 32 }}>{eraserSize}</span>
-          </label>
+        <div className="pfp-tools-wrap">
           <button
             type="button"
-            className="pfp-btn pfp-btn-sm"
-            onClick={() => setEraserRestore((v) => !v)}
-            style={eraserRestore ? activeToggle : undefined}
+            className="pfp-btn pfp-btn-gold"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            onClick={() => {
+              setMenuOpen((v) => !v);
+              setOpenTool(null);
+            }}
           >
-            ↩ Restore Brush
+            🧰 Canvas Tools {menuOpen ? "▲" : "▼"}
           </button>
-          <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => setTool("select")}>
-            Done Erasing
-          </button>
-        </div>
-      )}
 
-      {/* ── Canvas size controls ────────────────────────────────────────────── */}
-      <div className="pfp-subbar">
-        <span style={{ color: C.muted }}>
-          Canvas Size: <b style={{ color: C.gold }}>{canvasSize}×{canvasSize}</b>
-        </span>
-        <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize + 64)}>+ 64px</button>
-        <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize + 128)}>+ 128px</button>
-        <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize + 256)}>+ 256px</button>
-        <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize - 64)}>− 64px</button>
-        <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(DEFAULT_CANVAS_SIZE)}>Reset 512</button>
-        <span style={{ color: C.muted, marginLeft: "0.25rem" }}>Custom:</span>
-        <input
-          type="number"
-          className="pfp-num"
-          min={MIN_CANVAS_SIZE}
-          max={2048}
-          step={1}
-          placeholder={`${canvasSize}`}
-          value={sizeInput}
-          onChange={(e) => setSizeInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && sizeInput) {
-              resizeCanvas(Number(sizeInput));
-              setSizeInput("");
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="pfp-btn pfp-btn-sm"
-          onClick={() => {
-            if (sizeInput) {
-              resizeCanvas(Number(sizeInput));
-              setSizeInput("");
-            }
-          }}
-        >
-          Set
+          {menuOpen && (
+            <div className="pfp-tools-menu" role="menu">
+              {TOOL_MENU.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="menuitem"
+                  className="pfp-tools-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    // Upload and Export have nothing to configure beyond the
+                    // panel itself, but they still open one — every entry
+                    // behaves the same way, so nothing fires unexpectedly.
+                    setOpenTool(t.id);
+                    if (t.id === "masks") setCropMode(false);
+                  }}
+                >
+                  <span className="pfp-tools-emoji">{t.emoji}</span>
+                  <span>
+                    <strong>{t.label}</strong>
+                    <small>{t.hint}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* The open tool's mini panel, anchored under the menu. */}
+          {openTool && (
+            <div className="pfp-pop" role="dialog" aria-label={labelFor(openTool)}>
+              <div className="pfp-pop-head">
+                <span>{labelFor(openTool)}</span>
+                <button
+                  type="button"
+                  className="pfp-pop-close"
+                  onClick={() => setOpenTool(null)}
+                  aria-label="Close panel"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="pfp-pop-body">
+                {openTool === "layers" && (
+                  <>
+                    <LayerPanel
+                      layers={layerList}
+                      selectedId={selectedId}
+                      onSelect={setSelectedId}
+                      onToggle={toggleVisible}
+                      onDelete={deleteLayer}
+                      onReorder={reorderTo}
+                    />
+                    <OperationsPanel
+                      selected={selected}
+                      scalePct={scalePct}
+                      onMoveUp={() => moveZ(1)}
+                      onMoveDown={() => moveZ(-1)}
+                      onRotate={(deg) => patchSelected({ rotation: deg })}
+                      onScale={setScalePct}
+                      onFlipH={() => selected && patchSelected({ flipX: !selected.flipX })}
+                      onFlipV={() => selected && patchSelected({ flipY: !selected.flipY })}
+                      onToggle={() => selected && toggleVisible(selected.id)}
+                      onDelete={() => selected && deleteLayer(selected.id)}
+                      onCrop={enterCrop}
+                    />
+                    {selected && (
+                      <TransformBar
+                        layer={selected}
+                        lockAspect={lockAspect}
+                        onLockAspect={setLockAspect}
+                        onChange={(patch) => patchSelected(patch)}
+                        onSetWH={setWidthHeight}
+                      />
+                    )}
+                  </>
+                )}
+
+                {openTool === "upload" && (
+                  <div className="pfp-pop-stack">
+                    <button
+                      type="button"
+                      className="pfp-btn pfp-btn-gold"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      ⬆ Choose an image…
+                    </button>
+                    <p className="pfp-pop-note">
+                      PNG, JPEG or WebP. It lands as a normal layer, so you can move, scale, rotate,
+                      crop and mask it. You can also drag a file straight onto the canvas.
+                    </p>
+                  </div>
+                )}
+
+                {openTool === "background" && (
+                  <BackgroundControls
+                    bgType={bgType}
+                    setBgType={setBgType}
+                    bgColor={bgColor}
+                    setBgColor={setBgColor}
+                    gradientType={gradientType}
+                    setGradientType={setGradientType}
+                    gradientAngle={gradientAngle}
+                    setGradientAngle={setGradientAngle}
+                    gradientStops={gradientStops}
+                    setGradientStops={setGradientStops}
+                  />
+                )}
+
+                {openTool === "assets" && <AssetPicker onAdd={addAsset} />}
+
+                {openTool === "canvas" && (
+                  <div className="pfp-pop-stack">
+                    <span style={{ color: C.muted }}>
+                      Current:{" "}
+                      <b style={{ color: C.gold }}>
+                        {canvasSize}×{canvasSize}
+                      </b>
+                    </span>
+                    <div className="pfp-pop-row">
+                      <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize + 64)}>+ 64px</button>
+                      <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize + 128)}>+ 128px</button>
+                      <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize + 256)}>+ 256px</button>
+                      <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(canvasSize - 64)}>− 64px</button>
+                      <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => resizeCanvas(DEFAULT_CANVAS_SIZE)}>Reset 512</button>
+                    </div>
+                    <div className="pfp-pop-row">
+                      <span style={{ color: C.muted }}>Custom:</span>
+                      <input
+                        type="number"
+                        className="pfp-num"
+                        min={MIN_CANVAS_SIZE}
+                        max={2048}
+                        step={1}
+                        placeholder={`${canvasSize}`}
+                        value={sizeInput}
+                        onChange={(e) => setSizeInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && sizeInput) {
+                            resizeCanvas(Number(sizeInput));
+                            setSizeInput("");
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="pfp-btn pfp-btn-sm"
+                        onClick={() => {
+                          if (sizeInput) {
+                            resizeCanvas(Number(sizeInput));
+                            setSizeInput("");
+                          }
+                        }}
+                      >
+                        Set
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {openTool === "masks" && (
+                  <div className="pfp-pop-stack">
+                    {!selected && (
+                      <span style={{ color: "#e08c8c" }}>Select a layer first — masks are per layer.</span>
+                    )}
+                    <div className="pfp-pop-row">
+                      <button
+                        type="button"
+                        className="pfp-btn pfp-btn-sm"
+                        onClick={() => setTool("select")}
+                        style={tool === "select" ? activeToggle : undefined}
+                      >
+                        ↖ Select
+                      </button>
+                      <button
+                        type="button"
+                        className="pfp-btn pfp-btn-sm"
+                        onClick={() => {
+                          setTool("eraser");
+                          setCropMode(false);
+                        }}
+                        style={tool === "eraser" ? activeToggle : undefined}
+                      >
+                        ⌫ Erase
+                      </button>
+                      <button
+                        type="button"
+                        className="pfp-btn pfp-btn-sm"
+                        onClick={() => setEraserRestore((v) => !v)}
+                        style={eraserRestore ? activeToggle : undefined}
+                      >
+                        ↩ Restore Brush
+                      </button>
+                    </div>
+                    <label className="pfp-inline">
+                      Brush size
+                      <input
+                        type="range"
+                        min={5}
+                        max={100}
+                        step={1}
+                        value={eraserSize}
+                        onChange={(e) => setEraserSize(Number(e.target.value))}
+                      />
+                      <span style={{ color: C.gold, width: 32 }}>{eraserSize}</span>
+                    </label>
+                    <p className="pfp-pop-note">
+                      Erasing hides pixels on the selected layer; Restore Brush paints them back.
+                      Leave this panel open and draw on the canvas.
+                    </p>
+                  </div>
+                )}
+
+                {openTool === "export" && (
+                  <div className="pfp-pop-stack">
+                    <button type="button" className="pfp-btn pfp-btn-gold" onClick={exportPng}>
+                      ⬇ Download PNG
+                    </button>
+                    <p className="pfp-pop-note">
+                      Flattens every visible layer at {canvasSize}×{canvasSize} and saves it. This
+                      happens entirely in your browser.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Erasing is a mode, and a mode you cannot see is a trap: this shows
+            when the masks panel is closed but the eraser is still armed. */}
+        {tool === "eraser" && openTool !== "masks" && (
+          <button type="button" className="pfp-btn pfp-btn-sm" onClick={() => setTool("select")}>
+            {eraserRestore ? "↩ Restoring" : "⌫ Erasing"} · Done
+          </button>
+        )}
+
+        <div style={{ flex: 1 }} />
+        <button type="button" className="pfp-btn pfp-btn-gold" onClick={openGenerate}>
+          🌟 Generate
         </button>
       </div>
 
       {/* ── Main grid ───────────────────────────────────────────────────────── */}
       <div className="pfp-main">
-        {/* Left: background + asset picker */}
-        <div className="pfp-sidebar">
-          <BackgroundControls
-            bgType={bgType}
-            setBgType={setBgType}
-            bgColor={bgColor}
-            setBgColor={setBgColor}
-            gradientType={gradientType}
-            setGradientType={setGradientType}
-            gradientAngle={gradientAngle}
-            setGradientAngle={setGradientAngle}
-            gradientStops={gradientStops}
-            setGradientStops={setGradientStops}
-          />
-          <AssetPicker onAdd={addAsset} />
-        </div>
-
         {/* Center: canvas */}
         <div className="pfp-center">
           <div
@@ -1051,7 +1152,8 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
             />
             {layers.length === 0 && (
               <div className="pfp-canvas-hint">
-                Upload a photo or pick a preset, then add hats & bowls. Set a background on the left.
+                Open 🧰 Canvas Tools to upload a photo, add hats &amp; bowls, or set a background —
+                or drag an image straight onto this canvas.
               </div>
             )}
             {cropMode && (
@@ -1064,63 +1166,24 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
           </div>
         </div>
 
-        {/* Right: layers + operations */}
-        <div className="pfp-right">
-          <LayerPanel
-            layers={layerList}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onToggle={toggleVisible}
-            onDelete={deleteLayer}
-            onReorder={reorderTo}
-          />
-          <OperationsPanel
-            selected={selected}
-            scalePct={scalePct}
-            onMoveUp={() => moveZ(1)}
-            onMoveDown={() => moveZ(-1)}
-            onRotate={(deg) => patchSelected({ rotation: deg })}
-            onScale={setScalePct}
-            onFlipH={() => selected && patchSelected({ flipX: !selected.flipX })}
-            onFlipV={() => selected && patchSelected({ flipY: !selected.flipY })}
-            onToggle={() => selected && toggleVisible(selected.id)}
-            onDelete={() => selected && deleteLayer(selected.id)}
-            onCrop={enterCrop}
-          />
-        </div>
       </div>
 
-      {selected && (
-        <TransformBar
-          layer={selected}
-          lockAspect={lockAspect}
-          onLockAspect={setLockAspect}
-          onChange={(patch) => patchSelected(patch)}
-          onSetWH={setWidthHeight}
-        />
-      )}
-
-      {aiOpen && (
-        <AiEnhanceModal
-          source={aiSource}
-          layers={buildManifest(layers)}
-          walletAddress={walletAddress}
-          onClose={() => setAiOpen(false)}
-          onUse={onAiResult}
-        />
-      )}
-
       {genOpen && (
-        <GeneratePfpModal
+        <GenerateModal
           source={genSource}
-          layers={genLayers}
-          walletAddress={walletAddress}
           onClose={() => setGenOpen(false)}
+          onAddLayer={onGenerated}
         />
       )}
     </div>
   );
 });
+
+/** Menu label for the open panel's header — same wording as the menu entry. */
+function labelFor(id: ToolPanel): string {
+  const t = TOOL_MENU.find((m) => m.id === id);
+  return t ? `${t.emoji} ${t.label}` : "";
+}
 
 const activeToggle: CSSProperties = {
   background: C.gold,
@@ -1453,12 +1516,41 @@ function ComposerStyles() {
       dangerouslySetInnerHTML={{
         __html: `
         .pfp-toolbar { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:0.75rem; }
-        .pfp-divider { width:1px; height:24px; background:rgba(201,168,76,0.3); margin:0 0.25rem; }
-        .pfp-subbar {
-          display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; margin-bottom:0.75rem;
-          padding:0.5rem 0.75rem; border:1px solid rgba(201,168,76,0.2); border-radius:10px; background:rgba(10,8,5,0.5);
-          font-size:0.8rem; color:${C.white};
+
+        /* Canvas Tools: the dropdown, and the mini panel each entry opens. Both
+           are anchored to the wrapper and overlay the workspace, so opening one
+           never reflows the canvas out from under the pointer. */
+        .pfp-tools-wrap { position:relative; }
+        .pfp-tools-menu {
+          position:absolute; top:calc(100% + 6px); left:0; z-index:60; width:250px;
+          background:${C.dark}; border:1px solid rgba(201,168,76,0.45); border-radius:12px;
+          padding:0.35rem; box-shadow:0 14px 34px rgba(0,0,0,0.55);
         }
+        .pfp-tools-item {
+          display:flex; align-items:center; gap:0.55rem; width:100%; text-align:left;
+          background:transparent; border:none; border-radius:8px; padding:0.5rem 0.55rem;
+          color:${C.white}; cursor:pointer; font-family:system-ui,sans-serif;
+        }
+        .pfp-tools-item:hover { background:rgba(201,168,76,0.15); color:${C.gold}; }
+        .pfp-tools-emoji { font-size:1.05rem; line-height:1; width:1.3rem; text-align:center; }
+        .pfp-tools-item strong { display:block; font-size:0.83rem; font-weight:600; }
+        .pfp-tools-item small { display:block; color:${C.muted}; font-size:0.68rem; line-height:1.3; }
+        .pfp-pop {
+          position:absolute; top:calc(100% + 6px); left:0; z-index:60;
+          width:min(360px, calc(100vw - 2rem)); max-height:min(70vh, 560px); display:flex; flex-direction:column;
+          background:${C.dark}; border:1px solid rgba(201,168,76,0.45); border-radius:12px;
+          box-shadow:0 14px 34px rgba(0,0,0,0.55);
+        }
+        .pfp-pop-head {
+          display:flex; align-items:center; justify-content:space-between; gap:0.5rem;
+          padding:0.6rem 0.75rem; border-bottom:1px solid rgba(201,168,76,0.25);
+          color:${C.gold}; font-family:${SERIF}; font-size:0.95rem;
+        }
+        .pfp-pop-close { background:transparent; border:none; color:${C.gold}; font-size:0.9rem; cursor:pointer; }
+        .pfp-pop-body { overflow-y:auto; padding:0.75rem; display:flex; flex-direction:column; gap:0.75rem; }
+        .pfp-pop-stack { display:flex; flex-direction:column; gap:0.6rem; }
+        .pfp-pop-row { display:flex; flex-wrap:wrap; gap:0.4rem; align-items:center; }
+        .pfp-pop-note { color:${C.muted}; font-size:0.75rem; line-height:1.5; margin:0; }
         .pfp-inline { display:flex; align-items:center; gap:0.4rem; color:${C.white}; font-size:0.8rem; }
         .pfp-inline input[type=range] { accent-color:${C.gold}; }
         .pfp-btn {
@@ -1473,8 +1565,9 @@ function ComposerStyles() {
         .pfp-btn-gold:hover { color:${C.dark}; background:#dcc06a; }
         .pfp-btn-glow { border-color:${C.gold}; color:${C.gold}; box-shadow:0 0 12px rgba(201,168,76,0.35); }
 
-        .pfp-main { display:grid; grid-template-columns: 220px 1fr 240px; gap:1rem; align-items:start; }
-        .pfp-center { display:flex; flex-direction:column; align-items:center; }
+        /* The canvas is the page now — the two side columns became panels. */
+        .pfp-main { display:flex; justify-content:center; }
+        .pfp-center { display:flex; flex-direction:column; align-items:center; width:100%; }
         .pfp-canvas-drop { position:relative; width:100%; max-width:${CANVAS_CSS}px; }
         .pfp-canvas {
           width:100%; aspect-ratio:1/1; max-width:${CANVAS_CSS}px; height:auto;
@@ -1491,7 +1584,6 @@ function ComposerStyles() {
           padding:0.5rem; border-radius:8px; color:${C.white}; font-size:0.8rem;
         }
 
-        .pfp-sidebar { border:1px solid rgba(201,168,76,0.2); border-radius:12px; padding:0.6rem; background:rgba(10,8,5,0.5); display:flex; flex-direction:column; gap:0.75rem; }
         .pfp-bg-types { display:flex; flex-wrap:wrap; gap:0.35rem; }
         .pfp-bg-section { display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem; }
         .pfp-swatches { display:flex; gap:0.4rem; }
@@ -1510,7 +1602,6 @@ function ComposerStyles() {
         .pfp-asset img { width:100%; aspect-ratio:1/1; object-fit:contain; background:rgba(0,0,0,0.25); border-radius:6px; }
         .pfp-asset span { color:${C.white}; font-size:0.66rem; text-align:center; line-height:1.2; }
 
-        .pfp-right { display:flex; flex-direction:column; gap:1rem; }
         .pfp-layers, .pfp-ops, .pfp-bg, .pfp-assets-wrap { display:flex; flex-direction:column; }
         .pfp-layers, .pfp-ops { border:1px solid rgba(201,168,76,0.2); border-radius:12px; padding:0.75rem; background:rgba(10,8,5,0.5); }
         .pfp-panel-title { color:${C.gold}; font-family:${SERIF}; font-size:0.95rem; margin-bottom:0.5rem; }
@@ -1527,8 +1618,8 @@ function ComposerStyles() {
         .pfp-ops input[type=range] { width:100%; accent-color:${C.gold}; }
 
         .pfp-transform {
-          display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; margin-top:1rem;
-          border:1px solid rgba(201,168,76,0.25); border-radius:12px; padding:0.75rem 1rem; background:rgba(10,8,5,0.6);
+          display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center;
+          border:1px solid rgba(201,168,76,0.25); border-radius:12px; padding:0.75rem; background:rgba(10,8,5,0.6);
         }
         .pfp-field, .pfp-lock { display:flex; align-items:center; gap:0.35rem; color:${C.white}; font-size:0.8rem; }
         .pfp-num {
@@ -1539,11 +1630,7 @@ function ComposerStyles() {
         .pfp-transform-rot input[type=range] { flex:1; accent-color:${C.gold}; }
 
         @media (max-width: 900px) {
-          .pfp-main { grid-template-columns:1fr; }
-          .pfp-sidebar { order:2; }
-          .pfp-center { order:1; }
-          .pfp-right { order:3; }
-          .pfp-asset-grid { grid-template-columns:repeat(4,1fr); max-height:none; }
+          .pfp-asset-grid { grid-template-columns:repeat(3,1fr); }
         }
         @media (max-width: 420px) {
           .pfp-asset-grid { grid-template-columns:repeat(3,1fr); }

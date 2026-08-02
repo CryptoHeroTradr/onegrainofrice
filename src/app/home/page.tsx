@@ -5,6 +5,7 @@ import { HomeFooter } from "@/components/journey/HomeFooter";
 import { SushiBeltSection } from "@/components/memes/SushiBeltSection";
 import { TokenInfo } from "@/components/content/TokenInfo";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
+import { SimplePfpGen } from "@/components/home/SimplePfpGen";
 
 /**
  * The new $RICE home — a scrubbed, non-game/non-charity site: palm/single-grain
@@ -30,24 +31,27 @@ export default function Home() {
           <SushiBeltSection />
         </section>
 
-        {/* PFP & Meme generator — teaser + link to the full two-mode studio at
-            /pfp. Placed BEFORE tokenomics (swapped with Token). */}
+        {/* PFP & Meme generator — the one-shot version (photo + a few words),
+            with the full studio at /pfp one click away. Placed BEFORE tokenomics
+            (swapped with Token). */}
         <section id="pfp" className="section grain-paper bg-steamed text-nori">
           <div className="mx-auto max-w-[1180px] px-6 text-center">
             <div className="flex justify-center">
               <SectionHeading lead="make your" accent="$Rice Villager PFP or Rice Meme" tone="dark" />
             </div>
             <p className="mx-auto mt-4 max-w-xl font-mono text-sm text-nori/70 sm:text-base">
-              Stack hats, bowls &amp; rice-art layers right in your browser — compose and download
-              with no account. Or let AI paint your grain: enhance your portrait, spin up rice art,
-              or re-render the whole thing.
+              Drop in a photo and we&apos;ll hand your character a rice farmer hat and a steaming
+              bowl — same art style, nothing else touched. Add a few words to steer it.
             </p>
+
+            <SimplePfpGen />
+
             <div className="mt-8 flex justify-center">
               <Link
                 href="/pfp"
                 className="inline-flex min-h-11 items-center gap-2 bg-tuna px-7 font-display-round text-base font-bold text-steamed transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bamboo"
               >
-                🌾 Open the PFP &amp; Meme Gen →
+                🌾 Full PFP &amp; Meme Generator →
               </Link>
             </div>
           </div>

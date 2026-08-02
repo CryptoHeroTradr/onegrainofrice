@@ -60,6 +60,30 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/**
+ * Read a file and re-encode it as a PNG data URL, capped to `maxSize` on its
+ * long edge.
+ *
+ * Required before anything is sent to the image API: the route hands the bytes
+ * to OpenAI labelled `image/png`, so a JPEG that merely *arrives* as a data URL
+ * is rejected on the far side. Re-drawing through a canvas makes the label true
+ * and keeps the upload small enough to post.
+ */
+export async function fileToPngDataUrl(file: File, maxSize = 1024): Promise<string> {
+  const src = await fileToDataUrl(file);
+  const img = await loadImage(src);
+  const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * scale));
+  const h = Math.max(1, Math.round(img.naturalHeight * scale));
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  if (!ctx) return src;
+  ctx.drawImage(img, 0, 0, w, h);
+  return c.toDataURL("image/png");
+}
+
 export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
