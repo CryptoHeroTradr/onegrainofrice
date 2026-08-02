@@ -22,6 +22,20 @@ export const maxDuration = 60;
 /** A flattened-but-empty canvas is a few hundred bytes; real content is far larger. */
 const MIN_REFERENCE_BYTES = 5000;
 
+/**
+ * Is there something to work FROM?
+ *
+ * The studio flattens its canvas on every generate, so an untouched canvas still
+ * arrives as a perfectly valid PNG — size is the only thing separating it from
+ * real work, hence the threshold. /home has no canvas: a photo was attached or
+ * it wasn't, and a flat or tiny image is still the photo the user chose. Judging
+ * it by byte count there would reject the upload as "no photo".
+ */
+function hasReferenceImage(imageBase64: unknown, mode: string): imageBase64 is string {
+  if (typeof imageBase64 !== "string" || imageBase64.length === 0) return false;
+  return mode === "simple" || imageBase64.length > MIN_REFERENCE_BYTES;
+}
+
 export async function POST(req: Request) {
   if (!getOpenAI()) {
     return NextResponse.json(
@@ -44,7 +58,7 @@ export async function POST(req: Request) {
   }
 
   const { imageBase64, look, prompt, size = "1:1", mode = "full" } = body;
-  const hasReference = typeof imageBase64 === "string" && imageBase64.length > MIN_REFERENCE_BYTES;
+  const hasReference = hasReferenceImage(imageBase64, mode);
 
   if (mode === "simple" && !hasReference) {
     return NextResponse.json({ error: "Upload a photo first." }, { status: 400 });
