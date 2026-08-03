@@ -288,9 +288,16 @@ body {
    sticks ARE the cursor, so we keep the native one hidden to avoid two cursors.
    When it is NOT active (prefers-reduced-motion, coarse pointer) this static
    chopstick cursor image is used instead — `cursor: url(<asset>) <hotspot>, auto`.
+
+   The URL is ROOT-relative on purpose. CSS cannot read NEXT_PUBLIC_BASE_PATH, so it
+   cannot go through asset(); it has to hardcode a path, and the app's basePath is ""
+   (its own domain, 1grainofrice.com — see next.config.ts). This previously read
+   "/onegrainofrice/grains/…", the legacy sub-path mount, which 404d in production and
+   silently dropped the custom cursor back to `auto`. If the app is ever remounted under
+   a sub-path again, this line has to move into an inline style driven by asset().
 --------------------------------------------------------------------------- */
 .grains-play-area {
-  cursor: url("/onegrainofrice/grains/chopstick-cursor.svg") 6 5, auto;
+  cursor: url("/grains/chopstick-cursor.svg") 6 5, auto;
 }
 body.chopsticks-active .grains-play-area {
   cursor: none;
