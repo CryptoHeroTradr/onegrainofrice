@@ -18,7 +18,10 @@ An original arcade maze-chase game for the onegrainofrice site: the player clear
 
 - Plain HTML5 Canvas 2D + TypeScript. No game engine.
 - **Zero new npm dependencies** without asking first.
-- **Zero external assets.** No CDN, no Google Fonts, no third-party requests at runtime. Art is drawn procedurally; sound is generated at build time by the repo's existing `scripts/gen-sfx.mjs` pipeline and played through `src/lib/sound.ts`. Everything ships from the VPS.
+- **Zero third-party runtime requests.** No CDN, no Google Fonts, no remote scripts, no remote images, no analytics — nothing the page fetches may leave the VPS. Sound is generated at build time by the repo's existing `scripts/gen-sfx.mjs` pipeline and played through `src/lib/sound.ts`.
+- **Self-hosted static images are permitted** under `public/chomp/`, referenced through `asset()` so they carry the basePath and the cache-busting build stamp. Everything else is drawn procedurally. *Amended 2026-08-03: this rule originally read "zero external assets", which also banned images we host ourselves — not the intent. The thing being protected is that the page makes no third-party request and nothing can go missing at runtime, not that pixels may never come from a file.*
+  - **Size budget: 500 KB total for `public/chomp/`, and 300 KB for any single file.** A game route that costs more than a couple of photos to load has lost the plot, and the budget is small enough that exceeding it is a decision rather than an accident. Prefer WebP. Decode asynchronously and render a solid fallback until the image is ready — first paint never waits on an image.
+  - Fonts, scripts and any CDN-hosted asset remain **forbidden**, self-hosted or not: the site's faces come from `next/font` and are already self-hosted at build time.
 - Follow the repo convention: thin `page.tsx` → `"use client"` screen component → **directive-free engine module** with no React, canvas-DOM, or `window` references in its pure logic (same shape as `riceBowlEngine.ts`).
 - **Fixed-timestep** simulation at 60Hz, accumulator-driven, decoupled from `requestAnimationFrame`. Identical gameplay at any refresh rate, no logic tied to raw delta time. This is load-bearing for the anti-cheat roadmap — do not let non-determinism in.
 - Letterboxed to the maze's 28:31 aspect and scaled by `devicePixelRatio` (capped, so a 3× phone does not pay for pixels it cannot show).
@@ -38,24 +41,19 @@ math is expressed in tiles and never in pixels: speeds in tiles/second, target-t
 selection, the Euclidean distance comparisons in the pest AI, maze girth and connectivity.
 This does not change, and the render layer must never leak pixel units back into it.
 
-**How a tile is drawn is a separate decision, isolated entirely within `render.ts`.** Two
-modes are supported:
+**How a tile is drawn is isolated entirely within `render.ts`, and the strategy is
+decided: native resolution.** Pick the largest whole-pixel tile that fits the viewport and
+draw anti-aliased at that size. It stays crisp at any DPR, avoids the thick letterbox bars
+integer scaling produces on odd viewports, and sits closer to the rest of the site's
+procedural-canvas look (`riceBowlEngine.ts`, `GrainCatch.tsx`).
 
-- **Native resolution — current.** Pick the largest whole-pixel tile that fits the
-  viewport and draw anti-aliased at that size. Stays crisp at any DPR, avoids the thick
-  letterbox bars integer scaling produces on odd viewports, and sits closer to the rest of
-  the site's procedural-canvas look (`riceBowlEngine.ts`, `GrainCatch.tsx`).
-- **Pixel art — supported alternative, not built.** A locked 224×248 buffer, an 8px
-  procedural sprite atlas baked at boot, `imageSmoothingEnabled = false`, nearest-neighbour
-  upscale.
-
-Native resolution is chosen for now, and is revisited **after Phase 4**: neither look can
-be judged honestly until four pests are moving through the maze, and switching costs only
-a rewrite of `render.ts` — the engine is indifferent to both. That makes it the cheapest
-late decision in the project, so it is deliberately deferred rather than guessed at.
-
-What is *not* negotiable in either mode: no external assets, everything drawn
-procedurally, everything shipped from the VPS.
+*Amended 2026-08-03: pixel-art mode — a locked 224×248 buffer, an 8px sprite atlas,
+`imageSmoothingEnabled = false`, nearest-neighbour upscale — was briefly recorded as a
+supported alternative pending a look at four pests in motion. It is now **removed**, not
+deferred: the wall treatment uses a photographic paddy texture, and a photograph
+nearest-neighboured into a 224-pixel-wide buffer is not a style, it is a mistake. The two
+decisions are incompatible, and the background is the one being kept. Native resolution is
+therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
 ### Path handling
 
@@ -117,6 +115,17 @@ Shared behavior:
 - HUD: score, high score, level indicator as bonus-item icons, lives as small bowl icons.
 - Game over → name entry → submission → leaderboard.
 - `prefers-reduced-motion`: strip screen shake, maze flash and cutscenes; **gameplay stays playable**.
+- **High-contrast toggle (Phase 6).** Plain wall fill, no background image, for anyone who finds the textured board hard to read. Persisted alongside the mute setting, and reachable without starting a game. *Added 2026-08-03 with the paddy wall texture: a decorative background that some players cannot read is a decorative background with an off switch, not a reason to skip the decoration.*
+
+### The board (Phase 4 and later)
+
+- **Walls carry the paddy texture, corridors do not.** A self-hosted rice-field image is clipped to the wall shapes — flooded paddies with the walkways cut between them. Corridors stay dark and uniform so grains, player and pests pop off them.
+- Darken the image **40–60%**, tuned by eye against four pests in motion.
+- **Stroke the wall edges in a theme colour.** This is the line item that decides whether the treatment works: a textured maze without edge definition is soup.
+- **Bake once into an offscreen canvas at boot**, never per frame. Re-bake only on a size change, alongside the existing static layers.
+- **Decode asynchronously.** The maze renders on a solid fill until the image is ready; first paint never blocks on it, and a failed load is a non-event.
+- **Legibility beats theming.** If it cannot be made readable with four pests on screen, desaturate it to near-texture or drop it outright.
+- **Golden grains are stylized paddies** — flooded field, a few rows of shoots, high contrast — drawn procedurally, not downscaled from a photo: a tile is ~27px and detail below about 24px dies. They carry a slow pulse or shimmer so they separate from ordinary grains by **motion as well as shape**.
 
 ## Leaderboard
 
@@ -132,7 +141,7 @@ Shared behavior:
 
 - 60fps on a mid-range phone; no GC stutter — pool objects, no per-frame allocations in the hot loop.
 - Deterministic: identical inputs produce an identical run regardless of frame rate.
-- Zero third-party network requests, verified in the network tab.
+- Zero third-party network requests, verified in the network tab. Self-hosted images under `public/chomp/` are within budget (500 KB total, 300 KB per file).
 - Zero new npm dependencies.
 - Fully playable keyboard-only and touch-only.
 - No hardcoded path prefixes anywhere, TS or CSS.
