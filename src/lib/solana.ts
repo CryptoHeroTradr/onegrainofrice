@@ -1,4 +1,5 @@
 import { Connection } from "@solana/web3.js";
+import { BASE_PATH } from "./basePath";
 
 /**
  * Shared read-only Solana connection for every wallet flow on the site: the
@@ -14,7 +15,6 @@ import { Connection } from "@solana/web3.js";
  * NEXT_PUBLIC_SOLANA_RPC_URL still overrides everything when a browser-safe
  * endpoint should be called directly, skipping the proxy hop.
  */
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
 
 /** web3.js needs an absolute URL, so the origin is resolved at call time. */
 function defaultRpcUrl(): string {

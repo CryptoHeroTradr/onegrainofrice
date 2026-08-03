@@ -5,9 +5,8 @@
  * image at /memes/x.svg would be requested at the server root and 404 when the
  * app is mounted under /onegrainofrice. Wrap every image src in asset().
  *
- * Kept in sync with next.config.ts via NEXT_PUBLIC_BASE_PATH.
  */
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
+import { BASE_PATH } from "./basePath";
 
 // Per-build cache-busting stamp (see next.config.ts). Appended as `?v=…` so a
 // new build serves new asset URLs, letting the browser cache each URL forever

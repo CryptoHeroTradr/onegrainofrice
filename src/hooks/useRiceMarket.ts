@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-/** This app's basePath — the route handlers live under it. */
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
+import { BASE_PATH } from "@/lib/basePath";
 
 /**
  * Live market data for the $RICE trading portal.

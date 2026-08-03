@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BASE_PATH } from "@/lib/basePath";
 
 /**
  * Client hook for the grains realtime socket.
@@ -14,7 +15,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
  *   server's authoritative "init" / "you" / "tick" messages.
  */
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
 // Client-side mirror of the visitor's personal total. The authoritative count is
 // keyed to the signed `grain_vid` cookie server-side, but that cookie can be
 // dropped between visits (iOS private browsing, cleared site data, ITP), which

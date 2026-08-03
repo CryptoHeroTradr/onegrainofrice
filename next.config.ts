@@ -1,15 +1,26 @@
 import type { NextConfig } from "next";
 
 /**
- * Sub-path mount. On the VPS the site is served at
- * http://209.141.52.60/onegrainofrice behind nginx, alongside other apps that
- * already own root-level routes like /_next/. basePath namespaces every route
- * and asset under /onegrainofrice so nothing collides (next/font, next/image,
- * <Link>, and /_next chunks all get the prefix automatically).
+ * ROOT MOUNT. This site owns its own domain (1grainofrice.com), so it is served at "/"
+ * and every route and asset is root-relative. `.env.local` sets NEXT_PUBLIC_BASE_PATH=""
+ * explicitly; this expression is what turns that into Next's `basePath` and re-exports
+ * it to the client via `env` below.
  *
- * Set NEXT_PUBLIC_BASE_PATH="" to serve at root instead (e.g. a dedicated domain).
+ * The fallback is "" ON PURPOSE. It used to be "/onegrainofrice" — the legacy sub-path
+ * mount from when this app shared an IP gateway with CXMZ and RiceDAO. Because "" is not
+ * nullish, `??` never fired: that fallback was dead code in every environment, copied
+ * into eight modules, all of them describing a mount that no longer exists. It read as
+ * authoritative and wasn't, which is how "/onegrainofrice/grains/chopstick-cursor.svg"
+ * ended up hardcoded in globals.css and 404ing in production for months.
+ *
+ * If this app is ever remounted under a sub-path, set NEXT_PUBLIC_BASE_PATH in the
+ * environment — do not reintroduce a non-empty literal here.
+ *
+ * NOTE: `src/lib/basePath.ts` holds the identical expression for application code (a
+ * Next config cannot safely import from the module graph it configures). Those two are
+ * the only reads of NEXT_PUBLIC_BASE_PATH in the repo. Keep them in step.
  */
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /**
  * Origin of the RiceDAO game server (apps/server) that runs the live Telegram

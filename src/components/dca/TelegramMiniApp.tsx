@@ -5,6 +5,7 @@ import { DcaWorkspace } from "@/components/dca/DcaWorkspace";
 import { handOffUrl, WEB_FRAME, type DcaFrame, type HandOffIntent } from "@/components/dca/frame";
 import { isTelegramMiniApp, openExternal, telegramLaunchDetected, telegramWebApp } from "@/lib/telegram";
 import { site } from "@/config/site";
+import { BASE_PATH } from "@/lib/basePath";
 
 /**
  * THE TELEGRAM MINI APP.
@@ -38,8 +39,6 @@ interface Identity {
   readonly mode: "wallet" | "key" | null;
   readonly message?: string;
 }
-
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
 
 export function TelegramMiniApp() {
   const [identity, setIdentity] = useState<Identity>({ state: "loading", wallet: null, mode: null });

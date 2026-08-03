@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { BASE_PATH } from "@/lib/basePath";
 import {
   VID_COOKIE_NAME,
   signVid,
@@ -25,7 +26,6 @@ export const dynamic = "force-dynamic";
 // Cookie scoped to the app's basePath so it is sent on /grains and /grains/ws
 // (the WS upgrade) but not to sibling apps on the same host. ~400 days (the
 // browser cap); the vid is stable so returning visitors keep their grain total.
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
 const COOKIE_PATH = BASE_PATH || "/";
 const MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 
