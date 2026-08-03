@@ -55,7 +55,12 @@ export function ChompScreen() {
   const seconds = (stats.tick / 60).toFixed(1);
 
   return (
-    <main className="flex min-h-screen flex-col bg-nori text-steamed">
+    // A GRID with a definite height, not `min-h-screen` + `flex-1`. `min-height` gives
+    // descendants nothing to resolve `height: 100%` against, so the canvas wrapper used
+    // to collapse to its own content and lock the maze at the minimum tile size. An
+    // explicit `100svh` (small viewport height — no jump when mobile browser chrome
+    // hides) makes the 1fr row's height definite, so `h-full` inside it resolves.
+    <main className="grid h-[100svh] grid-rows-[auto_auto_1fr_auto] overflow-hidden bg-nori text-steamed">
       <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-4 pt-4 pb-3 sm:px-6">
         <div className="flex items-baseline gap-3">
           <h1 className="font-display-round text-2xl font-semibold text-khaki sm:text-3xl">
@@ -99,12 +104,13 @@ export function ChompScreen() {
         </div>
       </div>
 
-      <div className="relative flex min-h-0 flex-1 items-center justify-center p-2 sm:p-4">
+      {/* min-h-0 stops the 1fr row being forced taller by its content. */}
+      <div className="relative min-h-0 p-2 sm:p-4">
         <ChompCanvas
           ref={gameRef}
           onStats={onStats}
           reducedMotion={reduced}
-          className="flex h-full max-h-[calc(100svh-13rem)] w-full items-center justify-center"
+          className="h-full w-full"
         />
 
         {(stats.paused || cleared) && (

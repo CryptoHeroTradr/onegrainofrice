@@ -220,10 +220,25 @@ export const ChompCanvas = forwardRef<
      * canvas to exactly COLS×ROWS tiles. The wrapper centres it, so the maze keeps its
      * 28:31 aspect at any viewport without CSS scaling blurring the render.
      */
+    let retry = 0;
     const resize = () => {
       const box = wrap.getBoundingClientRect();
-      if (box.width <= 0 || box.height <= 0) return;
-      const tilePx = Math.max(4, Math.floor(Math.min(box.width / COLS, box.height / ROWS)));
+
+      // A degenerate box means layout has not settled yet (or an ancestor has no
+      // definite height). Retry on the next frame rather than committing to a size —
+      // committing here is what produced the 4px-tile bug: the canvas was sized from a
+      // bad measurement, the content-sized wrapper then shrank to the canvas, and the
+      // next measurement agreed with itself forever.
+      if (box.width < COLS || box.height < ROWS) {
+        if (retry < 60) {
+          retry++;
+          requestAnimationFrame(resize);
+        }
+        return;
+      }
+      retry = 0;
+
+      const tilePx = Math.floor(Math.min(box.width / COLS, box.height / ROWS));
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
       if (tilePx === tileRef.current && dpr === dprRef.current) return;
 
@@ -298,12 +313,23 @@ export const ChompCanvas = forwardRef<
   }, []);
 
   return (
-    <div ref={wrapRef} className={className}>
+    // The canvas is taken OUT of flow and centred absolutely so it can never
+    // contribute to the size of the box being measured. Measuring an ancestor of the
+    // thing you resize is a feedback loop waiting to happen; this makes it structurally
+    // impossible rather than merely unlikely.
+    <div ref={wrapRef} className={className} style={{ position: "relative" }}>
       <canvas
         ref={canvasRef}
         role="img"
         aria-label="RICE CHOMP maze. Steer the grain of rice with the arrow keys to clear every grain."
-        style={{ display: "block", margin: "0 auto", touchAction: "none" }}
+        style={{
+          display: "block",
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          touchAction: "none",
+        }}
       />
     </div>
   );
