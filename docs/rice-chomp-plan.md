@@ -475,19 +475,31 @@ have**. This is the single strongest argument for the HTTP leaderboard in §5.
    flagged for approval (open question 9). CSS can't read `NEXT_PUBLIC_BASE_PATH`, so
    the real fix is either a hardcoded root path or a CSS variable set from JS.
 
-2. **The SQLite WAL is not checkpointing.**
+2. ~~**The SQLite WAL is not checkpointing.**~~ **Withdrawn — measured, and it is fine.**
+
+   The raw numbers looked alarming:
 
    ```
    grains.db      143 KB
    grains.db-wal  4.1 MB     <- 29× the database
-   grains.db-shm   32 KB
    ```
 
-   The writer process never closes, so no passive checkpoint completes while readers
-   keep the WAL pinned. Not currently harmful (WAL is durable), but it grows unbounded
-   and a crash means a long recovery. Worth a periodic
-   `PRAGMA wal_checkpoint(TRUNCATE)` in the WS tick loop. **A second SQLite database for
-   RICE CHOMP will have the same characteristic** — worth designing in from the start.
+   But 4.1 MB is not a leak, it is the default cap. Measured on the live DB:
+
+   ```
+   page_size 4096 | journal_mode wal | wal_autocheckpoint 1000 pages
+   threshold = 32 + 1000 * (4096 + 24) = 4,120,032 bytes
+   actual    = 4,140,632 bytes = 1005 frames
+   ```
+
+   The WAL is sitting one thousand frames deep because that is exactly where SQLite's
+   default `wal_autocheckpoint` lets it sit. It checkpoints on schedule and reuses the
+   space; the file stays around 4 MB forever rather than growing. Nothing to fix, and
+   no reason to go near the process that owns it.
+
+   The one thing worth carrying forward is a deliberate choice for `chomp.db` rather
+   than an inherited default: set `wal_autocheckpoint` explicitly at open time so the
+   ceiling is a decision on the record instead of a surprise later.
 
 3. **`onegrainofrice` has restarted 31 times in 37 hours** (`pm2 list` ↺ column) while
    `oneg-grains-ws` has 0 restarts in 17 days. Some of those are deploys, but 31 is a
