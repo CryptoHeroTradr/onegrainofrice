@@ -18,6 +18,7 @@
  */
 export const homeNavLinks = [
   { label: "Home", href: "/home", emoji: "🏠" },
+  { label: "Rice Chomp", href: "/chomp", emoji: "👾" },
   { label: "Memes", href: "/memes", emoji: "😂" },
   { label: "PFP & Meme Gen", href: "/pfp", emoji: "🎨" },
   { label: "Charity", href: "/charity", emoji: "❤️" },

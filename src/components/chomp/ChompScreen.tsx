@@ -1,0 +1,142 @@
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
+import { ChompCanvas, type ChompCanvasHandle, type ChompStats } from "./ChompCanvas";
+
+/**
+ * RICE CHOMP — the screen. HUD, framing and controls; the game itself is
+ * <ChompCanvas />.
+ *
+ * PHASE 2: maze and player, keyboard only. No pests, no audio, no leaderboard. The
+ * point of this build is to judge how movement feels, so the chrome stays out of the
+ * way and the numbers on show are the ones that tell you the loop is running.
+ *
+ * The HUD is marked translate="no": TranslateProvider mounts Google Translate site-wide
+ * and it will happily rewrite live score digits mid-run.
+ */
+
+const HUD_LABEL = "font-mono text-[0.6rem] tracking-[0.18em] text-steamed/45 uppercase";
+const HUD_VALUE = "font-display-round text-2xl leading-none font-semibold tabular-nums";
+
+function Stat({ label, value, tone = "text-steamed" }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={HUD_LABEL}>{label}</span>
+      <span className={`${HUD_VALUE} ${tone}`}>{value}</span>
+    </div>
+  );
+}
+
+function Key({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="inline-flex min-w-7 items-center justify-center border border-steamed/25 bg-steamed/5 px-1.5 py-0.5 font-mono text-[0.7rem] text-steamed/80">
+      {children}
+    </kbd>
+  );
+}
+
+export function ChompScreen() {
+  const reduced = usePrefersReducedMotion();
+  const gameRef = useRef<ChompCanvasHandle>(null);
+  const [stats, setStats] = useState<ChompStats>({
+    grainsEaten: 0,
+    powerEaten: 0,
+    grainsRemaining: 0,
+    tick: 0,
+    paused: false,
+  });
+
+  // Identity-stable so ChompCanvas never re-runs its boot effect.
+  const onStats = useCallback((s: ChompStats) => setStats(s), []);
+
+  const cleared = stats.grainsRemaining === 0 && stats.tick > 0;
+  const seconds = (stats.tick / 60).toFixed(1);
+
+  return (
+    <main className="flex min-h-screen flex-col bg-nori text-steamed">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-4 pt-4 pb-3 sm:px-6">
+        <div className="flex items-baseline gap-3">
+          <h1 className="font-display-round text-2xl font-semibold text-khaki sm:text-3xl">
+            RICE CHOMP
+          </h1>
+          <span className="font-mono text-[0.6rem] tracking-[0.18em] text-steamed/35 uppercase">
+            Phase 2 · movement test
+          </span>
+        </div>
+        <Link
+          href="/"
+          className="font-mono text-xs text-steamed/50 underline-offset-4 transition-colors hover:text-khaki hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+        >
+          ← back to the paddy
+        </Link>
+      </header>
+
+      <div
+        translate="no"
+        className="notranslate flex flex-wrap items-end gap-x-8 gap-y-3 border-y border-steamed/10 px-4 py-3 sm:px-6"
+      >
+        <Stat label="Grains" value={String(stats.grainsEaten)} tone="text-khaki" />
+        <Stat label="Golden" value={String(stats.powerEaten)} tone="text-salmon" />
+        <Stat label="Left" value={String(stats.grainsRemaining)} />
+        <Stat label="Time" value={`${seconds}s`} tone="text-steamed/70" />
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => gameRef.current?.togglePause()}
+            className="min-h-9 border border-steamed/25 px-3 font-mono text-[0.65rem] tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+          >
+            {stats.paused ? "Resume" : "Pause"}
+          </button>
+          <button
+            type="button"
+            onClick={() => gameRef.current?.reset()}
+            className="min-h-9 border border-steamed/25 px-3 font-mono text-[0.65rem] tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+          >
+            Restart
+          </button>
+        </div>
+      </div>
+
+      <div className="relative flex min-h-0 flex-1 items-center justify-center p-2 sm:p-4">
+        <ChompCanvas
+          ref={gameRef}
+          onStats={onStats}
+          reducedMotion={reduced}
+          className="flex h-full max-h-[calc(100svh-13rem)] w-full items-center justify-center"
+        />
+
+        {(stats.paused || cleared) && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-nori/70">
+            <p className="font-display-round text-3xl font-semibold text-khaki">
+              {cleared ? "Maze cleared" : "Paused"}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <footer className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 pt-2 pb-5 font-mono text-xs text-steamed/45 sm:px-6">
+        <span className="flex items-center gap-1.5">
+          <Key>←</Key>
+          <Key>↑</Key>
+          <Key>↓</Key>
+          <Key>→</Key>
+          <span className="ml-1">or</span>
+          <Key>W</Key>
+          <Key>A</Key>
+          <Key>S</Key>
+          <Key>D</Key>
+          <span className="ml-1">to steer</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Key>P</Key>
+          <span>pause</span>
+        </span>
+        <span className="text-steamed/30">
+          Keyboard only for now — touch controls and the pests come next.
+        </span>
+      </footer>
+    </main>
+  );
+}

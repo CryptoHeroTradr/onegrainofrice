@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { playClack } from "@/lib/sound";
 
 /**
@@ -27,6 +28,14 @@ const TEXT_SELECTOR = 'input, textarea, [contenteditable=""], [contenteditable="
 const TIP_X = 39;
 const TIP_Y = 72;
 
+/**
+ * Routes that own the whole viewport as a play surface and must not have a
+ * decorative cursor floating over them (it also hides the native cursor
+ * site-wide via the `chopsticks-active` body class, which reads as a bug on a
+ * keyboard-driven game). /chomp is RICE CHOMP.
+ */
+const CURSOR_FREE_ROUTES = ["/chomp"];
+
 function Stick({ side }: { side: "left" | "right" }) {
   return (
     <svg
@@ -48,18 +57,23 @@ function Stick({ side }: { side: "left" | "right" }) {
 }
 
 export function ChopstickCursor() {
-  const [enabled, setEnabled] = useState(false);
+  const [mediaAllows, setMediaAllows] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const pairRef = useRef<HTMLDivElement>(null);
   const pressed = useRef(false);
   const overGrab = useRef(false);
   const pinchApplied = useRef(false);
+  // usePathname() is basePath-stripped, so it compares against plain routes.
+  const pathname = usePathname();
+  // Derived, not stored: the route is already reactive, so mirroring it into state
+  // would just be a second source of truth (and a setState inside an effect).
+  const enabled = mediaAllows && !CURSOR_FREE_ROUTES.includes(pathname);
 
-  // Eligibility: fine pointer + motion allowed. Reactive to changes.
+  // Media eligibility: fine pointer + motion allowed. Reactive to changes.
   useEffect(() => {
     const fine = window.matchMedia("(pointer: fine)");
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setEnabled(fine.matches && !reduce.matches);
+    const update = () => setMediaAllows(fine.matches && !reduce.matches);
     update();
     fine.addEventListener("change", update);
     reduce.addEventListener("change", update);
