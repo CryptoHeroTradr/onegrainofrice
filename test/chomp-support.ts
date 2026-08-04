@@ -19,9 +19,20 @@ import {
   tileOf,
   wrapCol,
 } from "@/components/chomp/engine/maze";
-import { DYING, setWanted, type GameState } from "@/components/chomp/engine/game";
+import { DYING, GAMEOVER, PLAYING, setWanted, type GameState } from "@/components/chomp/engine/game";
 import { OUT, type Pest } from "@/components/chomp/engine/pests";
-import { DOWN, DX, DY, LEFT, RIGHT, UP, opposite, type Dir } from "@/components/chomp/engine/types";
+import {
+  DOWN,
+  DX,
+  DY,
+  GRAIN,
+  LEFT,
+  POWER,
+  RIGHT,
+  UP,
+  opposite,
+  type Dir,
+} from "@/components/chomp/engine/types";
 
 export const DIRS: readonly Dir[] = [UP, LEFT, DOWN, RIGHT];
 
@@ -395,6 +406,118 @@ export function disarmPower(state: GameState): void {
   for (let i = 0; i < state.grid.length; i++) {
     if (state.grid[i] === 3) state.grid[i] = 2;
   }
+}
+
+// --- the clearing bot -------------------------------------------------------
+
+/**
+ * Breadth-first OUT from every remaining grain at once, so `dist[tile]` is the number of
+ * steps from that tile to the nearest thing still worth eating.
+ */
+export function grainField(grid: Uint8Array): Int16Array {
+  const sources: { col: number; row: number }[] = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const t = grid[idx(c, r)];
+      if (t === GRAIN || t === POWER) sources.push({ col: c, row: r });
+    }
+  }
+  return sources.length ? playerBfs(grid, sources) : new Int16Array(COLS * ROWS).fill(-1);
+}
+
+/** How much sooner than a pest the clearing bot insists on reaching a tile, in steps. */
+export const DEFAULT_SAFETY_MARGIN = 2;
+
+/**
+ * Choose a direction for a bot that is trying to FINISH THE BOARD, not merely survive.
+ *
+ * ── WHY THIS EXISTS, SEPARATELY FROM botChoose ──────────────────────────────────
+ * `botChoose` maximises reachable safe space. That is the right objective for "can a
+ * competent player evade forever?" and completely the wrong one for "can a competent
+ * player clear level 1?" — it will circle an already-eaten corridor indefinitely because
+ * empty corridor is just as safe as full corridor. Measured with it, level 1 looked
+ * unclearable at every pest speed down to 75% of the player's, which said nothing about
+ * the game and everything about the bot.
+ *
+ * This one heads for the nearest remaining grain and refuses any step a pest could reach
+ * within `margin` moves, falling back to pure survival when nothing safe leads anywhere.
+ * Still an OPTIMISTIC proxy for a human: it has exact pest positions and a whole-board
+ * breadth-first search every tile. Treat a clear here as "the level is completable",
+ * never as "the level is easy".
+ */
+export function botChooseClearing(
+  state: GameState,
+  tile: { col: number; row: number },
+  facing: Dir,
+  margin = DEFAULT_SAFETY_MARGIN,
+  horizon = DEFAULT_HORIZON,
+): Dir {
+  const danger = playerBfs(state.grid, threats(state.pests));
+  const grains = grainField(state.grid);
+
+  let bestDir: Dir | null = null;
+  let bestDist = Infinity;
+  for (const d of DIRS) {
+    const nc = wrapCol(tile.col + DX[d]);
+    const nr = tile.row + DY[d];
+    if (nr < 0 || nr >= ROWS) continue;
+    if (!isOpenForPlayer(state.grid, nc, nr)) continue;
+    const i = idx(nc, nr);
+    const toGrain = grains[i];
+    if (toGrain < 0) continue;
+    const toPest = danger[i];
+    if (toPest >= 0 && toPest <= margin) continue;
+    // Strictly less, so DIRS order breaks ties the same way everything else here does.
+    if (toGrain < bestDist) {
+      bestDist = toGrain;
+      bestDir = d;
+    }
+  }
+  return bestDir ?? botChoose(state, tile, facing, horizon);
+}
+
+export interface ClearRun {
+  cleared: boolean;
+  /** Simulated seconds elapsed when the level was cleared, or when the run gave up. */
+  seconds: number;
+  grainsEaten: number;
+  grainsTotal: number;
+  score: number;
+  livesLeft: number;
+}
+
+/**
+ * Play a level with the clearing bot until the board is empty, the run is over, or the
+ * budget expires. Deaths are played through: the point is whether the LEVEL falls, not
+ * whether a particular life does.
+ */
+export function runClearBot(
+  state: GameState,
+  budgetTicks: number,
+  step: (s: GameState) => void,
+  margin = DEFAULT_SAFETY_MARGIN,
+): ClearRun {
+  let lastTile = -1;
+  for (let t = 0; t < budgetTicks; t++) {
+    if (state.phase === GAMEOVER || state.grainsRemaining === 0) break;
+    if (state.phase === PLAYING) {
+      const tile = { col: tileOf(state.player.x), row: tileOf(state.player.y) };
+      const here = idx(tile.col, tile.row);
+      if (here !== lastTile) {
+        lastTile = here;
+        setWanted(state, botChooseClearing(state, tile, state.player.dir, margin));
+      }
+    }
+    step(state);
+  }
+  return {
+    cleared: state.grainsRemaining === 0,
+    seconds: state.tick / 60,
+    grainsEaten: state.grainsEaten,
+    grainsTotal: state.grainsEaten + state.grainsRemaining,
+    score: state.score,
+    livesLeft: state.lives,
+  };
 }
 
 export { LEFT, RIGHT, UP, DOWN };

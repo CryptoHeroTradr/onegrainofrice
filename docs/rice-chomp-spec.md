@@ -206,6 +206,36 @@ Each is built from one unmistakable outline property, so the six read apart in m
 - Validation, server-side, trusting nothing from the client: rate limit per `grain_vid` and per IP; reject scores above a plausible ceiling for the reported level and duration; reject impossibly short runs; verify score is arithmetically consistent with the reported event counts. Store the input trace unverified so replay validation can be added later as a server-side change only. Document in comments what this does not catch.
 - Views: global top 100, per-country top 100, personal best in `localStorage`.
 
+### Pattern-ability, and what it means for the board
+
+*Recorded 2026-08-04.* The simulation is deterministic by design, and the seeded PRNG only
+bites once a power window opens — frightened pests are the sole consumer of randomness.
+Measured consequence: driving the same bot at level 1 across five different seeds produced
+an **identical first life, to the tick — 48.6 seconds every time**, and an identical third
+life at 18.0 seconds.
+
+This is genre-accurate and mostly desirable. The reference game is famously pattern-able,
+and learnable patterns are a large part of why players return to it. It is written down
+here because it has a second face: **a memorised route is repeatable, and a repeatable
+route is farmable.** If the leaderboard ever fills with near-identical scores, or with
+runs whose input traces are near-identical, this is the reason — not a bug in validation,
+and not necessarily cheating either. A player executing a learned pattern perfectly is
+playing the game as designed.
+
+The remedies, in the order they should be reached for, none of them yet needed:
+
+1. Do nothing. Pattern play is legitimate, and a leaderboard of skilled repeat runs is a
+   working leaderboard.
+2. Rank by best run per player rather than by run, so a pattern farmed a hundred times
+   occupies one row instead of a hundred.
+3. Seed the PRNG per run from something the client cannot choose, and submit the seed with
+   the trace. Replay verification already needs the seed, so this costs nothing extra —
+   but it makes patterns less reliable, which is a real loss, so it is the last resort and
+   not the first.
+
+Do NOT reach for "add randomness to pest movement". It would break determinism, and
+determinism is what replay verification is built on.
+
 ## Acceptance criteria
 
 - 60fps on a mid-range phone; no GC stutter — pool objects, no per-frame allocations in the hot loop.
@@ -215,4 +245,6 @@ Each is built from one unmistakable outline property, so the six read apart in m
 - Fully playable keyboard-only and touch-only.
 - No hardcoded path prefixes anywhere, TS or CSS.
 - Pure-logic modules unit tested under the existing DOM-free vitest setup.
+- **Level 1 is completable.** Its job is to teach the maze; a player who cannot finish it never sees the game. Asserted in `test/chomp-difficulty.test.ts`, which clears the board on every seed in about a minute with lives still in hand. *Added 2026-08-04.*
+  - The bot used there heads for grains and refuses steps a pest reaches first. It is **not** the kiting suite's bot, which maximises safe space and will happily circle an already-eaten corridor forever — measured with that one, level 1 looked unclearable at every pest speed down to 75% of the player's, a finding entirely about the bot. Any future claim that the difficulty curve is wrong has to come from an instrument that is trying to do the thing being measured.
 - The grains game and its WS process are untouched and still working.
