@@ -96,8 +96,111 @@ export const DEATH_PAUSE_TICKS = secondsToTicks(0.5);
 export const DEATH_TICKS = secondsToTicks(1.5);
 /** Both sides freeze while an eaten pest's score is on screen. */
 export const EAT_PEST_FREEZE_TICKS = secondsToTicks(0.5);
-/** Maze-clear flash before the next level. */
-export const CLEAR_TICKS = secondsToTicks(2);
+
+// --- clearing a level -------------------------------------------------------
+
+/**
+ * The maze flash. A beat of stillness with the pests gone, then the walls strobe.
+ *
+ * Split into a hold and a strobe rather than one blob of time because they do different
+ * jobs: the hold is the full stop that tells you the level is over, the strobe is the
+ * reward. Under `prefers-reduced-motion` the strobe is not drawn and the hold covers the
+ * whole phase — the simulation is unchanged either way, so a reduced-motion run and a
+ * normal run stay tick-for-tick identical.
+ */
+export const CLEAR_HOLD_TICKS = secondsToTicks(0.6);
+export const CLEAR_FLASHES = 4;
+export const CLEAR_FLASH_TICKS = secondsToTicks(0.35);
+/** Total length of the CLEARED phase. */
+export const CLEAR_TICKS = CLEAR_HOLD_TICKS + CLEAR_FLASHES * CLEAR_FLASH_TICKS;
+
+// --- cutscenes --------------------------------------------------------------
+
+/**
+ * Levels that are followed by an interstitial. Indexed by the level just COMPLETED, so
+ * finishing level 2 plays the first and finishing level 5 plays the second.
+ */
+export const CUTSCENE_AFTER_LEVELS: readonly number[] = [2, 5];
+
+/** Which beat plays after each of those levels, in the same order. */
+export const CUTSCENE_STEAL = 0;
+export const CUTSCENE_REVENGE = 1;
+export const CUTSCENE_FOR_LEVEL: readonly number[] = [CUTSCENE_STEAL, CUTSCENE_REVENGE];
+
+/**
+ * Length of a cutscene, in ticks. The spec caps them at four seconds; three and a half
+ * leaves room to be under it rather than exactly on it.
+ *
+ * Cutscenes consume NO simulation ticks — see the CUTSCENE phase in game.ts. This clock
+ * belongs to the host's animation, not to the run.
+ */
+export const CUTSCENE_TICKS = secondsToTicks(3.5);
+
+// --- bonus items ------------------------------------------------------------
+
+export const SOY = 0;
+export const CHOPSTICKS = 1;
+export const NORI = 2;
+export const SAKE = 3;
+export const CHILI = 4;
+export const SESAME = 5;
+export type BonusKind =
+  | typeof SOY
+  | typeof CHOPSTICKS
+  | typeof NORI
+  | typeof SAKE
+  | typeof CHILI
+  | typeof SESAME;
+export const BONUS_KIND_COUNT = 6;
+
+/**
+ * Which item a level shows, and what it is worth.
+ *
+ * The order is the spec's own list — soy sauce, chopsticks, nori, sake cup, chili, sesame
+ * — used as the level sequence, with the value escalating as the levels do. A single
+ * sesame seed ending up as the rarest and most valuable prize in a game about one grain of
+ * rice is the joke, not an oversight. Levels past the end of the table clamp to the last
+ * row, so level 99 still shows something.
+ */
+export const BONUS_BY_LEVEL: readonly { kind: BonusKind; value: number }[] = [
+  { kind: SOY, value: 100 }, //         1
+  { kind: CHOPSTICKS, value: 200 }, //  2
+  { kind: NORI, value: 500 }, //        3
+  { kind: NORI, value: 500 }, //        4
+  { kind: SAKE, value: 700 }, //        5
+  { kind: SAKE, value: 700 }, //        6
+  { kind: CHILI, value: 1000 }, //      7
+  { kind: CHILI, value: 1000 }, //      8
+  { kind: SESAME, value: 2000 }, //     9
+  { kind: SESAME, value: 2000 }, //    10
+  { kind: SESAME, value: 3000 }, //    11+
+];
+
+/**
+ * Grains eaten THIS LEVEL that summon each of the two bonus items. The maze holds 286
+ * collectables, so these land at roughly a quarter and three fifths of the way through —
+ * far enough apart that the second is a reason to keep clearing rather than a second
+ * helping of the first.
+ *
+ * Counted per level and not per life: dying should not cost the player an item they had
+ * already almost earned.
+ */
+export const BONUS_DOT_TRIGGERS: readonly number[] = [70, 170];
+
+/** How long an uncollected bonus item stays on the board. */
+export const BONUS_TICKS = secondsToTicks(9);
+
+/** How long the score for a collected item hangs in the air. */
+export const BONUS_SCORE_TICKS = secondsToTicks(1.5);
+
+/** Where the item appears: dead centre horizontally, on the corridor under the pen. */
+export const BONUS_COL = 14;
+export const BONUS_ROW = 18;
+
+/** Bonus for a level, clamped past the end of the table. */
+export function bonusForLevel(level: number): { kind: BonusKind; value: number } {
+  return pick(BONUS_BY_LEVEL, Math.max(1, Math.floor(level)) - 1);
+}
 
 // --- the pests --------------------------------------------------------------
 
@@ -197,14 +300,36 @@ const FRIGHT_SPEED_FACTOR = 0.62;
 const EYES_TILES_PER_SEC = 15;
 
 /**
+ * The level from which a golden grain never frightens again — it is pure points from here
+ * on, and the only tool the player has left is the maze itself.
+ *
+ * ── ON THE SPEC'S WORDING ───────────────────────────────────────────────────────
+ * The spec says "From level 5 frightened mode is eventually disabled entirely." That
+ * sentence has two readings, and they build different games:
+ *
+ *   (a) level 5 is where the shrinking STARTS to bite and zero arrives later — "from
+ *       level 5 … eventually";
+ *   (b) level 5 is where it is already gone.
+ *
+ * (a) is implemented, because "eventually" is doing real work in that sentence and
+ * because (b) removes the mechanic before most players ever see it — a 2-second window at
+ * level 5 is already vestigial, and killing it outright there costs the chain-scoring
+ * ceiling the whole rest of the curve. If (b) turns out to be what was meant, it is this
+ * one number plus the tail of the table below, and nothing else.
+ */
+export const FRIGHTENED_GONE_FROM_LEVEL = 17;
+
+/**
  * Frightened duration by level, in seconds. Shortens, with the occasional reprieve level
- * — a monotonic slide gives the player nothing to look forward to. Zero from level 17,
- * where golden grains stop frightening entirely and become pure points; the spec's "from
- * level 5 frightened mode is eventually disabled" starts biting at level 5 (2s is barely
- * a window) and finishes here.
+ * — a monotonic slide gives the player nothing to look forward to, and a level that hands
+ * back five seconds after three levels of one is where a run gets its points.
+ *
+ * Level 5 is where it stops being protection and becomes a tight scoring window (2s), and
+ * FRIGHTENED_GONE_FROM_LEVEL is where it disappears for good.
  */
 const FRIGHTENED_SECONDS: readonly number[] = [
-  6, 5, 4, 3, 2, 5, 2, 2, 1, 5, 2, 1, 1, 3, 1, 1, 0, 1, 0, 0, 0,
+  //1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21
+  6, 5, 4, 3, 2, 5, 2, 2, 1, 5, 2, 1, 1, 3, 1, 1, 0, 0, 0, 0, 0,
 ];
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { beginPlay, createGame, tick, type GameState } from "@/components/chomp/engine/game";
 import { tileCentre } from "@/components/chomp/engine/maze";
 import { OUT } from "@/components/chomp/engine/pests";
+import { levelTuning } from "@/components/chomp/engine/levels";
 import { DOWN, LEFT, RIGHT, UP, type Dir } from "@/components/chomp/engine/types";
 import {
   DEFAULT_HORIZON,
@@ -32,8 +33,8 @@ import {
  */
 
 /** A run with the ready hold skipped, no power windows, and nothing to slow the player. */
-function chase(seed = 1, clearGrains = true): GameState {
-  const g = beginPlay(createGame(1, seed));
+function chase(seed = 1, clearGrains = true, level = 1): GameState {
+  const g = beginPlay(createGame(level, seed));
   disarmPower(g);
   if (clearGrains) stripGrains(g);
   return g;
@@ -179,6 +180,41 @@ describe("question 2: can two pests seal the spawn pocket?", () => {
     }
     expect(inside).toBeGreaterThan(0);
     expect(sealed).toBe(0);
+  });
+});
+
+describe("question 3: does the difficulty curve open a hole later on?", () => {
+  /**
+   * Phase 4 added the per-level curve, and a maze that cannot be farmed at level 1 is not
+   * automatically safe at level 9 — the speed multipliers move every quantity the Phase 3
+   * answer depended on. So the same bot runs again at three points on the curve.
+   *
+   * Level 1 the pests are slower than the player, level 5 they are nearly level, level 9
+   * they are faster. If any of those is farmable it is a different game from the one that
+   * was measured.
+   */
+  for (const level of [1, 5, 9]) {
+    it(`still cannot be kited at level ${level}`, () => {
+      const r = runBot(chase(1, true, level), BUDGET, tick);
+      expect(r.died).toBe(true);
+      expect(r.ticks).toBeLessThan(BUDGET);
+    });
+
+    it(`still cannot be kited at level ${level} with twice the lookahead`, () => {
+      const r = runBot(chase(1, true, level), BUDGET, tick, DEFAULT_HORIZON * 2);
+      expect(r.died).toBe(true);
+    });
+  }
+
+  it("gets harder rather than easier as the curve climbs", () => {
+    // Not a survival-time comparison — a chase is chaotic and single runs are noisy. The
+    // claim that actually has to hold is about the dials: every level up is at least as
+    // fast a pest, at most as long a scatter, and at most as long a power window.
+    const one = levelTuning(1);
+    const nine = levelTuning(9);
+    expect(nine.pestSpeed).toBeGreaterThan(one.pestSpeed);
+    expect(nine.modeCycle[0]).toBeLessThanOrEqual(one.modeCycle[0]);
+    expect(nine.frightenedTicks).toBeLessThan(one.frightenedTicks);
   });
 });
 

@@ -29,8 +29,15 @@ import {
   wrapDeltaSub,
 } from "./maze";
 import {
+  BONUS_COL,
+  BONUS_DOT_TRIGGERS,
+  BONUS_ROW,
+  BONUS_SCORE_TICKS,
+  BONUS_TICKS,
   CLEAR_TICKS,
   COLLIDE_DIST,
+  CUTSCENE_AFTER_LEVELS,
+  CUTSCENE_FOR_LEVEL,
   DEATH_PAUSE_TICKS,
   DEATH_TICKS,
   EAT_PEST_FREEZE_TICKS,
@@ -42,6 +49,7 @@ import {
   SCORE_PEST_CHAIN,
   SCORE_POWER,
   STARTING_LIVES,
+  bonusForLevel,
   levelTuning,
   type LevelTuning,
 } from "./levels";
@@ -89,7 +97,19 @@ export const DYING = 2;
 /** Every grain eaten; the maze flashes before the next level. */
 export const CLEARED = 3;
 export const GAMEOVER = 4;
-export type Phase = typeof READY | typeof PLAYING | typeof DYING | typeof CLEARED | typeof GAMEOVER;
+/**
+ * An interstitial is on screen. See the note on `tick()`: this phase consumes NO
+ * simulation ticks at all, because a cutscene is presentation and a skippable one would
+ * otherwise put a hole in the input trace.
+ */
+export const CUTSCENE = 5;
+export type Phase =
+  | typeof READY
+  | typeof PLAYING
+  | typeof DYING
+  | typeof CLEARED
+  | typeof GAMEOVER
+  | typeof CUTSCENE;
 
 // --- state ------------------------------------------------------------------
 
@@ -121,6 +141,26 @@ export interface Player {
   glideBack: boolean;
 }
 
+/**
+ * The bonus item. One at a time, twice a level, and it is the only thing on the board
+ * that is not on the tile grid — it sits on the boundary between two columns so it is
+ * exactly centred, and it is collected by proximity rather than by occupying a tile.
+ */
+export interface Bonus {
+  /** How many have been summoned this level. Indexes BONUS_DOT_TRIGGERS. */
+  spawned: number;
+  /** How many the player has actually collected this level. */
+  taken: number;
+  /** Ticks the current item has left on the board; 0 when nothing is showing. */
+  ticks: number;
+  /** Ticks the collected score stays on screen; 0 when nothing is showing. */
+  scoreTicks: number;
+  /** What the last collected item was worth, for the floating score. */
+  scoreValue: number;
+  x: number;
+  y: number;
+}
+
 export interface GameState {
   grid: Uint8Array;
   /** BFS distance to the pen gate, for eyes. Rebuilt per level; the walls never move. */
@@ -150,8 +190,19 @@ export interface GameState {
 
   /** Grains eaten since the current life began. Drives pen release. */
   dotsThisLife: number;
+  /**
+   * Grains eaten since the current LEVEL began. Drives the bonus item, and is deliberately
+   * a different counter from dotsThisLife: dying should not cost the player an item they
+   * had nearly earned.
+   */
+  dotsThisLevel: number;
   /** Ticks since a pest was last released. The other half of pen release. */
   penTimer: number;
+
+  /** The bonus item currently on the board, if any. */
+  bonus: Bonus;
+  /** Which interstitial to show, once the phase is CUTSCENE. */
+  cutscene: number;
 
   /** Seeded PRNG state. The only randomness in the engine; see types.ts. */
   rng: number;
@@ -213,7 +264,10 @@ export function createGame(level = 1, seed = DEFAULT_SEED): GameState {
     chain: 0,
     hitFreeze: 0,
     dotsThisLife: 0,
+    dotsThisLevel: 0,
     penTimer: 0,
+    bonus: freshBonus(),
+    cutscene: 0,
     rng: seed >>> 0,
     tick: 0,
     grainsEaten: 0,
@@ -334,6 +388,7 @@ function consume(state: GameState): void {
   setTile(state.grid, col, row, EMPTY);
   state.grainsRemaining--;
   state.dotsThisLife++;
+  state.dotsThisLevel++;
 
   if (t === POWER) {
     state.powerEaten++;
@@ -345,6 +400,57 @@ function consume(state: GameState): void {
     state.player.freeze += GRAIN_FREEZE_TICKS;
     addScore(state, SCORE_GRAIN);
   }
+}
+
+// --- the bonus item ---------------------------------------------------------
+
+function freshBonus(): Bonus {
+  return {
+    spawned: 0,
+    taken: 0,
+    ticks: 0,
+    scoreTicks: 0,
+    scoreValue: 0,
+    // Straddling the boundary between two columns, so it is exactly centred on the maze
+    // the way the player's spawn is.
+    x: BONUS_COL * SUB,
+    y: tileCentre(BONUS_ROW),
+  };
+}
+
+/**
+ * Summon, expire and collect the bonus item.
+ *
+ * It appears on a dot count rather than a timer, so it is a reward for clearing rather
+ * than a reward for surviving — a player hiding in a corner never sees one. It leaves on a
+ * timer, so it is also a decision: the corridor under the pen is the middle of the board
+ * and going for it costs position.
+ */
+function stepBonus(state: GameState): void {
+  const b = state.bonus;
+
+  if (b.scoreTicks > 0) b.scoreTicks--;
+
+  if (b.ticks > 0) {
+    b.ticks--;
+    // Collected by proximity, like a pest, because it does not sit on a tile centre.
+    const dx = Math.abs(wrapDeltaSub(b.x, state.player.x));
+    const dy = Math.abs(b.y - state.player.y);
+    if (dx < COLLIDE_DIST && dy < COLLIDE_DIST) {
+      const { value } = bonusForLevel(state.level);
+      b.ticks = 0;
+      b.taken++;
+      b.scoreTicks = BONUS_SCORE_TICKS;
+      b.scoreValue = value;
+      addScore(state, value);
+    }
+    return;
+  }
+
+  if (b.spawned >= BONUS_DOT_TRIGGERS.length) return;
+  if (state.dotsThisLevel < BONUS_DOT_TRIGGERS[b.spawned]) return;
+  b.spawned++;
+  b.ticks = BONUS_TICKS;
 }
 
 function addScore(state: GameState, points: number): void {
@@ -539,6 +645,10 @@ function resetPositions(state: GameState): void {
   state.hitFreeze = 0;
   state.dotsThisLife = 0;
   state.penTimer = 0;
+  // The item on the board goes with the life that was chasing it. The dot counter behind
+  // it does not — see Bonus.spawned.
+  state.bonus.ticks = 0;
+  state.bonus.scoreTicks = 0;
   state.phase = READY;
   state.phaseTicks = READY_TICKS;
 }
@@ -550,7 +660,36 @@ function nextLevel(state: GameState): void {
   state.grid = grid;
   state.penRoute = buildPenRouteField(grid);
   state.grainsRemaining = totalGrains + totalPower;
+  // Both of these are per-level, not per-life, so they reset HERE and not in
+  // resetPositions() — which also runs after a death.
+  state.dotsThisLevel = 0;
+  state.bonus = freshBonus();
   resetPositions(state);
+}
+
+/**
+ * The maze has been cleared. Either an interstitial is due, or the next level starts.
+ * `state.level` is still the level that was just finished.
+ */
+function finishLevel(state: GameState): void {
+  const at = CUTSCENE_AFTER_LEVELS.indexOf(state.level);
+  if (at >= 0) {
+    state.phase = CUTSCENE;
+    state.cutscene = CUTSCENE_FOR_LEVEL[at];
+    state.phaseTicks = 0;
+    return;
+  }
+  nextLevel(state);
+}
+
+/**
+ * End the interstitial and start the next level. Called by the host when the cutscene's
+ * own animation finishes, when the player skips it, or immediately under reduced motion.
+ * Safe to call in any phase; it does nothing unless a cutscene is showing.
+ */
+export function endCutscene(state: GameState): void {
+  if (state.phase !== CUTSCENE) return;
+  nextLevel(state);
 }
 
 function finishDeath(state: GameState): void {
@@ -566,8 +705,22 @@ function finishDeath(state: GameState): void {
 
 // --- the tick ---------------------------------------------------------------
 
-/** Advance the simulation by one fixed tick. */
+/**
+ * Advance the simulation by one fixed tick.
+ *
+ * ── WHY CUTSCENE IS A NO-OP ─────────────────────────────────────────────────────
+ * An interstitial is presentation, and it is skippable. If it consumed simulation ticks
+ * then whether the player pressed skip would shift every later tick number, and the
+ * tick-stamped input trace — the thing server-side replay verification is built on —
+ * would no longer line up. So the CUTSCENE phase freezes the simulation completely: no
+ * tick counter, no timers, nothing. The host runs the cutscene on its own clock and calls
+ * endCutscene() when it is done or skipped, and the run resumes exactly where it stopped.
+ * Whether the interstitial was watched, skipped, or never drawn at all is invisible to
+ * the simulation, which is the property that matters.
+ */
 export function tick(state: GameState): void {
+  if (state.phase === CUTSCENE) return;
+
   switch (state.phase) {
     case READY:
       if (--state.phaseTicks <= 0) state.phase = PLAYING;
@@ -578,7 +731,7 @@ export function tick(state: GameState): void {
       break;
 
     case CLEARED:
-      if (--state.phaseTicks <= 0) nextLevel(state);
+      if (--state.phaseTicks <= 0) finishLevel(state);
       break;
 
     case GAMEOVER:
@@ -594,9 +747,13 @@ export function tick(state: GameState): void {
       stepPests(state);
       resolveCollisions(state);
       releaseFromPen(state);
+      stepBonus(state);
       if (state.grainsRemaining <= 0 && state.phase === PLAYING) {
         state.phase = CLEARED;
         state.phaseTicks = CLEAR_TICKS;
+        // Nothing should be left hanging over a cleared board.
+        state.bonus.ticks = 0;
+        state.bonus.scoreTicks = 0;
       }
     }
   }
@@ -613,9 +770,19 @@ export function beginPlay(state: GameState): GameState {
   return state;
 }
 
-/** Advance `n` ticks. Used by tests and by the future replay verifier. */
+/**
+ * Advance `n` ticks. Used by tests and by the future replay verifier.
+ *
+ * Ends any interstitial on sight. Headless there is nobody to watch one, and a phase that
+ * consumes no ticks would otherwise spin here forever — which is also precisely why
+ * skipping one cannot desync a replay: neither the watched nor the skipped case moves the
+ * clock at all.
+ */
 export function advance(state: GameState, n: number): void {
-  for (let i = 0; i < n; i++) tick(state);
+  for (let i = 0; i < n; i++) {
+    if (state.phase === CUTSCENE) endCutscene(state);
+    tick(state);
+  }
 }
 
 /**

@@ -1,13 +1,14 @@
 # RICE CHOMP — recon & build plan
 
-**Status (2026-08-04):** Phase 3 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
-`ChompCanvas.tsx` and `engine/{game,levels,maze,pests,render,types}.ts` — the maze, the
-player grain, the four pests, the scatter/chase cycle, the pen, frightened mode, lives and
-death, and cornering. `levels.ts` holds every tuning number. Tests:
-`test/chomp-{maze,movement,pests,cornering,kiting}.test.ts` plus `test/chomp-support.ts`
-(the bot). Sections 1–6 below are recon and remain accurate; §7 has been updated with the
-Phase 3 measurements. Still to come: bonus items, cutscenes, audio, touch controls, the
-board treatment, and the leaderboard.
+**Status (2026-08-04):** Phase 4 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
+`ChompCanvas.tsx`, `BonusIcons.tsx` and `engine/{game,levels,maze,pests,render,types}.ts` —
+the maze, the player grain, the four pests, the scatter/chase cycle, the pen, frightened
+mode, lives and death, cornering, and now the per-level difficulty curve, level completion
+with the maze flash, the six bonus items and the two interstitials. `levels.ts` holds every
+tuning number. Tests: `test/chomp-{maze,movement,pests,cornering,levels,kiting}.test.ts`
+plus `test/chomp-support.ts` (the bot). Sections 1–6 below are recon and remain accurate;
+§7 carries the Phase 3 and Phase 4 measurements. Still to come: audio, touch controls, the
+paddy board treatment (blocked on an asset), the attract screen and the leaderboard.
 
 > **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
 > here said it was missing; that was true only on the day this plan was written. Where the
@@ -893,6 +894,53 @@ while the bot was inside the room.
 Pests turn only on tile centres and can never take it back. Measured in
 `test/chomp-cornering.test.ts` against a control run with `cornerLead` set to 0.
 
+### 7.3 The Phase 4 answer — the difficulty curve, measured 2026-08-04
+
+§7.2 answered "can this be farmed?" at level 1. That answer does not carry: the per-level
+curve moves pest speed, scatter length and the frightened window, i.e. every quantity the
+level-1 answer rested on. So the same bot ran again at three points on the curve — pests
+slower than the player, level with them, and faster.
+
+| level | pest/player | fright | bot, 5-min budget | at double lookahead |
+|---:|---:|---:|---|---|
+| 1 | 0.900 | 6.0 s | dead in **18.0 s** | dead in **40.3 s** |
+| 5 | 0.975 | 2.0 s | dead in **23.0 s** | dead in **81.5 s** |
+| 9 | 1.012 | 1.0 s | dead in **10.4 s** | dead in **8.3 s** |
+
+No hole opens. Survival rises slightly to level 5 and collapses at level 9, which is the
+shape the curve is meant to have.
+
+**Does cornering stop mattering once the pests are faster?** This one does not need a bot
+— running chases and counting seconds gives noisy, self-contradicting answers (the same
+A/B came out −1300 ticks at level 1, +3320 at level 5 and −443 at level 9, which says
+nothing except that a chase is chaotic). It is a break-even ratio, and it is exact.
+
+Per lap of a four-corner loop `L` tiles round, a perfect corner-cutter travels
+`L·SUB − 4·cornerLead` while the pest must travel `L·SUB`, netting
+`L·SUB − r·(L·SUB − 4·cornerLead)` where `r = pestSpeed/playerSpeed`. Subunits gained per
+lap:
+
+| level | ratio | girth-10 ring | 22-tile spawn loop | 32-tile pen loop |
+|---:|---:|---:|---:|---:|
+| 1 | 0.900 | +264 | +408 | +528 |
+| 5 | 0.975 | +186 | +222 | +252 |
+| 9 | 1.012 | +147 | +129 | +114 |
+| 13 | 1.038 | +121 | +67 | +22 |
+| 17 | 1.048 | +110 | +42 | **−15** |
+| 21+ | 1.063 | +95 | **+5** | **−70** |
+
+Break-even ratios: **1.154** (girth-10), **1.065** (22-tile), **1.043** (32-tile). The pest
+table tops out at **1.0625**.
+
+So the set of loops a perfect player can hold **shrinks** as the levels climb — the big pen
+loop is lost around level 15, the 22-tile spawn loop survives to the top of the table by
+0.2%, and the tight ring is never lost. That is the right shape: what is left at the end
+are the loops with the most junctions on them, where holding position is not safety.
+
+The 0.2% margin on the 22-tile loop was **luck, and is now an invariant** —
+`test/chomp-levels.test.ts` asserts the top of the pest table stays under that break-even,
+so raising it is a decision someone has to make on purpose.
+
 ---
 
 **The honest caveat** *(written before Phase 3; answered by §7.2 above, kept because the
@@ -944,8 +992,12 @@ the one geometry change that was needed was for a different problem: the spawn p
 
 **Decided since:** player spawn is row 25, straddling cols 13/14. Scatter corners are the
 four corner corridor tiles — Rat (26,1), Sparrow (1,1), Weevil (26,29), Locust (1,29) —
-and live in `levels.ts`. **Still open:** fruit/bonus spawn (proposal was row 17-ish centre,
-but that is a wall — needs a tweak or a different spot), which is a Phase 5 problem.
+and live in `levels.ts`. **Bonus spawn resolved in Phase 4:** row 18, straddling cols
+13/14 — the sub-pen loop corridor. The proposal here said "row 17-ish centre, but that is a
+wall"; row 17 is indeed wall, and the true centre of a 28×31 maze is row 15, which is
+*inside the pen*. Row 18 is the first open corridor below the gate, dead centre
+horizontally, and reaching it costs position in the middle of the board — which is the
+whole point of a bonus item.
 
 ---
 
@@ -1005,7 +1057,11 @@ but that is a wall — needs a tweak or a different spot), which is a Phase 5 pr
    production basePath of `""`. One line, affects the existing grains game, not RICE
    CHOMP. Separate commit, or leave it alone?
 
-10. **Art and sound.** Everything on canvas today is drawn procedurally (`riceBowlEngine`
+10. **Art and sound.** *(Art answered by practice: everything through Phase 4 — player,
+    four pests, six bonus items, both interstitials — is drawn procedurally on canvas, no
+    files under `public/chomp/` yet. The only planned image is the paddy wall texture,
+    which is blocked on an asset. Sound is still open.)* Everything on canvas today is
+    drawn procedurally (`riceBowlEngine`
     paints grains with `ctx.ellipse` and prebakes to offscreen canvases). Do you want
     RICE CHOMP the same way, or sprite art in `public/chomp/`? And for SFX — reuse
     `src/lib/sound.ts` + the existing `SoundToggle`, and should I extend

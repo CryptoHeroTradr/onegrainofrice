@@ -5,14 +5,18 @@ import Link from "next/link";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ChompCanvas, type ChompCanvasHandle, type ChompStats } from "./ChompCanvas";
 import { GAMEOVER } from "./engine/game";
+import { BonusIcons } from "./BonusIcons";
 
 /**
  * RICE CHOMP — the screen. HUD, framing and controls; the game itself is
  * <ChompCanvas />.
  *
- * PHASE 3: the four pests, the chase, lives and cornering. Still keyboard only; no audio,
- * no bonus items, no leaderboard. The chrome stays out of the way — what is on show is
- * what tells you the chase is working.
+ * PHASE 4: levels, the difficulty curve, bonus items and the two interstitials, on top of
+ * Phase 3's chase. Still keyboard only; no audio, no touch controls, no leaderboard.
+ *
+ * The level indicator is a row of bonus-item icons rather than a number, which is the
+ * spec's ask and also the cheapest place to catch a legibility problem — six silhouettes
+ * side by side at 22px is a harder read than any of them gets on the board.
  *
  * The HUD is marked translate="no": TranslateProvider mounts Google Translate site-wide
  * and it will happily rewrite live score digits mid-run.
@@ -73,7 +77,7 @@ export function ChompScreen() {
             RICE CHOMP
           </h1>
           <span className="font-mono text-[0.6rem] tracking-[0.18em] text-steamed/35 uppercase">
-            Phase 3 · the pests
+            Phase 4 · levels &amp; bonuses
           </span>
         </div>
         <Link
@@ -90,7 +94,10 @@ export function ChompScreen() {
       >
         <Stat label="Score" value={String(stats.score)} tone="text-khaki" />
         <Stat label="Lives" value={"◆".repeat(stats.lives) || "—"} tone="text-salmon" />
-        <Stat label="Level" value={String(stats.level)} />
+        <div className="flex flex-col gap-1">
+          <span className={HUD_LABEL}>Level {stats.level}</span>
+          <BonusIcons level={stats.level} />
+        </div>
         <Stat label="Pests" value={String(stats.pestsEaten)} tone="text-tuna" />
         <Stat label="Left" value={String(stats.grainsRemaining)} tone="text-steamed/70" />
         <Stat label="Time" value={`${seconds}s`} tone="text-steamed/70" />
@@ -151,6 +158,10 @@ export function ChompScreen() {
         <span className="flex items-center gap-1.5">
           <Key>P</Key>
           <span>pause</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Key>any</Key>
+          <span>skips a cutscene</span>
         </span>
         <span className="text-steamed/30">
           Turn early into a corner and you gain ground — the pests can only turn dead

@@ -3,18 +3,33 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { COLS, ROWS } from "./engine/maze";
 import {
+  CLEARED,
+  CUTSCENE,
   DYING,
   READY,
   createGame,
+  endCutscene,
   setWanted,
   tick as stepGame,
   type GameState,
 } from "./engine/game";
-import { DEATH_PAUSE_TICKS, DEATH_TICKS } from "./engine/levels";
+import {
+  BONUS_SCORE_TICKS,
+  CLEAR_FLASH_TICKS,
+  CLEAR_HOLD_TICKS,
+  CLEAR_TICKS,
+  CUTSCENE_TICKS,
+  DEATH_PAUSE_TICKS,
+  DEATH_TICKS,
+  bonusForLevel,
+} from "./engine/levels";
 import { DOWN, LEFT, RIGHT, TICK_HZ, UP, type Dir } from "./engine/types";
 import {
   bakeGrains,
   bakeWalls,
+  drawBonus,
+  drawBonusScore,
+  drawCutscene,
   drawPests,
   drawPlayer,
   drawPlayerDeath,
@@ -42,6 +57,12 @@ const MAX_TICKS_PER_FRAME = 10;
 const MAX_DPR = 2;
 /** How often the HUD is told what happened. 60fps setState would thrash React. */
 const STATS_MS = 100;
+/**
+ * The maze-flash colours. Bright bone walls with a khaki keyline — the inverse of the
+ * porcelain board, so the strobe reads as the maze lighting up rather than as a glitch.
+ */
+const FLASH_FILL = "#f4efe2";
+const FLASH_EDGE = "#c4b370";
 
 export interface ChompStats {
   score: number;
@@ -102,12 +123,16 @@ export const ChompCanvas = forwardRef<
 
   // Baked layers + the size they were baked at.
   const wallsRef = useRef<HTMLCanvasElement | null>(null);
+  const flashRef = useRef<HTMLCanvasElement | null>(null);
   const grainsRef = useRef<HTMLCanvasElement | null>(null);
   const bakedRef = useRef<Uint8Array | null>(null);
   const tileRef = useRef(0);
   const dprRef = useRef(1);
   /** The level the baked layers belong to. A new level refills the maze, so it re-bakes. */
   const bakedLevelRef = useRef(0);
+
+  /** Milliseconds into the current interstitial. Host-side; never touches the run. */
+  const cutsceneMsRef = useRef(0);
 
   const statsAtRef = useRef(0);
   const onStatsRef = useRef(onStats);
@@ -122,6 +147,7 @@ export const ChompCanvas = forwardRef<
     const dpr = dprRef.current;
     if (!state || tilePx <= 0) return;
     wallsRef.current = bakeWalls(state.grid, tilePx, dpr);
+    flashRef.current = bakeWalls(state.grid, tilePx, dpr, FLASH_FILL, FLASH_EDGE);
     grainsRef.current = bakeGrains(state.grid, tilePx, dpr);
     bakedRef.current = Uint8Array.from(state.grid);
     bakedLevelRef.current = state.level;
@@ -147,6 +173,21 @@ export const ChompCanvas = forwardRef<
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, w, h);
 
+    // The interstitial replaces the board entirely, and runs on the HOST's clock — the
+    // simulation is frozen solid underneath it. See the CUTSCENE note in game.ts.
+    if (state.phase === CUTSCENE) {
+      drawCutscene(
+        ctx,
+        state.cutscene,
+        Math.min(1, cutsceneMsRef.current / (CUTSCENE_TICKS * TICK_MS)),
+        w,
+        h,
+        tilePx,
+        !reducedRef.current,
+      );
+      return;
+    }
+
     const walls = wallsRef.current;
     const grains = grainsRef.current;
     const baked = bakedRef.current;
@@ -170,8 +211,29 @@ export const ChompCanvas = forwardRef<
       return;
     }
 
+    if (state.phase === CLEARED) {
+      // Cleared board: nobody on it, and the walls strobe. The strobe is a second BAKED
+      // layer blitted on alternate beats rather than a per-frame tint, so the flash costs
+      // one drawImage and not a recomposite of the whole maze.
+      const into = CLEAR_TICKS - state.phaseTicks - CLEAR_HOLD_TICKS;
+      const lit = !reducedRef.current && into >= 0 && Math.floor(into / CLEAR_FLASH_TICKS) % 2 === 0;
+      if (lit && flashRef.current) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(flashRef.current, 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      drawPlayer(ctx, state.player, tilePx, false);
+      return;
+    }
+
+    const bonusKind = bonusForLevel(state.level).kind;
+    // Bob is on the tick count, so it is the same on every machine and flat when the
+    // player has asked for less motion.
+    const bob = reducedRef.current ? 0.5 : (Math.sin(state.tick / 11) + 1) / 2;
+    drawBonus(ctx, state.bonus, bonusKind, tilePx, bob);
     drawPests(ctx, state.pests, tilePx, state.frightTicks, !reducedRef.current);
     drawPlayer(ctx, state.player, tilePx, !state.player.blocked && state.phase !== READY);
+    drawBonusScore(ctx, state.bonus, tilePx, BONUS_SCORE_TICKS);
   };
 
   const publishStats = (now: number, force = false) => {
@@ -206,6 +268,24 @@ export const ChompCanvas = forwardRef<
       const raw = t - lastRef.current;
       lastRef.current = t;
 
+      if (state.phase === CUTSCENE) {
+        // The simulation does not advance at all here. The cutscene has its own clock,
+        // and when it runs out — or the player skips, or reduced motion skips it before
+        // the first frame — the run picks up exactly where it stopped.
+        if (reducedRef.current) {
+          endCutscene(state);
+        } else {
+          cutsceneMsRef.current += Math.min(Math.max(raw, 0), MAX_FRAME_MS);
+          if (cutsceneMsRef.current >= CUTSCENE_TICKS * TICK_MS) endCutscene(state);
+        }
+        accRef.current = 0;
+        paint();
+        publishStats(t);
+        rafRef.current = requestAnimationFrame(frame);
+        return;
+      }
+      cutsceneMsRef.current = 0;
+
       if (!pausedRef.current) {
         // Clamp before accumulating: a backgrounded tab or a long GC pause must not
         // become hundreds of simulated ticks the moment we come back.
@@ -230,6 +310,7 @@ export const ChompCanvas = forwardRef<
     reset: () => {
       stateRef.current = createGame();
       accRef.current = 0;
+      cutsceneMsRef.current = 0;
       pausedRef.current = false;
       bake();
       paint();
@@ -242,7 +323,14 @@ export const ChompCanvas = forwardRef<
     },
     steer: (dir: Dir) => {
       const state = stateRef.current;
-      if (state) setWanted(state, dir);
+      if (!state) return;
+      // On-screen controls skip an interstitial too, for the same reason the keyboard
+      // does: a tap should mean "get on with it", not nothing.
+      if (state.phase === CUTSCENE) {
+        endCutscene(state);
+        return;
+      }
+      setWanted(state, dir);
     },
   }));
 
@@ -308,6 +396,7 @@ export const ChompCanvas = forwardRef<
       stateRef.current = null;
       wallsRef.current = null;
       grainsRef.current = null;
+      flashRef.current = null;
       bakedRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -319,6 +408,15 @@ export const ChompCanvas = forwardRef<
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+
+      // Cutscenes are skippable, and by ANY key rather than a documented one — a player
+      // who wants the interstitial gone should not have to find out which button does it.
+      const showing = stateRef.current;
+      if (showing && showing.phase === CUTSCENE) {
+        e.preventDefault();
+        endCutscene(showing);
+        return;
+      }
 
       const dir = KEY_TO_DIR[e.key];
       if (dir !== undefined) {

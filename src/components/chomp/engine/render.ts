@@ -56,7 +56,18 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
  * read the arcade original gets from its double-line wall style, without hand-authoring
  * any geometry.
  */
-export function bakeWalls(grid: Uint8Array, tilePx: number, dpr: number): HTMLCanvasElement {
+export function bakeWalls(
+  grid: Uint8Array,
+  tilePx: number,
+  dpr: number,
+  /**
+   * Overridden to bake the maze-flash layer. The flash is a second baked canvas rather
+   * than a per-frame tint: a tint means compositing the whole board every frame of the
+   * strobe, and the whole point of baking is that the hot loop only draws what moves.
+   */
+  fill: string = WALL_FILL,
+  edge: string = WALL_EDGE,
+): HTMLCanvasElement {
   const cv = makeCanvas(Math.round(COLS * tilePx * dpr), Math.round(ROWS * tilePx * dpr));
   const ctx = cv.getContext("2d");
   if (!ctx) return cv;
@@ -70,9 +81,9 @@ export function bakeWalls(grid: Uint8Array, tilePx: number, dpr: number): HTMLCa
       if (!isWall(c, r)) continue;
       const px = c * tilePx;
       const py = r * tilePx;
-      ctx.fillStyle = WALL_FILL;
+      ctx.fillStyle = fill;
       ctx.fillRect(px, py, tilePx, tilePx);
-      ctx.fillStyle = WALL_EDGE;
+      ctx.fillStyle = edge;
       // Column neighbours are read unwrapped on purpose: the maze edge should look
       // like an edge, not like it continues around.
       if (!isWall(c, r - 1)) ctx.fillRect(px, py, tilePx, lip);
@@ -718,4 +729,449 @@ export function drawPestIcon(
   tilePx: number,
 ): void {
   PEST_ART[kind](ctx, tilePx, PEST_BODY[kind], PEST_EDGE);
+}
+
+// --- bonus items ------------------------------------------------------------
+
+/**
+ * SIX SILHOUETTES, at one tile.
+ *
+ * Same rule as the pests, and a harder version of it: these are ONE tile — about 27px on
+ * a desktop and less on a phone — they appear for nine seconds, and the player is reading
+ * them out of the corner of an eye while being chased. Anything that needs a second look
+ * has already failed. So each is built from one unmistakable outline property:
+ *
+ *   Soy sauce  — a NECK. Tall body, hard shoulder, narrow throat, cap on top.
+ *   Chopsticks — two thin DIAGONALS with daylight between them. The only item that is
+ *                not one solid mass, and the only one made of straight lines.
+ *   Nori       — a wide sheet with a CURLED CORNER. The curl is the whole point: a plain
+ *                rectangle and a trapezoid are the same shape at this size, so the sheet
+ *                gets a rolled corner and the cup keeps its foot.
+ *   Sake cup   — a FOOT. Flared bowl on a pedestal, with an open elliptical rim.
+ *   Chili      — a CURVE. The only organic asymmetric shape, with a stem kinked against
+ *                the bend of the pod.
+ *   Sesame     — THREE separate seeds. The only item that is not a single object.
+ *
+ * Turn the saturation off and they are still six different things, which is the test.
+ * Colour is a second channel, not the first: nori is bamboo green rather than black
+ * because a black sheet on a black corridor is not a sheet, it is a hole.
+ */
+const BONUS_EDGE = "#14110d"; // nori — the same hard edge every character carries
+const BONUS_BONE = "#f4efe2";
+const BONUS_STEAMED = "#fbf7ee";
+const BONUS_TUNA = "#c1443a";
+const BONUS_BAMBOO = "#4e7a3e";
+const BONUS_PAPER_DARK = "#d9cfb8";
+const BONUS_PORCELAIN = "#2a4d8f";
+const BONUS_OLIVE_DEEP = "#474d2e";
+
+/** Soy sauce: the neck is the read. */
+function drawSoy(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = BONUS_EDGE;
+
+  // Body: straight sides, hard shoulder, pinched into a throat.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.22, s * 0.42);
+  ctx.lineTo(-s * 0.22, -s * 0.04);
+  ctx.lineTo(-s * 0.09, -s * 0.24); // shoulder
+  ctx.lineTo(-s * 0.09, -s * 0.36); // throat
+  ctx.lineTo(s * 0.09, -s * 0.36);
+  ctx.lineTo(s * 0.09, -s * 0.24);
+  ctx.lineTo(s * 0.22, -s * 0.04);
+  ctx.lineTo(s * 0.22, s * 0.42);
+  ctx.closePath();
+  ctx.fillStyle = BONUS_BONE;
+  ctx.fill();
+  ctx.stroke();
+
+  // The sauce inside, so the bottle is not an empty outline at a glance.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.22, s * 0.42);
+  ctx.lineTo(-s * 0.22, s * 0.06);
+  ctx.lineTo(s * 0.22, s * 0.06);
+  ctx.lineTo(s * 0.22, s * 0.42);
+  ctx.closePath();
+  ctx.fillStyle = BONUS_OLIVE_DEEP;
+  ctx.fill();
+
+  // Cap.
+  ctx.beginPath();
+  ctx.rect(-s * 0.13, -s * 0.48, s * 0.26, s * 0.14);
+  ctx.fillStyle = BONUS_TUNA;
+  ctx.fill();
+  ctx.stroke();
+}
+
+/** Chopsticks: the only item made of daylight and straight lines. */
+function drawChopsticks(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  const stick = (offset: number, lean: number) => {
+    ctx.beginPath();
+    ctx.moveTo(offset * s - lean * s, -s * 0.42);
+    ctx.lineTo(offset * s + lean * s, s * 0.42);
+    ctx.strokeStyle = BONUS_EDGE;
+    ctx.lineWidth = Math.max(2, s * 0.17);
+    ctx.stroke();
+    ctx.strokeStyle = BONUS_PAPER_DARK;
+    ctx.lineWidth = Math.max(1, s * 0.11);
+    ctx.stroke();
+    // Lacquered tip, at the eating end.
+    ctx.beginPath();
+    ctx.moveTo(offset * s + lean * s * 0.45, s * 0.16);
+    ctx.lineTo(offset * s + lean * s, s * 0.42);
+    ctx.strokeStyle = BONUS_TUNA;
+    ctx.lineWidth = Math.max(1, s * 0.11);
+    ctx.stroke();
+  };
+  // Splayed, so the gap between them is unmistakable rather than a single thick bar.
+  stick(-0.13, -0.07);
+  stick(0.13, 0.07);
+}
+
+/** Nori: a wide sheet whose top-right corner has rolled up. */
+function drawNori(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = BONUS_EDGE;
+
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.42, -s * 0.3);
+  ctx.lineTo(s * 0.16, -s * 0.3);
+  // The curl: the corner peels back on itself.
+  ctx.quadraticCurveTo(s * 0.3, -s * 0.34, s * 0.34, -s * 0.16);
+  ctx.quadraticCurveTo(s * 0.38, -s * 0.02, s * 0.42, -s * 0.06);
+  ctx.lineTo(s * 0.42, s * 0.3);
+  ctx.lineTo(-s * 0.42, s * 0.3);
+  ctx.closePath();
+  ctx.fillStyle = BONUS_BAMBOO;
+  ctx.fill();
+  ctx.stroke();
+
+  // Underside of the roll, so the curl reads as depth and not as a dent.
+  ctx.beginPath();
+  ctx.moveTo(s * 0.16, -s * 0.3);
+  ctx.quadraticCurveTo(s * 0.34, -s * 0.3, s * 0.34, -s * 0.14);
+  ctx.strokeStyle = BONUS_BONE;
+  ctx.lineWidth = Math.max(1, s * 0.06);
+  ctx.stroke();
+
+  // Two pinholes. Skipped when they would be sub-pixel mush.
+  if (s >= 20) {
+    ctx.fillStyle = BONUS_EDGE;
+    for (const [hx, hy] of [
+      [-0.2, -0.06],
+      [0.02, 0.14],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(hx * s, hy * s, Math.max(0.75, s * 0.03), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/** Sake cup: the pedestal foot is the read. */
+function drawSake(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = BONUS_EDGE;
+
+  // Foot first, so the bowl sits over its stem.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.1, s * 0.1);
+  ctx.lineTo(-s * 0.22, s * 0.36);
+  ctx.lineTo(s * 0.22, s * 0.36);
+  ctx.lineTo(s * 0.1, s * 0.1);
+  ctx.closePath();
+  ctx.fillStyle = BONUS_STEAMED;
+  ctx.fill();
+  ctx.stroke();
+
+  // Flared bowl.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.36, -s * 0.24);
+  ctx.lineTo(-s * 0.13, s * 0.14);
+  ctx.lineTo(s * 0.13, s * 0.14);
+  ctx.lineTo(s * 0.36, -s * 0.24);
+  ctx.closePath();
+  ctx.fillStyle = BONUS_STEAMED;
+  ctx.fill();
+  ctx.stroke();
+
+  // Open rim — an ellipse, so the cup reads as a vessel and not as a wedge.
+  ctx.beginPath();
+  ctx.ellipse(0, -s * 0.24, s * 0.36, s * 0.1, 0, 0, Math.PI * 2);
+  ctx.fillStyle = BONUS_PORCELAIN;
+  ctx.fill();
+  ctx.stroke();
+}
+
+/** Chili: the only curve on the board. */
+function drawChili(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = BONUS_EDGE;
+
+  // Pod: fat at the shoulder, tapering to a point that hooks back.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.14, -s * 0.24);
+  ctx.quadraticCurveTo(s * 0.26, -s * 0.16, s * 0.24, s * 0.16);
+  ctx.quadraticCurveTo(s * 0.22, s * 0.42, s * 0.02, s * 0.4);
+  ctx.quadraticCurveTo(-s * 0.06, s * 0.36, -s * 0.02, s * 0.14);
+  ctx.quadraticCurveTo(s * 0.02, -s * 0.08, -s * 0.14, -s * 0.24);
+  ctx.closePath();
+  ctx.fillStyle = BONUS_TUNA;
+  ctx.fill();
+  ctx.stroke();
+
+  // Stem, kinked AGAINST the bend of the pod so the two curves do not merge into one.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.12, -s * 0.22);
+  ctx.quadraticCurveTo(-s * 0.32, -s * 0.3, -s * 0.28, -s * 0.44);
+  ctx.strokeStyle = BONUS_EDGE;
+  ctx.lineWidth = Math.max(2, s * 0.13);
+  ctx.stroke();
+  ctx.strokeStyle = BONUS_BAMBOO;
+  ctx.lineWidth = Math.max(1, s * 0.085);
+  ctx.stroke();
+}
+
+/** Sesame: three of them, because "more than one" is itself the silhouette. */
+function drawSesame(ctx: CanvasRenderingContext2D, s: number): void {
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1, s * 0.045);
+  ctx.strokeStyle = BONUS_EDGE;
+  const seed = (x: number, y: number, angle: number) => {
+    ctx.save();
+    ctx.translate(x * s, y * s);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    // Teardrop: one end blunt, one end pointed. A sesame seed is not a circle.
+    ctx.moveTo(-s * 0.17, 0);
+    ctx.quadraticCurveTo(-s * 0.04, -s * 0.13, s * 0.17, 0);
+    ctx.quadraticCurveTo(-s * 0.04, s * 0.13, -s * 0.17, 0);
+    ctx.closePath();
+    ctx.fillStyle = BONUS_BONE;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  };
+  seed(-0.16, -0.2, -0.35);
+  seed(0.19, -0.05, 0.42);
+  seed(-0.08, 0.24, -0.12);
+}
+
+const BONUS_ART: readonly ((ctx: CanvasRenderingContext2D, s: number) => void)[] = [
+  drawSoy,
+  drawChopsticks,
+  drawNori,
+  drawSake,
+  drawChili,
+  drawSesame,
+];
+
+/**
+ * Draw a bonus item centred on the origin, at `size` pixels per tile. Used both on the
+ * board and for the HUD's level-indicator strip, so there is exactly one definition of
+ * what each item looks like.
+ */
+export function drawBonusItem(
+  ctx: CanvasRenderingContext2D,
+  kind: number,
+  size: number,
+): void {
+  const art = BONUS_ART[kind];
+  if (!art) return;
+  ctx.save();
+  art(ctx, size);
+  ctx.restore();
+}
+
+/**
+ * The item on the board. `bob` is 0..1 from the host and gives it a slow rise and fall —
+ * one more channel separating it from everything else on a busy board, and stilled under
+ * reduced motion by passing a constant.
+ */
+export function drawBonus(
+  ctx: CanvasRenderingContext2D,
+  bonus: { x: number; y: number; ticks: number },
+  kind: number,
+  tilePx: number,
+  bob: number,
+): void {
+  if (bonus.ticks <= 0) return;
+  const px = (bonus.x / SUB) * tilePx;
+  const py = (bonus.y / SUB) * tilePx + (bob - 0.5) * tilePx * 0.1;
+  ctx.save();
+  ctx.translate(px, py);
+  drawBonusItem(ctx, kind, tilePx);
+  ctx.restore();
+}
+
+// --- interstitials ----------------------------------------------------------
+
+/**
+ * The two cutscenes, drawn procedurally from the SAME sprite functions the game uses.
+ * That is the whole trick and the reason these are cheap: no new art, no timeline format,
+ * no asset. A cutscene here is two characters, a horizontal position each, and a caption.
+ *
+ * `progress` is 0..1 and comes from the host's own clock — cutscenes consume no simulation
+ * ticks (see game.ts) so nothing here can desync a run.
+ *
+ *   0  THE THEFT     the Rat hauls a stolen grain off to the left, the player in pursuit
+ *                    and not gaining. It sets up the debt.
+ *   1  THE RECKONING the player comes back the other way, mouth wide, and the Rat is the
+ *                    one running. It pays it off.
+ */
+export function drawCutscene(
+  ctx: CanvasRenderingContext2D,
+  index: number,
+  progress: number,
+  widthPx: number,
+  heightPx: number,
+  tilePx: number,
+  animate: boolean,
+): void {
+  const t = Math.max(0, Math.min(1, progress));
+  const lane = heightPx * 0.5;
+  // Travel from fully off one edge to fully off the other, so nobody pops in or out.
+  const span = widthPx + tilePx * 6;
+  const revenge = index === CUTSCENE_REVENGE_INDEX;
+
+  ctx.save();
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, widthPx, heightPx);
+
+  // A single floor line, so the characters are running along something.
+  ctx.strokeStyle = "#2a4d8f";
+  ctx.lineWidth = Math.max(1, tilePx * 0.09);
+  ctx.beginPath();
+  ctx.moveTo(0, lane + tilePx * 0.62);
+  ctx.lineTo(widthPx, lane + tilePx * 0.62);
+  ctx.stroke();
+
+  // Distance travelled, and which way. The chase runs left in the first beat and right in
+  // the second, which is what makes the pair read as a reversal rather than a repeat.
+  const travelled = t * span;
+  const leadX = revenge ? -tilePx * 3 + travelled : widthPx + tilePx * 3 - travelled;
+  const chaseX = revenge ? leadX - tilePx * 3.4 : leadX + tilePx * 3.4;
+  const dir: Dir = revenge ? RIGHT : LEFT;
+
+  // The bob is on the same clock as everything else, and flat under reduced motion.
+  const hop = animate ? Math.abs(Math.sin(t * Math.PI * 9)) * tilePx * 0.16 : 0;
+
+  if (revenge) {
+    // The player leads, the Rat flees. Drawn in that order so the pursuer is on top.
+    drawCutscenePest(ctx, chaseX, lane - hop, tilePx, dir, true);
+    drawCutscenePlayer(ctx, leadX, lane, tilePx, dir, animate ? t : 0, 1.35);
+  } else {
+    // The Rat leads with the stolen grain; the player trails.
+    drawCutscenePest(ctx, leadX, lane - hop, tilePx, dir, false);
+    drawStolenGrain(ctx, leadX + tilePx * 0.75, lane + tilePx * 0.1, tilePx);
+    drawCutscenePlayer(ctx, chaseX, lane, tilePx, dir, animate ? t : 0, 1);
+  }
+
+  ctx.restore();
+}
+
+/** Index of the second cutscene. Mirrors CUTSCENE_REVENGE in levels.ts. */
+const CUTSCENE_REVENGE_INDEX = 1;
+
+function drawCutscenePest(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tilePx: number,
+  dir: Dir,
+  frightened: boolean,
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  if (dir === LEFT) ctx.scale(-1, 1);
+  const size = tilePx * 1.6;
+  const fill = frightened ? FRIGHT_FILL : PEST_BODY[0];
+  const edge = frightened ? FRIGHT_EDGE : PEST_EDGE;
+  PEST_ART[0](ctx, size, fill, edge);
+  const e = PEST_EYES[0];
+  eyePair(ctx, size, RIGHT, e.x, e.y, e.spread, e.r);
+  ctx.restore();
+}
+
+function drawCutscenePlayer(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tilePx: number,
+  dir: Dir,
+  phase: number,
+  scale: number,
+): void {
+  // A throwaway Player: drawPlayer only reads position, facing and distance, and the
+  // distance drives the chomp, so a synthetic value animates the mouth correctly.
+  const size = tilePx * 1.6 * scale;
+  drawPlayer(
+    ctx,
+    {
+      x: (x / size) * SUB,
+      y: (y / size) * SUB,
+      dir,
+      wanted: -1,
+      moveAcc: 0,
+      distance: Math.round(phase * SUB * 14),
+      blocked: false,
+      freeze: 0,
+      glideSteps: 0,
+      glideFrom: dir,
+      glideBack: false,
+    } as Player,
+    size,
+    true,
+  );
+}
+
+/** The grain the Rat has made off with. */
+function drawStolenGrain(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tilePx: number,
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.5);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, tilePx * 0.34, tilePx * 0.19, 0, 0, Math.PI * 2);
+  ctx.fillStyle = GRAIN_FILL;
+  ctx.fill();
+  ctx.strokeStyle = BONUS_EDGE;
+  ctx.lineWidth = Math.max(1, tilePx * 0.06);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** The value of a collected item, hanging in the air where it was taken. */
+export function drawBonusScore(
+  ctx: CanvasRenderingContext2D,
+  bonus: { x: number; y: number; scoreTicks: number; scoreValue: number },
+  tilePx: number,
+  totalTicks: number,
+): void {
+  if (bonus.scoreTicks <= 0) return;
+  const t = 1 - bonus.scoreTicks / totalTicks;
+  const px = (bonus.x / SUB) * tilePx;
+  const py = (bonus.y / SUB) * tilePx - t * tilePx * 0.8;
+  ctx.save();
+  ctx.font = `600 ${Math.round(tilePx * 0.62)}px ui-rounded, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(2, tilePx * 0.16);
+  ctx.strokeStyle = BONUS_EDGE;
+  ctx.strokeText(String(bonus.scoreValue), px, py);
+  ctx.fillStyle = BONUS_STEAMED;
+  ctx.fillText(String(bonus.scoreValue), px, py);
+  ctx.restore();
 }

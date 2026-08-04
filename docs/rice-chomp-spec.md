@@ -63,10 +63,14 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
 `vitest` here is node-env and DOM-free by design. Maze parsing, per-pest target-tile selection, junction tiebreak, mode-cycle timing and scoring must be pure functions, importable without a DOM, and unit tested. The render layer can stay untested. `noUncheckedIndexedAccess` is off, so bounds-guard every tile lookup by hand.
 
+Suites: `test/chomp-{maze,movement,pests,cornering,levels,kiting}.test.ts`.
+
 **The bot is part of the test suite, not a throwaway.** *Added 2026-08-04.* `test/chomp-support.ts` holds a playing bot — breadth-first danger field, one-tile-ahead decisions so it corners like a person, scored by how much of the maze it can still reach before the pests cut it off. `test/chomp-kiting.test.ts` uses it to answer questions the geometry can only half-answer: whether any loop can be orbited forever, and whether a room can be sealed. Two rules learned the hard way and worth keeping:
 
 - **A bot that dithers is a bot bug, not a maze verdict.** The first version re-decided every tile and spent whole runs oscillating between two adjacent tiles, which made the maze look far more lethal than it is. It commits in corridors and only re-decides at junctions.
 - **Check the check.** A bot that dies because it cannot see far enough looks exactly like a maze that cannot be farmed. The suite re-runs the conclusion at double the lookahead; if that rescued it, the finding was about the bot.
+- **Re-ask the question after every change to the curve.** *Added 2026-08-04, Phase 4.* A maze that cannot be farmed at level 1 is not automatically safe at level 9: the speed multipliers move every quantity the level-1 answer depended on. The kiting suite runs at levels 1, 5 and 9 — pests slower than the player, level with them, and faster.
+- **Prefer arithmetic to a bot where the question has an exact answer.** Whether cornering still pays at level 21 is not a thing to measure by running a chase and counting seconds; a chase is chaotic and single runs disagree with each other. It is a break-even ratio, and it is computed. The bot is for questions that are genuinely about search and pursuit.
 
 ## The maze
 
@@ -94,7 +98,13 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 - **CORNERING is the skill ceiling, and it is a mechanic, not a feel.** A turn keyed *early* — up to `cornerLead` subunits before the junction centre — does not wait for the centre. The player glides diagonally through the corner, advancing on both axes at once, and leaves the junction having skipped that much path. A turn keyed *late*, within `turnTolerance` past the centre, is still accepted but glides backwards and pays the same distance instead of banking it. **Pests cannot do this: they turn only on exact tile centres.** So every corner taken early is real distance bought off a pursuer, and it compounds — a four-corner loop is a tile and a third per lap, measured. *Added 2026-08-04, Phase 3.*
   - **`cornerLead` and `turnTolerance` are separate dials and must stay separate.** Widening the tolerance to chase a better cornering feel is the classic mistake: it produces the same symptom (turns take more readily) and none of the benefit (a late turn still costs you the corner). `turnTolerance` is late-input forgiveness only. Both live in `levels.ts`, and `test/chomp-cornering.test.ts` pins them apart.
   - The whole glide is contained inside one tile, so it can never clip a wall, skip a grain, or enter a tile the turn did not check.
-- **Faster than the pests early, slower than them late.** The player's speed is flat across levels and the pests ramp past it from around level 13. That is the difficulty curve, and it is why cornering exists: once a pest is faster on open path, the corner is the only place a player can still gain. *Amended 2026-08-04: this originally said "slightly faster than the pests on open path" without qualification, which describes level 1 and nothing after it.*
+- **Faster than the pests early, slower than them late.** The player's speed is flat across levels and the pests ramp past it — the crossover is around level 7, and by the top of the table a pest is 6% faster on open path. That is the difficulty curve, and it is why cornering exists: once a pest is faster on open path, the corner is the only place a player can still gain. *Amended 2026-08-04: this originally said "slightly faster than the pests on open path" without qualification, which describes level 1 and nothing after it. The crossover was "around level 13" until the Phase 4 curve was measured; it is level 7.*
+- **The speed curve is capped by cornering, not by taste.** *Added 2026-08-04, Phase 4.* Round a loop `L` tiles long with four corners, a perfect corner-cutter travels `L·SUB − 4·cornerLead` while the pest behind them must travel the full `L·SUB`, so per lap the player nets `L·SUB − r·(L·SUB − 4·cornerLead)` where `r` is the pest/player speed ratio. That is zero at `r* = L·SUB / (L·SUB − 4·cornerLead)`. The consequence is the shape of the whole endgame:
+  - the **girth-10 ring** breaks even at `r* = 1.15`, which the curve never approaches — a perfect player can hold the tight loops at any level, and those are the loops with the most junctions on them, so holding one is not safety;
+  - the **22-tile spawn loop** breaks even at `1.065`, and the pest table tops out at `1.0625` — deliberately just under;
+  - the **32-tile pen loop** breaks even at `1.043`, which the curve passes around level 15 — from there, perfect cornering no longer holds the big loop.
+
+  So the set of loops a perfect player can hold **shrinks** as the levels climb, toward the tightest and most heavily pincered ones. **Raising the top of the pest speed table past `r* = 1.065` breaks this**, and `test/chomp-levels.test.ts` asserts it so that would be a decision rather than an accident.
 - **Eating costs whole frozen ticks, not a reduced speed:** 1 tick of no movement per grain, 3 ticks per golden grain. *Amended 2026-08-03: this originally said "slightly slower while chomping grains". A blanket eating-speed value does not produce the same texture — the freeze is the mechanism that lets a pursuer close real distance on a player clearing a fresh corridor, and it is the reason the genre's chases tighten where the grains are thickest. There is no separate eating-speed dial; the freeze counts live in `levels.ts` with every other tuning number.*
 - 3 lives, extra life at 10,000 points.
 
@@ -128,12 +138,33 @@ A textured paddy background is coming in Phase 4+, and colour alone will not sur
 
 **Orientation differs from the player's rule, deliberately.** The player is one right-facing sprite rotated bodily, which works because a grain of rice reads at any angle. A rat rotated 90° does not read as a rat. Pests therefore stay upright, mirror horizontally to face left, lean slightly into a vertical move, and show direction with **where the eye is looking** rather than by turning the body.
 
+### Legibility — six bonus items, same rule
+
+*Added 2026-08-04, Phase 4. A harder version of the pest problem: these are ONE tile — about 27px on a desktop and less on a phone — they are on screen for nine seconds, and the player is reading them out of the corner of an eye while being chased. Anything that needs a second look has already failed.*
+
+Each is built from one unmistakable outline property, so the six read apart in monochrome:
+
+- **Soy sauce** — a NECK. Tall body, hard shoulder, narrow throat, cap on top.
+- **Chopsticks** — two thin DIAGONALS with daylight between them. The only item that is not a single solid mass, and the only one made of straight lines.
+- **Nori** — a wide sheet with a CURLED CORNER. The curl is load-bearing: a plain rectangle and a trapezoid are the same shape at this size, so the sheet gets a rolled corner and the cup keeps its foot.
+- **Sake cup** — a FOOT. Flared bowl on a pedestal, with an open elliptical rim.
+- **Chili** — a CURVE, and the stem is kinked *against* the bend of the pod so the two curves do not merge into one blob.
+- **Sesame** — THREE separate seeds. The only item that is not a single object.
+
+**Colour is the second channel, not the first.** Nori is bamboo green rather than black, because a black sheet on a black corridor is not a sheet, it is a hole.
+
+**The HUD level indicator is the cheapest test of all this.** It draws the run of items earned so far, at 22px, side by side, through the *same* `drawBonusItem` the board uses — so recognising an icon teaches the player the thing that will appear under the pen, and any two items that are confusable show up there first.
+
 ## Scoring and progression
 
 - Grain 10, golden grain 50, pest chain 200/400/800/1600 within a single power window.
-- Bonus items appear twice per level at maze center for ~9 seconds: soy sauce bottle, chopsticks, nori sheet, sake cup, chili, sesame — escalating values by level.
-- Level completes when all grains are cleared → maze flash → next level, faster pests, shorter frightened duration. From level 5 frightened mode is eventually disabled entirely.
-- Interstitial cutscenes after levels 2 and 5: a short procedurally-animated beat (rat steals a grain, bowl chases it off-screen). Under 4 seconds, skippable.
+- Bonus items appear twice per level for ~9 seconds: soy sauce bottle, chopsticks, nori sheet, sake cup, chili, sesame — escalating values by level. *Amended 2026-08-04, Phase 4, with two things the original line left open:*
+  - **They appear on a DOT COUNTER, not a timer** — at 70 and 170 grains cleared this level. That makes an item a reward for clearing rather than for surviving, so a player hiding in a corner never sees one. The counter is per LEVEL, not per life: dying should not cost you an item you had nearly earned. The item already on the board *does* go with the life that was chasing it.
+  - **"Maze center" is the corridor under the pen** — row 18, straddling cols 13/14. The literal centre of a 28×31 maze is row 15, which is *inside the pen*, where the player cannot go. Row 18 is the genre-correct spot: dead centre horizontally, one corridor below the gate, and reaching it costs position in the middle of the board.
+- Level completes when all grains are cleared → maze flash → next level, faster pests, shorter frightened duration.
+- **Frightened mode fades out rather than being switched off.** *Amended 2026-08-04: the original line read "From level 5 frightened mode is eventually disabled entirely", which has two readings — level 5 is where the shrinking starts to bite, or level 5 is where it is already gone. The first is implemented: level 5 is a 2-second window (already vestigial), and `FRIGHTENED_GONE_FROM_LEVEL` in `levels.ts` is where it goes to zero for good. The reasoning is on that constant, and switching to the other reading is that one number plus the tail of one table.* The fade is not monotonic — levels 6, 10 and 14 hand back a long window, because a pure slide gives the player nothing to look forward to and those levels are where a run earns its chain points.
+- Interstitial cutscenes after levels 2 and 5, under 4 seconds, **skippable by any key or any touch**. *Amended 2026-08-04: the beat was described as "rat steals a grain, bowl chases it off-screen"; the player has not been a bowl since Phase 2. The pair now reads as a debt and its repayment — the Rat hauls a stolen grain off with the player in pursuit and not gaining, then after level 5 the player comes back the other way with the Rat running. Both are drawn from the same sprite functions the game uses, so a cutscene is two positions and a caption rather than any new art.*
+  - **A cutscene consumes NO simulation ticks.** The phase freezes the run completely and the host animates on its own clock. This is load-bearing rather than tidy: the input trace is tick-stamped, so if watching or skipping changed how many ticks elapsed, whether the player pressed skip would shift every later event and server-side replay would no longer line up. Watched, skipped, or never drawn at all, the run is bit-identical.
 - **Every tuning number** — speeds, timers, mode durations, score values, the per-grain eating freeze, and the two movement dials (`cornerLead`, `turnTolerance`) — lives in `levels.ts`. No magic numbers in engine code. *Amended 2026-08-04: `levels.ts` now exists, and the two constants Phase 2 kept in `engine/game.ts` have moved into it. `game.ts` re-exports them as a compatibility seam and nothing else.* Speeds are authored in tiles/second and durations in seconds, converted once at module load; everything the simulation reads is an integer, because the simulation is replayed server-side and floats do not replay.
 
 ## Controls
@@ -145,9 +176,9 @@ A textured paddy background is coming in Phase 4+, and colour alone will not sur
 ## UI and presentation
 
 - Attract screen: title, pests introduced one at a time, high scores, start prompt.
-- HUD: score, high score, level indicator as bonus-item icons, lives as small bowl icons.
+- HUD: score, high score, level indicator as bonus-item icons, lives as small bowl icons. *The bonus-item level indicator landed in Phase 4 (`BonusIcons.tsx`); score, high score and the lives row are still Phase 6.*
 - Game over → name entry → submission → leaderboard.
-- `prefers-reduced-motion`: strip screen shake, maze flash and cutscenes; **gameplay stays playable**.
+- `prefers-reduced-motion`: strip screen shake, maze flash and cutscenes; **gameplay stays playable**. *Amended 2026-08-04 with what "strip" means here: the maze-clear phase still runs for exactly the same number of ticks but the strobe is not drawn, and the interstitial is dismissed before its first frame. Both are presentation-only, so a reduced-motion run and a normal run are tick-for-tick identical — the preference changes what is painted and never what is simulated.*
 - **High-contrast toggle (Phase 6).** Plain wall fill, no background image, for anyone who finds the textured board hard to read. Persisted alongside the mute setting, and reachable without starting a game. *Added 2026-08-03 with the paddy wall texture: a decorative background that some players cannot read is a decorative background with an off switch, not a reason to skip the decoration.*
 
 ### The board (Phase 4 and later)
