@@ -15,7 +15,7 @@
  * the precedent in riceBowlEngine.ts and GrainCatch.tsx. No new palette.
  */
 
-import { COLS, ROWS, tileAt } from "./maze";
+import { COLS, PEN_BOTTOM, PEN_LEFT, PEN_RIGHT, PEN_TOP, ROWS, tileAt } from "./maze";
 import { DOWN, DX, DY, GRAIN, LEFT, POWER, RIGHT, SUB, UP, type Dir } from "./types";
 import { EYES, type Pest } from "./pests";
 import type { Player } from "./game";
@@ -51,25 +51,119 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
 }
 
 /**
- * Paint the walls. Each wall tile gets a lighter keyline only on the sides that face
- * open space, so blocks read as extruded slabs rather than a flat blue mass — the same
- * read the arcade original gets from its double-line wall style, without hand-authoring
- * any geometry.
+ * THE PADDY WALL TEXTURE.
+ *
+ * A self-hosted aerial photograph of flooded paddies — the fields become the wall blocks
+ * and the grass bunds between them become the detail — clipped to the wall shapes so the
+ * corridors stay flat black and the grains, player and pests keep popping off them.
+ *
+ * `TEXTURE_DARKEN` is a black veil laid over the photograph before it is masked, so 0.52
+ * literally means "52% darker". The spec's range is 40–60%: below about 0.45 the bunds get
+ * bright enough to compete with the khaki grains, above about 0.6 the whole thing collapses
+ * into the corridors and there was no point loading an image. It is one number, on purpose,
+ * because it is the dial that gets tuned by eye.
+ *
+ * `TEXTURE_LIP_SCALE` is the line item the spec says decides whether any of this works. A
+ * flat porcelain wall needs only a hairline to read as a slab; a photograph is BUSY, and
+ * without a heavier outline the maze turns to soup — the eye loses where a wall stops and
+ * a corridor starts, which in a chase game is not a cosmetic problem. So the keyline that
+ * is decoration on the flat board is structure on the textured one, and it is thickened.
  */
-export function bakeWalls(
-  grid: Uint8Array,
-  tilePx: number,
-  dpr: number,
+const TEXTURE_DARKEN = 0.52;
+const TEXTURE_LIP_SCALE = 1.4;
+
+/** Bone lettering, with a nori halo so it holds an edge over any patch of photograph. */
+const LETTER_FILL = "#f4efe2"; // bone
+const LETTER_HALO = "#14110d"; // nori
+
+/**
+ * THE WALL LETTERING, and which walls it is on.
+ *
+ * Reading down the centre column there are exactly two 8-wide × 2-tall wall blocks above
+ * the pit, separated by the row-8 corridor. They take the two halves of the site's name,
+ * stacked, sitting directly on top of the pit and its backdrop.
+ *
+ * There is no third such block: below rows 9-10 comes the row-11 corridor, the gate, and
+ * then the pit itself, so "the two-row wall immediately below" the lower one does not
+ * exist. Confirmed with the owner before this was drawn.
+ *
+ * The text is fitted to the block and CLIPPED to it, so it can never bleed into a
+ * corridor — a letter stroke lying in a corridor would read as a wall that is not there.
+ */
+export const LETTER_BLOCKS: readonly {
+  text: string;
+  col0: number;
+  col1: number;
+  row0: number;
+  row1: number;
+}[] = [
+  { text: "One Grain of", col0: 10, col1: 17, row0: 6, row1: 7 },
+  { text: "$RICE", col0: 10, col1: 17, row0: 9, row1: 10 },
+];
+
+/** Fallback stack, used only if the theme's font variable cannot be read. */
+const LETTER_FONT_FALLBACK = '"Fredoka", ui-rounded, system-ui, sans-serif';
+/** Halo stroke width as a fraction of the font size. Also the fit's safety margin. */
+const LETTER_HALO_EM = 0.16;
+/**
+ * Below this the lettering is not drawn at all.
+ *
+ * Measured, in Fredoka Bold: at a 13px portrait tile "One Grain of" fits at 16px with an
+ * 11px cap height and "$RICE" at 21px with a 15px one, both of which read. A tile small
+ * enough to push the long line under about 10px is a board nobody can play anyway, and a
+ * smear of grey where a word should be is worse than a plain wall.
+ */
+const MIN_LETTER_PX = 10;
+
+export interface WallBakeOptions {
   /**
    * Overridden to bake the maze-flash layer. The flash is a second baked canvas rather
    * than a per-frame tint: a tint means compositing the whole board every frame of the
    * strobe, and the whole point of baking is that the hot loop only draws what moves.
    */
-  fill: string = WALL_FILL,
-  edge: string = WALL_EDGE,
+  fill?: string;
+  edge?: string;
   /** Thickens the keyline for the high-contrast board, where the line IS the wall. */
-  lipScale = 1,
+  lipScale?: number;
+  /**
+   * The decoded paddy photograph, or null/undefined for a flat board. Null is not a
+   * failure mode — it is the high-contrast board, and it is also every frame drawn before
+   * the image finishes decoding, which is why first paint never waits on it.
+   */
+  texture?: CanvasImageSource | null;
+  /** Font family for the baked lettering, read from the theme vars by the host. */
+  fontFamily?: string;
+  /** Lettering colour. Flipped to a dark ink on the flash layer, whose walls are bone. */
+  letterFill?: string;
+  letterHalo?: string;
+}
+
+/**
+ * Paint the walls. Each wall tile gets a lighter keyline only on the sides that face
+ * open space, so blocks read as extruded slabs rather than a flat blue mass — the same
+ * read the arcade original gets from its double-line wall style, without hand-authoring
+ * any geometry.
+ *
+ * Three passes, and the order is load-bearing: fill, then texture masked to the fill,
+ * then the keyline and the lettering ON TOP of the texture. Drawing the keyline first
+ * would let the photograph eat the one feature holding the maze together.
+ */
+export function bakeWalls(
+  grid: Uint8Array,
+  tilePx: number,
+  dpr: number,
+  opts: WallBakeOptions = {},
 ): HTMLCanvasElement {
+  const {
+    fill = WALL_FILL,
+    edge = WALL_EDGE,
+    texture = null,
+    fontFamily,
+    letterFill = LETTER_FILL,
+    letterHalo = LETTER_HALO,
+  } = opts;
+  const lipScale = opts.lipScale ?? (texture ? TEXTURE_LIP_SCALE : 1);
+
   const cv = makeCanvas(Math.round(COLS * tilePx * dpr), Math.round(ROWS * tilePx * dpr));
   const ctx = cv.getContext("2d");
   if (!ctx) return cv;
@@ -77,15 +171,50 @@ export function bakeWalls(
 
   const lip = Math.max(1, Math.round(tilePx * 0.075 * lipScale));
   const isWall = (c: number, r: number) => r >= 0 && r < ROWS && tileAt(grid, c, r) === 0;
+  const boardW = COLS * tilePx;
+  const boardH = ROWS * tilePx;
 
+  // Pass 1 — the solid fill. This is the whole wall treatment on the flat board and on
+  // the high-contrast board, and it is what shows while the texture is still decoding.
+  ctx.fillStyle = fill;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (isWall(c, r)) ctx.fillRect(c * tilePx, r * tilePx, tilePx, tilePx);
+    }
+  }
+
+  // Pass 2 — the photograph, darkened, then masked to exactly the tiles just filled.
+  //
+  // Done on a scratch canvas with `destination-in` rather than by clipping the main
+  // context to ~380 tile rects: one composite beats a 380-subpath clip, and the darkening
+  // veil can then be a single fillRect over the scratch instead of a per-tile operation.
+  if (texture) {
+    const scratch = makeCanvas(cv.width, cv.height);
+    const sctx = scratch.getContext("2d");
+    if (sctx) {
+      sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawCover(sctx, texture, 0, 0, boardW, boardH, 0.5);
+      sctx.fillStyle = `rgba(0, 0, 0, ${TEXTURE_DARKEN})`;
+      sctx.fillRect(0, 0, boardW, boardH);
+      sctx.globalCompositeOperation = "destination-in";
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (isWall(c, r)) sctx.fillRect(c * tilePx, r * tilePx, tilePx, tilePx);
+        }
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(scratch, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }
+
+  // Pass 3 — the keyline, over the texture.
+  ctx.fillStyle = edge;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (!isWall(c, r)) continue;
       const px = c * tilePx;
       const py = r * tilePx;
-      ctx.fillStyle = fill;
-      ctx.fillRect(px, py, tilePx, tilePx);
-      ctx.fillStyle = edge;
       // Column neighbours are read unwrapped on purpose: the maze edge should look
       // like an edge, not like it continues around.
       if (!isWall(c, r - 1)) ctx.fillRect(px, py, tilePx, lip);
@@ -94,6 +223,8 @@ export function bakeWalls(
       if (c === COLS - 1 || !isWall(c + 1, r)) ctx.fillRect(px + tilePx - lip, py, lip, tilePx);
     }
   }
+
+  bakeLetters(ctx, tilePx, lip, fontFamily, letterFill, letterHalo);
 
   // Pen gate — a salmon bar across the opening.
   for (let c = 0; c < COLS; c++) {
@@ -104,6 +235,189 @@ export function bakeWalls(
     }
   }
   return cv;
+}
+
+/**
+ * Fit and stamp the two lines into their wall blocks.
+ *
+ * The size is MEASURED rather than chosen: the text is fitted to whichever of the block's
+ * width or height binds first, so one rule covers a 13px portrait tile and a 27px desktop
+ * one without a breakpoint. "One Grain of" is width-bound at every size (twelve characters
+ * across eight tiles) and "$RICE" is height-bound, which is why the two lines are not the
+ * same size and should not be forced to be.
+ *
+ * The halo is not a drop shadow. It is a stroke of the same glyph, laid down first, so the
+ * letterform holds an edge wherever the photograph happens to be pale — the same trick the
+ * pests use, for the same reason.
+ */
+function bakeLetters(
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  lip: number,
+  fontFamily: string | undefined,
+  fillStyle: string,
+  haloStyle: string,
+): void {
+  const family = fontFamily && fontFamily.trim() ? fontFamily : LETTER_FONT_FALLBACK;
+  // Keep clear of the keyline on all four sides, or a descender lands on the outline and
+  // reads as a nick in the wall.
+  const inset = lip + tilePx * 0.1;
+
+  for (const block of LETTER_BLOCKS) {
+    const x = block.col0 * tilePx;
+    const y = block.row0 * tilePx;
+    const w = (block.col1 - block.col0 + 1) * tilePx;
+    const h = (block.row1 - block.row0 + 1) * tilePx;
+    const maxW = w - inset * 2;
+    const maxH = h - inset * 2;
+    if (maxW <= 0 || maxH <= 0) continue;
+
+    // Measure at a probe size and scale linearly — canvas text metrics are linear in the
+    // font size, so one measurement is enough and the fit is exact rather than iterated.
+    //
+    // The vertical extent is MEASURED, not assumed. The two lines do not have the same
+    // ink height — "$RICE" is 0.82em because the dollar sign overshoots both the cap line
+    // and the baseline, against 0.75em for "One Grain of" — so a single "cap height is
+    // about 0.74em" constant fits one of them and clips the other. actualBoundingBox is
+    // exactly this measurement and is in every browser this game runs in; the fallback is
+    // the pessimistic figure, which shrinks rather than overflows.
+    const PROBE = 100;
+    ctx.font = `700 ${PROBE}px ${family}`;
+    const m = ctx.measureText(block.text);
+    const emW = (m.width || PROBE) / PROBE;
+    const inkH = (m.actualBoundingBoxAscent ?? 0) + (m.actualBoundingBoxDescent ?? 0);
+    const emH = inkH > 0 ? inkH / PROBE : 0.85;
+    // The halo is a stroke centred on the outline, so half of it sits OUTSIDE the glyph on
+    // every side. Fitting the fill and then stroking it is how text ends up clipped.
+    const halo = LETTER_HALO_EM;
+    const size = Math.floor(Math.min(maxW / (emW + halo), maxH / (emH + halo)));
+    if (size < MIN_LETTER_PX) continue; // below this it is a smudge, not a word
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip(); // no bleed into a corridor, ever — this is the guarantee, not the intent
+    ctx.font = `700 ${size}px ${family}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(1, size * halo);
+    // Sit the INK box in the middle of the block rather than the baseline, so a line with
+    // a descender is not optically high and one without is not optically low.
+    const f = ctx.measureText(block.text);
+    const asc = f.actualBoundingBoxAscent ?? size * 0.7;
+    const desc = f.actualBoundingBoxDescent ?? 0;
+    const baseline = y + h / 2 + (asc - desc) / 2;
+    ctx.strokeStyle = haloStyle;
+    ctx.strokeText(block.text, x + w / 2, baseline);
+    ctx.fillStyle = fillStyle;
+    ctx.fillText(block.text, x + w / 2, baseline);
+    ctx.restore();
+  }
+}
+
+/**
+ * Draw a source into a destination rect with COVER semantics — fill the box, crop the
+ * overflow — cropping on the axis that overflows. `focus` picks the slice on that axis:
+ * 0 keeps the top/left, 1 the bottom/right, 0.5 the middle.
+ *
+ * Shared by the wall texture and the pit video so there is one piece of fit maths in the
+ * file rather than two that can disagree.
+ */
+export function drawCover(
+  ctx: CanvasRenderingContext2D,
+  src: CanvasImageSource,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  focus: number,
+): void {
+  const sw0 = srcWidth(src);
+  const sh0 = srcHeight(src);
+  if (!sw0 || !sh0 || dw <= 0 || dh <= 0) return;
+  const sw = Math.min(sw0, sh0 * (dw / dh));
+  const sh = Math.min(sh0, sw0 * (dh / dw));
+  const sx = (sw0 - sw) * 0.5;
+  const sy = (sh0 - sh) * focus;
+  ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
+}
+
+function srcWidth(src: CanvasImageSource): number {
+  const v = src as HTMLVideoElement;
+  if (typeof v.videoWidth === "number") return v.videoWidth;
+  const i = src as HTMLImageElement;
+  return typeof i.naturalWidth === "number" ? i.naturalWidth : (i.width as number) || 0;
+}
+
+function srcHeight(src: CanvasImageSource): number {
+  const v = src as HTMLVideoElement;
+  if (typeof v.videoHeight === "number") return v.videoHeight;
+  const i = src as HTMLImageElement;
+  return typeof i.naturalHeight === "number" ? i.naturalHeight : (i.height as number) || 0;
+}
+
+/**
+ * THE PIT BACKDROP.
+ *
+ * A looping, silent video drawn into the pen interior. It goes through the canvas rather
+ * than sitting in a DOM layer behind it, and that is the decision worth keeping: on the
+ * canvas it inherits the letterbox, the DPR and the z-order the renderer already has, so
+ * it stays aligned through every resize for free and the pests waiting in the pen draw
+ * OVER it without a single line of stacking-context work. A positioned <img> or <video>
+ * would have needed all of that maintained by hand, twice.
+ *
+ * `drawImage` on a video pulls whatever frame is showing at the moment of the call, so a
+ * paused element paints a still and a playing one animates — which is exactly the two
+ * behaviours reduced motion needs, with no branch here.
+ *
+ * It is drawn per frame because it MUST be: it is the one part of the board that changes
+ * without the simulation changing, so it is the one part that cannot live in the bake.
+ * Everything else still does.
+ *
+ * ── THE CROP ────────────────────────────────────────────────────────────────────
+ * The source is square and the pit is 6×4 tiles (3:2), so COVER crops the vertical: the
+ * middle two-thirds of the frame is kept and the top and bottom sixth are cut. That is
+ * the right trade for a square source in a landscape hole — the alternative, CONTAIN,
+ * leaves pillar bars inside the pit and the pit is a lit window, not a letterbox.
+ *
+ * `PIT_VIDEO_FOCUS` is that slice's centre, named rather than hardcoded at 0.5 so the
+ * framing can be nudged — lower it to keep more of the top of the frame, raise it to keep
+ * more of the bottom — without going anywhere near the draw maths.
+ */
+export const PIT_VIDEO_FOCUS = 0.5;
+
+/** The pit interior in pixels, at a given tile size. Cols 11-16, rows 13-16. */
+export function pitRect(tilePx: number): { x: number; y: number; w: number; h: number } {
+  return {
+    x: PEN_LEFT * tilePx,
+    y: PEN_TOP * tilePx,
+    w: (PEN_RIGHT - PEN_LEFT + 1) * tilePx,
+    h: (PEN_BOTTOM - PEN_TOP + 1) * tilePx,
+  };
+}
+
+/**
+ * Paint the pit backdrop. A no-op until the video has enough data to yield a frame —
+ * drawing a video with no current frame throws in some browsers and paints nothing in
+ * others, and the pit is simply black until then, which is what it was before.
+ */
+export function drawPitVideo(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement | null,
+  tilePx: number,
+): void {
+  if (!video || video.readyState < 2 /* HAVE_CURRENT_DATA */) return;
+  const { x, y, w, h } = pitRect(tilePx);
+  ctx.save();
+  // Clip as well as fit: a rounding error at some DPR must not paint a pixel of video
+  // onto the pen wall, where it would read as a hole in the maze.
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  drawCover(ctx, video, x, y, w, h, PIT_VIDEO_FOCUS);
+  ctx.restore();
 }
 
 /**
@@ -342,7 +656,26 @@ export function drawPlayer(
   ctx.translate(px, py);
   // One transform for the whole character — body, hat and eye together. See FACING.
   FACING[player.dir](ctx);
+  drawPlayerBody(ctx, tilePx, mouth, rx, ry);
+  ctx.restore();
+}
 
+/**
+ * The character itself, in its own local space, facing RIGHT and centred on the origin.
+ *
+ * Split out of drawPlayer so the HUD's lives row can draw the SAME grain rather than a
+ * hand-made icon beside it. That is the whole point of the split: a second drawing of the
+ * player is a second thing to keep in step, and the one thing the spec asks of this
+ * character is that a player never loses track of which grain they are. An icon that
+ * drifts from the sprite teaches the wrong silhouette.
+ */
+function drawPlayerBody(
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  mouth: number,
+  rx: number,
+  ry: number,
+): void {
   // Body. The mouth opens along +x, which the facing transform has already aimed.
   ctx.beginPath();
   if (mouth > 0.02) {
@@ -368,7 +701,24 @@ export function drawPlayer(
   ctx.arc(EYE_X * tilePx, EYE_Y * tilePx, Math.max(1, tilePx * 0.055), 0, Math.PI * 2);
   ctx.fillStyle = PLAYER_EYE;
   ctx.fill();
+}
 
+/**
+ * ONE LIFE, at HUD size — the player's own grain, hat and all.
+ *
+ * The HUD used to spend a `◆` per life. A diamond is not the character, and the lives row
+ * is the one place a player looks between deaths, so it is worth the few drawing calls to
+ * make it the same grain they were just steering. It goes through drawPlayerBody, which is
+ * the function the board uses, so the icon cannot drift from the sprite.
+ *
+ * Drawn centred on the origin with the mouth half open — the same pose the board shows
+ * when the player is stopped — and facing right, which is the base sprite with no
+ * transform at all. `tilePx` here is the icon's own size, not the board's.
+ */
+export function drawPlayerIcon(ctx: CanvasRenderingContext2D, tilePx: number): void {
+  ctx.save();
+  ctx.translate(tilePx / 2, tilePx / 2);
+  drawPlayerBody(ctx, tilePx, MOUTH_MAX * 0.55, tilePx * 0.46, tilePx * 0.36);
   ctx.restore();
 }
 

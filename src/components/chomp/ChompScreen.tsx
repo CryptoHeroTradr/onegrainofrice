@@ -11,6 +11,7 @@ import { ChompAttract } from "./ChompAttract";
 import { ChompGameOver } from "./ChompGameOver";
 import { ChompPause } from "./ChompPause";
 import { ChompSettings } from "./ChompSettings";
+import { LivesRow } from "./LivesRow";
 import { TouchControls } from "./TouchControls";
 import { useContrast, useDpad } from "./prefs";
 import { bestScore, recordScore } from "./scores";
@@ -126,7 +127,7 @@ export function ChompScreen() {
             RICE CHOMP
           </h1>
           <span className="hidden font-mono text-[0.6rem] tracking-[0.18em] text-steamed/35 uppercase sm:inline">
-            Phase 5 · sound &amp; screens
+            Phase 5.5 · the board
           </span>
         </div>
         <Link
@@ -142,7 +143,10 @@ export function ChompScreen() {
         className="notranslate flex flex-wrap items-end gap-x-5 gap-y-2 border-y border-steamed/10 px-4 py-2 sm:gap-x-8 sm:px-6 sm:py-3"
       >
         <Stat label="Score" value={stats.score.toLocaleString()} tone="text-khaki" />
-        <Stat label="Lives" value={"◆".repeat(stats.lives) || "—"} tone="text-salmon" />
+        <div className="flex flex-col gap-1">
+          <span className={HUD_LABEL}>Lives</span>
+          <LivesRow lives={stats.lives} />
+        </div>
         <div className="flex flex-col gap-1">
           <span className={HUD_LABEL}>Level {stats.level}</span>
           <BonusIcons level={stats.level} />

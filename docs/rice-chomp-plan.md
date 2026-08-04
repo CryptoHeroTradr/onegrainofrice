@@ -11,13 +11,17 @@ the attract/pause/game-over screens, swipe and an optional d-pad, reduced motion
 high-contrast board. `levels.ts` holds every tuning number. Tests:
 `test/chomp-{maze,movement,pests,cornering,levels,kiting,difficulty,audio}.test.ts` plus
 `test/chomp-support.ts` (the bot). Sections 1–6 below are recon and remain accurate; §7
-carries the Phase 3 and Phase 4 measurements. Still to come: the paddy board treatment
-(blocked on an asset) and the leaderboard.
+carries the Phase 3 and Phase 4 measurements. Still to come: **the leaderboard, and only
+the leaderboard.**
 
-**Phase 5.5 (visual upgrade) is under way.** Step 1 of five has landed: the centre pit is a
-row taller (maze row 16), audited in full at §7 Revision 4 — no player-reachable tile moved,
-so no maze property changed. The remaining four steps are the wall texture, the pit
-backdrop, the wall lettering and rice-grain lives.
+**Phase 5.5 (the visual upgrade) is in, 2026-08-04.** Five changes: the centre pit is a row
+taller (§7 Revision 4 — no player-reachable tile moved, so no maze property changed); the
+walls carry the paddy texture; the pit holds a looping video, composited through the canvas
+rather than a DOM layer; "One Grain of / $RICE" is baked into the two wall blocks above the
+pit; and the HUD spends a rice grain per life instead of a `◆`. `public/chomp/` now exists
+and holds the game's only two static assets, 316 KB of a 500 KB budget. New file:
+`src/components/chomp/LivesRow.tsx`. Measurements in §8; the board treatment itself is
+described in the spec's *The board*, which is no longer a brief.
 
 > **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
 > here said it was missing; that was true only on the day this plan was written. Where the
@@ -1142,7 +1146,104 @@ whole point of a bonus item.
 
 ---
 
-## 8. Open questions
+## 8. The Phase 5.5 answer — the board, measured 2026-08-04
+
+### 8.1 The two assets, and what they cost
+
+Neither shipped as delivered. Both were over the spec's per-file cap, and one had a second
+problem that a byte count would never have found.
+
+| | delivered | shipped | note |
+|---|---|---|---|
+| wall texture | `ricechompbackground.png`, 1192×1320, **3.12 MB** | `paddy-wall.webp`, same pixels, **242 KB** | 10.9× over the 300 KB cap. WebP q60; the knee of the size/quality curve sits right here, and the image is darkened 52% and masked to 1–2 tile strips, so q60 artefacts are not reachable by eye. Full resolution kept in preference to higher quality — upscaling softens structure, and blocking does not survive the darkening. |
+| pit video | `rice..mp4` *(sic)*, 1080×1080, **363 KB**, `yuv420p10le` | `rice.mp4`, 320×320, **67 KB**, `yuv420p` | Over the cap, 7× oversized for a ~162px-wide pit, **and 10-bit**. |
+
+**The pixel format is the finding worth keeping.** `yuv420p10le` is 10-bit H.264, which
+Safari will not decode. A video that silently fails on iOS looks exactly like one that is
+slow to start, so it would have shipped, and it would have looked perfect on every machine
+anyone here could test it on. The byte count and the codec name were both fine. Check
+`pix_fmt`.
+
+`public/` is served wholesale, so leaving either original beside its replacement would have
+shipped it anyway. Both are out of the repo entirely.
+
+```
+public/chomp/  paddy-wall.webp  247,908 B
+               rice.mp4          68,241 B
+               TOTAL            316,149 B   of 500,000   (63%)
+```
+
+Verified on a real build: `/chomp` still lists **no external host** but its own canonical
+URL, and both files resolve through `asset()` — `/chomp/rice.mp4?v=<BUILD_ID>`, no
+hardcoded prefix, immutable cache stamp.
+
+### 8.2 The lettering, and whether it actually reads
+
+"One Grain of" is on rows 6–7, "$RICE" on rows 9–10, both cols 10–17 — the only two 8×2
+wall blocks in the centre column, stacked directly over the pit. Confirmed with the owner
+before anything was drawn, because the instruction's literal reading ("the two-row wall
+immediately below" the one above the pit) does not exist: below rows 9–10 come the row-11
+corridor, the gate, and the pit itself.
+
+Sizes are fitted from real Fredoka Bold metrics (measured off
+`public/fonts/fredoka-latin-700-normal.woff2`: "One Grain of" is 5.85em wide and 0.75em of
+ink, "$RICE" is 2.60em and 0.82em):
+
+| tile size | block | "One Grain of" | "$RICE" |
+|---|---|---|---|
+| 27px desktop | 216×54 | 34px font, ~24px cap *(width-bound)* | 43px font, ~30px cap *(height-bound)* |
+| 20px tablet | 160×40 | 25px font, ~18px cap | 32px font, ~22px cap |
+| **13px portrait** | 104×26 | **16px font, ~11px cap** | **21px font, ~15px cap** |
+
+**It reads at 13px.** An 11px cap height in a bold rounded face is small but not marginal,
+and the long line is the worst case by a wide margin.
+
+The two lines are deliberately not the same size, and the reason is the thing that would
+get "tidied": `$RICE` is height-bound because the dollar sign overshoots both the cap line
+and the baseline (0.82em of ink against 0.75em), so a single assumed cap-height constant
+fits one line and clips the other. The fit uses `actualBoundingBox` metrics instead, which
+is exact, and reserves the halo stroke's width — a stroke is centred on the outline, so
+half of it sits outside the glyph, and fitting the fill then stroking it is how text ends
+up clipped.
+
+Contrast of bone `#f4efe2` on the darkened texture, measured from the shipped WebP:
+
+```
+texture grey levels     mean 109   95th pct 154        (0-255)
+after 52% darkening     mean  53   95th pct  74
+bone on mean patch      11.2 : 1
+bone on brightest 5%     8.1 : 1   <- the worst case the lettering meets
+bone on black corridor  19.1 : 1
+```
+
+Past WCAG AAA at the worst patch, before the nori halo is counted.
+
+### 8.3 The pit video, and what the crop cuts
+
+The source is square, the pit is 6×4 tiles (3:2), so COVER crops vertically: the full width
+is kept, the middle **66.7%** of the height survives, and the top and bottom **16.7%** are
+cut. On this footage — a single lit grain of rice on a near-black vignette — that is empty
+background on both sides; the grain is untouched. `PIT_VIDEO_FOCUS` is that slice's centre,
+named rather than hardcoded so the framing can be nudged without going near the draw maths.
+
+Drawing it on the canvas rather than in a DOM layer behind it is the decision worth keeping.
+It inherits the letterbox, the DPR cap and the z-order the renderer already has, so it stays
+aligned through resize and portrait for free, and the pests waiting in the pen composite
+over it with no stacking-context work at all. A positioned element would have needed the
+same two pieces of maths maintained a second time, and they would have drifted.
+
+It is also the one thing on the board that cannot be baked — it is the only part that
+changes while the simulation does not — and `test/chomp-audio.test.ts` now holds it to the
+cutscene rule: no engine module may mention a video, `render.ts` may not create one or set a
+`src` or call `play()`, no engine module may import `asset()`, and a run is tick-for-tick
+identical whether the video plays, stalls or never loads.
+
+**167 tests pass** (`test/chomp-*`), typecheck and lint clean, and a production build
+prerenders `/chomp` static as before.
+
+---
+
+## 9. Open questions
 
 1. **Where is `docs/rice-chomp-spec.md`?** It is not in the repo or anywhere under
    `/home/deploy`. Should I proceed from the brief in your message, or do you want to
@@ -1210,7 +1311,8 @@ whole point of a bonus item.
 10. ~~**Art and sound.**~~ **Answered.** Art, by practice: everything — player, four
     pests, six bonus items, both interstitials, the attract portraits — is drawn
     procedurally on canvas, and there is still nothing under `public/chomp/`. The only
-    planned image is the paddy wall texture, which is blocked on an asset. Sound, in
+    planned image was the paddy wall texture, which landed in Phase 5.5 along with the
+    pit video — see §8. Sound, in
     Phase 5: `scripts/gen-sfx.mjs` extended with eight synthesized clips into
     `public/sfx/chomp-*.wav` (184 KB), played through `src/lib/sound.ts`, sharing the
     site's one persisted sound switch. The design rules the chomp rests on are in the

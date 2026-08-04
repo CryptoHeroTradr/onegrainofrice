@@ -302,6 +302,72 @@ describe("the engine stays sealed", () => {
     }
   });
 
+  it("keeps the pit backdrop on the host side of the line", () => {
+    // Phase 5.5 put a looping video in the pen. It is a decoration, and the rule for a
+    // decoration is the rule the cutscenes established: it may cost the simulation
+    // NOTHING. The risk here is not the same shape as the sound one — nobody is tempted
+    // to import a <video> into game.ts — it is that the pit rect or the playback state
+    // becomes something the engine reads, at which point "is the video buffered?" starts
+    // deciding what a replay does.
+    //
+    // render.ts is the only module allowed to know a video exists, and even there it
+    // receives one as an argument and never fetches, creates or controls one: no src, no
+    // play(), no element construction. The host owns all of that.
+    const files = readdirSync(ENGINE_DIR).filter((f) => f.endsWith(".ts"));
+    for (const f of files) {
+      const src = readFileSync(join(ENGINE_DIR, f), "utf8");
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      if (f === "render.ts") {
+        expect(code, "render.ts must not create or drive a video").not.toMatch(
+          /createElement\(\s*["']video["']|\.play\(\)|\.src\s*=/,
+        );
+        continue;
+      }
+      expect(code, `${f} must not know the pit backdrop exists`).not.toMatch(
+        /video|HTMLVideoElement/i,
+      );
+    }
+  });
+
+  it("runs the same number of ticks whether the backdrop plays, stalls or never loads", () => {
+    // The cutscene property, restated for the decoration that arrived after it. There is
+    // no branch in tick() that could depend on the video, and this is the test that stays
+    // true only as long as that remains so: the host draws the pit every frame from
+    // whatever the element currently holds, and the engine is not consulted.
+    const a = beginPlay(createGame(1, 7));
+    const b = beginPlay(createGame(1, 7));
+    for (let t = 0; t < 900; t++) {
+      if (t === 55) {
+        setWanted(a, LEFT);
+        setWanted(b, LEFT);
+      }
+      tick(a);
+      tick(b);
+    }
+    expect(a.tick).toBe(900);
+    expect(a.tick).toBe(b.tick);
+    expect(a.inputLog).toEqual(b.inputLog);
+    expect(a.player).toEqual(b.player);
+    expect(Array.from(a.grid)).toEqual(Array.from(b.grid));
+  });
+
+  it("keeps the wall texture and its lettering out of the simulation too", () => {
+    // Same argument, second decoration. The texture and the baked lettering are inputs to
+    // ONE function — bakeWalls — which takes a grid and returns a canvas. If a maze tile
+    // ever starts depending on whether an image decoded, the board and the run disagree.
+    const src = readFileSync(join(ENGINE_DIR, "render.ts"), "utf8");
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    // No fetching, no asset(), no URLs: the host hands the decoded image in.
+    expect(code, "render.ts must not load its own assets").not.toMatch(
+      /fetch\(|new Image\(|lib\/asset|https?:\/\//,
+    );
+    // And no module under engine/ may import the host's asset helper.
+    for (const f of readdirSync(ENGINE_DIR).filter((x) => x.endsWith(".ts"))) {
+      const s = readFileSync(join(ENGINE_DIR, f), "utf8");
+      expect(s, `${f} must not import asset()`).not.toMatch(/from\s+["']@\/lib\/asset["']/);
+    }
+  });
+
   it("keeps the cue layer to the readonly slice it is given", () => {
     // cues.ts is the one engine module that exists to serve the host, so it is the
     // one most likely to grow a shortcut back the other way.
