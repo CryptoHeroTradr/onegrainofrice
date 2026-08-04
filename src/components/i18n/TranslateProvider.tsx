@@ -10,7 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import Script from "next/script";
+import { usePathname } from "next/navigation";
 import { SOURCE_LANG } from "@/lib/i18n/languages";
+import { isPlaySurface } from "@/lib/playSurfaces";
 
 /**
  * Page translation, on top of the Google Translate element.
@@ -29,6 +31,28 @@ import { SOURCE_LANG } from "@/lib/i18n/languages";
  * X-Country-Code), stamped into a cookie by src/middleware.ts. It is applied ONCE, and
  * only if the visitor has never chosen for themselves — an explicit choice is
  * remembered and always wins.
+ *
+ * ── NOT ON PLAY SURFACES ────────────────────────────────────────────────────────
+ * This is the FOURTH global provider scoped off /chomp through
+ * `src/lib/playSurfaces.ts`, after the chopstick cursor, the Konami rice dump and the
+ * rice-particle field — but it is the only one scoped off for a reason other than
+ * "it fights the game". RICE CHOMP's spec has a hard acceptance criterion of ZERO
+ * third-party network requests on the route, and this widget's script from
+ * translate.google.com was the only thing violating it. It also has no business
+ * being there on its own merits: the widget rewrites text nodes, which is why the
+ * HUD already carries `translate="no"` to stop it mangling live score digits.
+ *
+ * On a play surface the children still render — this provider wraps the whole app —
+ * but the script, the widget mount point and the cookie effects are all skipped, and
+ * the context is the inert NOOP. So a play surface is NOT TRANSLATED, deliberately.
+ * Nothing should render a <LanguageSwitcher> on one; it would be a dead control.
+ *
+ * One caveat, stated because it is easy to assume otherwise: `next/script` does not
+ * unload a script that has already been inserted. A visitor who loads /home and then
+ * client-navigates to /chomp — and /chomp is in `homeNavLinks`, so that is a normal
+ * path — carries the already-loaded widget with them. The guarantee this scoping
+ * gives is precise: a direct load of /chomp makes no third-party request. That is
+ * also exactly what "verified in the network tab" measures.
  */
 
 const COOKIE = "googtrans";
@@ -93,6 +117,9 @@ function readGeoSuggestion(): string {
 }
 
 export function TranslateProvider({ children }: { children: ReactNode }) {
+  // Every hook below runs unconditionally, on a play surface and off it. The route
+  // check gates each effect's BODY and the render output, never the hook itself.
+  const onPlaySurface = isPlaySurface(usePathname());
   const [lang, setLangState] = useState(SOURCE_LANG);
   const [chosen, setChosen] = useState(false);
   const [suggested, setSuggested] = useState(SOURCE_LANG);
@@ -101,6 +128,7 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
   // Hydrate from the cookie AFTER mount — the server render is always the English
   // source, so reading this during render would desync hydration.
   useEffect(() => {
+    if (onPlaySurface) return;
     setLangState(readCookieLang());
     setSuggested(readGeoSuggestion());
     try {
@@ -108,7 +136,7 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
     } catch {
       /* storage blocked — auto-detect just re-offers next visit */
     }
-  }, []);
+  }, [onPlaySurface]);
 
   const setLang = useCallback((code: string) => {
     // Remember that this was a deliberate choice, so auto-detect never overrides
@@ -146,6 +174,9 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
   // IP-based auto-translate: once, only for a visitor with no stored preference
   // and no cookie already in play.
   useEffect(() => {
+    // Not on a play surface: the widget is not loaded there, so writing the cookie
+    // would translate nothing here and quietly translate the NEXT page instead.
+    if (onPlaySurface) return;
     if (autoRan.current) return;
     if (!suggested || suggested === SOURCE_LANG) return;
     if (chosen) return;
@@ -161,7 +192,13 @@ export function TranslateProvider({ children }: { children: ReactNode }) {
       combo.value = suggested;
       combo.dispatchEvent(new Event("change"));
     }
-  }, [suggested, chosen]);
+  }, [suggested, chosen, onPlaySurface]);
+
+  // A play surface gets the children and nothing else — no script, no widget mount
+  // point, no working context. See the note at the top of this file.
+  if (onPlaySurface) {
+    return <Ctx.Provider value={NOOP}>{children}</Ctx.Provider>;
+  }
 
   return (
     <Ctx.Provider value={{ lang, setLang, chosen }}>

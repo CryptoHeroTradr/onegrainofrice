@@ -19,6 +19,7 @@ An original arcade maze-chase game for the onegrainofrice site: the player clear
 - Plain HTML5 Canvas 2D + TypeScript. No game engine.
 - **Zero new npm dependencies** without asking first.
 - **Zero third-party runtime requests.** No CDN, no Google Fonts, no remote scripts, no remote images, no analytics — nothing the page fetches may leave the VPS. Sound is generated at build time by the repo's existing `scripts/gen-sfx.mjs` pipeline and played through `src/lib/sound.ts`.
+  - **EVERY NEW SITE-WIDE PROVIDER MUST BE CHECKED AGAINST `src/lib/playSurfaces.ts`.** *Added 2026-08-04, Phase 5.* Four providers mounted in `app/layout.tsx` are now scoped off `/chomp` through that one list — the chopstick cursor, the Konami rice dump, the rice-particle field and page translation — and the fourth is the instructive one. The first three were scoped off because they fight a maze game: they hide the cursor, listen on `window` for keys that are now primary game controls, and drape grains over the play area. **Translation was scoped off because its script was the only thing standing between this route and the acceptance criterion above.** That is the general lesson: anything added to `layout.tsx` is added to the games too, the cost is invisible in `layout.tsx` itself, and nobody finds it by reading the file — it is found by building the page and measuring it. Ask the question when the provider is added, not a phase later.
 - **Self-hosted static images are permitted** under `public/chomp/`, referenced through `asset()` so they carry the basePath and the cache-busting build stamp. Everything else is drawn procedurally. *Amended 2026-08-03: this rule originally read "zero external assets", which also banned images we host ourselves — not the intent. The thing being protected is that the page makes no third-party request and nothing can go missing at runtime, not that pixels may never come from a file.*
   - **Size budget: 500 KB total for `public/chomp/`, and 300 KB for any single file.** A game route that costs more than a couple of photos to load has lost the plot, and the budget is small enough that exceeding it is a decision rather than an accident. Prefer WebP. Decode asynchronously and render a solid fallback until the image is ready — first paint never waits on an image.
   - Fonts, scripts and any CDN-hosted asset remain **forbidden**, self-hosted or not: the site's faces come from `next/font` and are already self-hosted at build time.
@@ -307,7 +308,16 @@ determinism is what replay verification is built on.
 - 60fps on a mid-range phone; no GC stutter — pool objects, no per-frame allocations in the hot loop.
 - Deterministic: identical inputs produce an identical run regardless of frame rate.
 - Zero third-party network requests, verified in the network tab. Self-hosted images under `public/chomp/` are within budget (500 KB total, 300 KB per file). Sound is within the same rule and is `public/sfx/chomp-*.wav`, 184 KB, synthesized in-repo.
-  - ⚠️ **This criterion is currently VIOLATED, and not by anything RICE CHOMP fetches.** *Recorded 2026-08-04, Phase 5.* `src/app/layout.tsx:58` mounts `TranslateProvider` on every page, which loads `https://translate.google.com/translate_a/element.js`. Measured on the built page: it is the only external host in `/chomp`'s HTML, it is in the Phase 4 build too, and nothing in the game asks for it. The decision is not this spec's to make — Translate is a site feature, and scoping it off `/chomp` removes translation from the game page — so it is written down rather than quietly fixed or quietly dropped. Everything the game itself loads is local.
+  - **Passing as of 2026-08-04, Phase 5, and it was not before.** `layout.tsx` mounts `TranslateProvider` on every page, which loaded `https://translate.google.com/translate_a/element.js` — the only external host in `/chomp`'s HTML, present in the Phase 4 build too, and never asked for by anything in the game. It is now scoped off play surfaces through `src/lib/playSurfaces.ts`, the same list the chopstick cursor and the other decorations use. Measured on the built page:
+
+    ```
+    /chomp   hosts: (none — only its own canonical URL)
+    /home    hosts: … translate.google.com …
+    /play    hosts: … translate.google.com …
+    ```
+
+    Translation is untouched everywhere else on the site. **A play surface is therefore NOT TRANSLATED, deliberately** — the HUD already carried `translate="no"` to stop the widget mangling live score digits, so the game was never a page translation had much to offer. Nothing should render a `<LanguageSwitcher>` on a play surface; the context there is inert by design.
+    - One honest limit: `next/script` does not unload a script already inserted, and `/chomp` is in `homeNavLinks`, so a visitor who loads `/home` and then client-navigates carries the loaded widget with them. The guarantee is precise and is exactly what "verified in the network tab" measures — **a direct load of `/chomp` makes no third-party request.**
 - Zero new npm dependencies.
 - Fully playable keyboard-only and touch-only.
 - No hardcoded path prefixes anywhere, TS or CSS.

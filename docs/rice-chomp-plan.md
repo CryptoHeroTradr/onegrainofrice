@@ -544,27 +544,38 @@ have**. This is the single strongest argument for the HTTP leaderboard in §5.
    same process makes this worse. Worth checking `pm2 logs onegrainofrice --err` before
    Phase 2.
 
-4. **`/chomp` makes one third-party request, and it is Google Translate.** *Found
-   2026-08-04, Phase 5, measuring the spec's "zero third-party network requests"
-   acceptance criterion against a real build.*
+4. ~~**`/chomp` makes one third-party request, and it is Google Translate.**~~
+   **Found and fixed 2026-08-04, Phase 5**, measuring the spec's "zero third-party
+   network requests" acceptance criterion against a real build.
 
    ```
    $ curl -s http://127.0.0.1:3099/chomp | grep -oE 'https?://[a-z0-9.-]+' | sort -u
-   https://1grainofrice.com
-   https://translate.google.com
+   https://1grainofrice.com          <- own canonical URL, not a request
+   https://translate.google.com      <- the violation
    ```
 
-   `layout.tsx:58` mounts `TranslateProvider` site-wide and it loads
-   `translate.google.com/translate_a/element.js`. It is the ONLY external host on the
-   page, it is in the Phase 4 build too (so Phase 5 did not introduce it), and nothing
-   in the game asks for it — everything RICE CHOMP itself loads is local.
+   `layout.tsx` mounts `TranslateProvider` site-wide and it loaded
+   `translate.google.com/translate_a/element.js`. It was the ONLY external host on the
+   page, it was in the Phase 4 build too (so Phase 5 did not introduce it), and nothing
+   in the game asked for it.
 
-   Not fixed here, deliberately. `cdaa5af` scoped `ChopstickCursor` and the other
-   ambient decorations off `/chomp` because they actively fight a maze game; Translate
-   does not, and removing it takes translation off the game page for everyone, which is
-   a product decision rather than a bug fix. Flagged in the spec's acceptance criteria
-   as a known violation with the decision pending. The narrower fix, if wanted, is the
-   same one-line route check `ChopstickCursor` already uses.
+   Fixed by scoping it off play surfaces through `src/lib/playSurfaces.ts` — the same
+   one-line rule `ChopstickCursor`, `KonamiRice` and `RiceParticles` already use, and
+   the reason that list exists rather than three private copies of an array. It needed
+   one wrinkle the other three did not: this provider wraps the whole app, so it cannot
+   return null. On a play surface it renders its children with the inert NOOP context
+   and skips the script, the widget mount point and the cookie effects.
+
+   Re-measured after the change: `/chomp` has no external host at all, and `/home`,
+   `/`, `/play` and `/pfp` still load the widget. **Four global providers are now
+   caught by the same rule, and the spec's Hard Constraints carry a standing line that
+   every new site-wide provider gets checked against it** — nobody finds these by
+   reading `layout.tsx`, they find them by building a page and measuring it.
+
+   Note `/play` (GrainCatch) still gets the widget. It is a game too, but it has no
+   zero-third-party criterion and adding it to the list would change a shipped game's
+   behaviour for no stated requirement. Left alone on purpose; it is a one-line
+   addition if it is ever wanted.
 
 5. **`src/lib/highscore.ts` is a module-level variable on the server.** In a single fork
    process it happens to behave like a global shared across all users; the doc comment
