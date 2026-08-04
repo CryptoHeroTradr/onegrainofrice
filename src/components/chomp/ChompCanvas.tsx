@@ -588,12 +588,33 @@ export const ChompCanvas = forwardRef<
       getComputedStyle(document.documentElement).getPropertyValue(LETTER_FONT_VAR).trim() ||
       undefined;
 
+    /** Set by the cleanup, so a late decode or font load cannot bake into a dead canvas. */
+    let disposed = false;
+
+    /**
+     * Re-bake once the webfont has actually arrived.
+     *
+     * The lettering is baked ONCE, and `ctx.measureText` does not wait for anything: if
+     * Fredoka has not loaded at the moment bakeWalls runs, canvas quietly measures and
+     * draws the fallback face, and — because it is baked — it stays wrong for the life of
+     * the page. There is no visible error and nothing in the console; it just is not the
+     * right typeface, forever. `document.fonts.ready` is the only signal that rules this
+     * out, and one extra bake at boot is a cheap price for it.
+     *
+     * This is not covered by the texture's re-bake: the high-contrast board never loads a
+     * texture, so on that path this is the only thing that would fix the face.
+     */
+    void document.fonts?.ready?.then(() => {
+      if (disposed) return;
+      bake();
+      paint();
+    });
+
     /**
      * Decode the wall texture OFF the critical path. The board renders on its solid fill
      * from the very first frame; when (and only if) the image decodes, the static layers
      * are re-baked once and the texture appears. A failure never reaches the player.
      */
-    let disposed = false;
     const img = new Image();
     img.decoding = "async";
     img.src = asset(WALL_TEXTURE_SRC);
