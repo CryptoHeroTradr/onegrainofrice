@@ -626,8 +626,13 @@ export const ChompCanvas = forwardRef<
         bake();
         paint();
       })
-      .catch(() => {
-        /* No texture, flat board, no message. See textureRef. */
+      .catch((err: unknown) => {
+        // NOT silent. A caught failure here produces a board that looks completely
+        // healthy — the flat porcelain maze, no error, nothing in the network tab that
+        // looks wrong — which is indistinguishable from the texture being applied and
+        // having no effect. That ambiguity cost a round trip once; it does not get to
+        // cost another. The board still degrades gracefully; it just says so.
+        console.warn("[chomp] wall texture failed to decode; board stays flat", err);
       });
     // Decode the eight clips now rather than on the first grain. A suspended
     // AudioContext decodes fine, and the first chomp lands within a second of the

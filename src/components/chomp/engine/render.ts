@@ -185,9 +185,21 @@ export function bakeWalls(
 
   // Pass 2 — the photograph, darkened, then masked to exactly the tiles just filled.
   //
-  // Done on a scratch canvas with `destination-in` rather than by clipping the main
-  // context to ~380 tile rects: one composite beats a 380-subpath clip, and the darkening
-  // veil can then be a single fillRect over the scratch instead of a per-tile operation.
+  // ── THE MASK IS ONE DRAWING OPERATION, AND IT HAS TO BE ─────────────────────────
+  // `destination-in` composites the source against the WHOLE canvas, not against the
+  // rectangle being drawn: everywhere the source is absent, the destination is cleared.
+  // So a loop of ~380 `fillRect` calls does not accumulate a 380-tile mask — each call
+  // erases everything the previous ones preserved, and what survives is the last tile
+  // drawn. That was the first version of this function, and the symptom was a board that
+  // looked exactly like the untextured one, on every browser, with no error anywhere.
+  //
+  // The mask is therefore built as a single PATH — one `rect()` per wall tile, then one
+  // `fill()` — which is one operation and one composite.
+  //
+  // The fill style is OPAQUE for the same class of reason. `destination-in` reads the
+  // source's ALPHA, so masking with the leftover `rgba(0,0,0,0.52)` from the darkening
+  // veil would not mask at all, it would scale the whole layer to 52% opacity: a
+  // washed-out texture rather than a missing one. Set it explicitly; do not inherit it.
   if (texture) {
     const scratch = makeCanvas(cv.width, cv.height);
     const sctx = scratch.getContext("2d");
@@ -196,12 +208,17 @@ export function bakeWalls(
       drawCover(sctx, texture, 0, 0, boardW, boardH, 0.5);
       sctx.fillStyle = `rgba(0, 0, 0, ${TEXTURE_DARKEN})`;
       sctx.fillRect(0, 0, boardW, boardH);
+
       sctx.globalCompositeOperation = "destination-in";
+      sctx.fillStyle = "#000000"; // opaque — only the alpha is read
+      sctx.beginPath();
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          if (isWall(c, r)) sctx.fillRect(c * tilePx, r * tilePx, tilePx, tilePx);
+          if (isWall(c, r)) sctx.rect(c * tilePx, r * tilePx, tilePx, tilePx);
         }
       }
+      sctx.fill();
+
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(scratch, 0, 0);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

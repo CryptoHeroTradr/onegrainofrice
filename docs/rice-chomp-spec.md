@@ -67,7 +67,16 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
 `vitest` here is node-env and DOM-free by design. Maze parsing, per-pest target-tile selection, junction tiebreak, mode-cycle timing and scoring must be pure functions, importable without a DOM, and unit tested. The render layer can stay untested. `noUncheckedIndexedAccess` is off, so bounds-guard every tile lookup by hand.
 
-Suites: `test/chomp-{maze,movement,pests,cornering,levels,kiting,difficulty,audio}.test.ts`.
+Suites: `test/chomp-{maze,movement,pests,cornering,levels,kiting,difficulty,audio,board}.test.ts`,
+plus `test/canvas2d-shim.ts` and its own `canvas2d-shim.test.ts`.
+
+**`chomp-board.test.ts` is the exception to "the render layer can stay untested", and it
+was bought the hard way.** *Added 2026-08-04, Phase 5.5.* The render layer having no tests
+is what let a wall texture ship that produced a board pixel-identical to the untextured
+one. The shim is deliberately small — scale and translate, `source-over` and
+`destination-in`, rect paths, no text rasterisation — and it is NOT a licence to test
+painting in general. It exists so that a **baked** layer, which is a pure function from a
+grid to pixels, can be asserted on its output.
 
 **`chomp-audio.test.ts` is the host-boundary suite, not a sound suite.** *Added
 2026-08-04, Phase 5.* It owns the assertion that everything on the host side of the
@@ -271,6 +280,9 @@ a description; the measurements are in `docs/rice-chomp-plan.md` §8.*
 - **Bake once into an offscreen canvas at boot**, never per frame. Re-bake only on a size change, alongside the existing static layers. *Texture and lettering both live in `bakeWalls`. The one exception is the pit backdrop, which cannot be baked because it moves; see below.*
 - **Decode asynchronously.** The maze renders on a solid fill until the image is ready; first paint never blocks on it, and a failed load is a non-event. *`new Image()` + `.decode()` in `ChompCanvas`, one re-bake on success, a silent `.catch()` on failure. The engine never loads its own assets — `render.ts` is handed a decoded image and `test/chomp-audio.test.ts` asserts no module under `engine/` imports `asset()`.*
 - **Legibility beats theming.** If it cannot be made readable with four pests on screen, desaturate it to near-texture or drop it outright.
+- **The wall mask is ONE drawing operation, and this is not a style note.** *Added 2026-08-04, Phase 5.5, after shipping it wrong.* `destination-in` composites the source against the **whole canvas**, not against the rectangle being drawn — everywhere the source is absent, the destination is cleared. So a loop of ~380 `fillRect` calls does not build up a 380-tile mask: each call erases what the previous ones preserved, and what survives is the last tile drawn. The mask is therefore a single path — one `rect()` per wall tile, then one `fill()`. For the same reason the mask's fill style is set OPAQUE rather than inherited: `destination-in` reads the source's *alpha*, so masking with a leftover 52%-alpha veil colour does not mask, it scales the whole layer to 52% opacity.
+  - **The failure mode is why this is in the spec rather than a code comment.** The broken version produced a board pixel-identical to the untextured one, on every browser, with no error, no console warning, a 200 on the asset and a correct re-bake on resize. There is nothing to notice. Anything that looks like "mask a disjoint shape with a composite operator" gets checked against this paragraph.
+- **A baked layer is asserted on its PIXELS, not on the code that produced it.** `test/chomp-board.test.ts` bakes the wall layer under a deterministic Canvas2D shim (`test/canvas2d-shim.ts`, itself pinned against hand-computed Porter-Duff values) and checks what came out. The assertion that matters is **"many, widely separated wall blocks are textured"** — not "the textured layer differs from the flat one". Measured: the naive version of that test **passes against the bug**, because one tile does survive and the keyline thickness differs regardless. A test that samples one tile, or that only asks whether anything changed, would have shipped this.
 - **The pit holds a looping video, and it goes through the CANVAS, not a DOM layer.** *Added 2026-08-04, Phase 5.5.* `public/chomp/rice.mp4`, a silent 10-second loop of a single glowing grain, drawn into the pen interior every frame with `drawImage(videoEl, …)`. Compositing it on the canvas rather than positioning an element behind it is the decision worth keeping: on the canvas it inherits the letterbox, the DPR cap and the z-order the renderer already has, so it stays aligned through every resize for free and the pests waiting in the pen draw over it with no stacking-context work at all. A positioned element would have needed all of that maintained by hand, twice, and would have drifted the first time either piece of maths changed.
   - It is the **one** part of the board that cannot be baked, because it is the one part that changes without the simulation changing. Everything else still is.
   - The source is square and the pit is 6×4 tiles, so the fit is **COVER, cropping vertically** — `PIT_VIDEO_FOCUS`, a named constant rather than a hardcoded 0.5, picks which slice survives. Measured: the crop keeps the middle two-thirds and cuts the top and bottom sixth, which on this footage is empty vignette. The grain itself is untouched.

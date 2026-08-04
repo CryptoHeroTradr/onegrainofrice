@@ -1218,7 +1218,59 @@ bone on black corridor  19.1 : 1
 
 Past WCAG AAA at the worst patch, before the nori halo is counted.
 
-### 8.3 The pit video, and what the crop cuts
+### 8.3 The wall mask — shipped broken, and what found it
+
+The texture landed in the first commit of this phase wired up correctly, referenced through
+`asset()`, decoded, in budget, re-baking on resize, with 167 tests passing — and produced a
+board **pixel-identical to the untextured one**. No error, no warning, a 200 on the asset.
+It took a round trip with the owner to find, and the reason is worth writing down.
+
+`destination-in` composites the source against the **whole canvas**, not against the
+rectangle being drawn. The mask was ~380 separate `fillRect` calls, so each one erased what
+the previous ones preserved. Instrumented, three wall tiles at a time:
+
+```
+after texture + darken veil:      alpha at (10,9)=255  (13,9)=255  (17,9)=255
+gCO at mask time = "destination-in"   fillStyle = "rgba(0, 0, 0, 0.52)"
+  after mask fillRect #1 (10,9):  alpha at (10,9)=133  (13,9)=0    (17,9)=0
+  after mask fillRect #2 (13,9):  alpha at (10,9)=0    (13,9)=0    (17,9)=0
+  after mask fillRect #3 (17,9):  alpha at (10,9)=0    (13,9)=0    (17,9)=0
+```
+
+Two bugs in four lines. The mask is now a single path fill — one operation, one composite —
+and its fill style is set opaque rather than inherited from the darkening veil, because
+`destination-in` reads the source's *alpha* and 133 is 52% of 255.
+
+Before and after, same maze, 27px tiles at DPR 2:
+
+| | pixels differing from the flat layer | wall centre (col 13.5, row 9.5) |
+|---|---:|---|
+| broken | 73,592 of 2,531,088 *(the thicker keyline, and nothing else)* | `rgba(42, 77, 143)` — porcelain |
+| fixed | 1,414,160 | `rgba(46, 48, 32)` — darkened paddy |
+
+**What found it was running the real `bakeWalls` and looking at the pixels**, which had
+never been possible: vitest here is node-env by design, so the render layer had no tests at
+all. `test/canvas2d-shim.ts` is a small deterministic Canvas2D — enough for the bakes,
+nothing more — implemented from the spec's Porter-Duff formulae rather than from
+`render.ts`, and pinned against hand-computed values in `canvas2d-shim.test.ts` so that a
+shim written by the same hand as the code cannot quietly agree with its bugs. Writing it
+also caught one bug in the shim itself first: `makeCanvas` assigns `.width` *after*
+construction, so plain fields left the backing store at 0×0 and every draw landed nowhere —
+which looks precisely like "the texture never arrived".
+
+**The regression test is `test/chomp-board.test.ts`, and its exact wording matters.** The
+assertion is *many, widely separated wall blocks are textured*, not *the textured layer
+differs from the flat one*. Verified by reverting the fix: only that one assertion fails.
+The plainer test — the obvious one to write — **passes against the bug**, because one tile
+does survive and the keyline is thicker on the textured board anyway. A test that samples a
+single tile, or that only asks whether anything changed at all, would have shipped this.
+
+The silent `.catch()` on `img.decode()` is also gone. A caught decode failure produced a
+board that looked completely healthy, which is indistinguishable from the texture being
+applied and doing nothing — the ambiguity is what made this cost a round trip. It now warns
+and still degrades to the flat board.
+
+### 8.4 The pit video, and what the crop cuts
 
 The source is square, the pit is 6×4 tiles (3:2), so COVER crops vertically: the full width
 is kept, the middle **66.7%** of the height survives, and the top and bottom **16.7%** are
