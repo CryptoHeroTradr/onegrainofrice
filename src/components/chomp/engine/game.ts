@@ -170,6 +170,11 @@ export interface GameState {
   tuning: LevelTuning;
 
   level: number;
+  /**
+   * The level this run STARTED on. 1 for every real run; anything else means the run was
+   * launched from the debug entry point and is not a score — see isScoreSubmittable().
+   */
+  startLevel: number;
   phase: Phase;
   /** Ticks left in the current phase, where the phase is timed. */
   phaseTicks: number;
@@ -242,6 +247,12 @@ function freshPlayer(): Player {
   };
 }
 
+/**
+ * A fresh run. `level` other than 1 is the debug entry point — the tests use it to read
+ * the tail of the curve without playing there, and ?level= on /chomp uses it so the curve
+ * can be FELT without playing six levels first. Such a run is permanently unrankable; see
+ * isScoreSubmittable().
+ */
 export function createGame(level = 1, seed = DEFAULT_SEED): GameState {
   const { grid, totalGrains, totalPower } = parseMaze();
   const tuning = levelTuning(level);
@@ -252,6 +263,7 @@ export function createGame(level = 1, seed = DEFAULT_SEED): GameState {
     pests: createPests(),
     tuning,
     level,
+    startLevel: level,
     phase: READY,
     phaseTicks: READY_TICKS,
     lives: STARTING_LIVES,
@@ -276,6 +288,24 @@ export function createGame(level = 1, seed = DEFAULT_SEED): GameState {
     pestsEaten: 0,
     inputLog: [],
   };
+}
+
+/**
+ * MAY THIS RUN'S SCORE BE SUBMITTED? Phase 7's leaderboard must call this before offering
+ * to submit, and the server must apply the same rule to the trace it receives.
+ *
+ * A run that did not start on level 1 skipped the levels below it, so its score is not
+ * comparable with anyone else's. Two independent things stop it counting, which is the
+ * point — one guard on a cheat path is not a guard:
+ *
+ *   1. this flag, carried on the state from createGame() and never cleared (nothing in the
+ *      engine writes startLevel after construction, and restarting builds a new state);
+ *   2. replay itself. A submitted trace is (seed, inputLog) replayed from level 1 on the
+ *      server. A trace recorded from level 7 replays to a different score and fails
+ *      verification without anyone having to remember this rule.
+ */
+export function isScoreSubmittable(state: GameState): boolean {
+  return state.startLevel === 1;
 }
 
 /**

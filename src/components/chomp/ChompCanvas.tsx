@@ -68,6 +68,8 @@ export interface ChompStats {
   score: number;
   lives: number;
   level: number;
+  /** The level the run started on. Anything but 1 means this run cannot be submitted. */
+  startLevel: number;
   grainsEaten: number;
   powerEaten: number;
   grainsRemaining: number;
@@ -85,6 +87,30 @@ export interface ChompCanvasHandle {
   togglePause: () => boolean;
   /** Queue a direction, for on-screen controls in a later phase. */
   steer: (dir: Dir) => void;
+}
+
+/**
+ * THE DEBUG ENTRY POINT. `/chomp?level=9` starts the run on level 9, so the tail of the
+ * difficulty curve can be FELT rather than argued about — the crossover at level 7 is a
+ * different game from level 1 and no amount of maths substitutes for playing it.
+ *
+ * It is deliberately the only debug affordance and deliberately visible: the run carries
+ * startLevel, the HUD says DEBUG, and isScoreSubmittable() is false for the rest of the
+ * run. Phase 7 gates the leaderboard on that, and server-side replay from level 1 rejects
+ * such a trace anyway.
+ *
+ * Read from window.location rather than useSearchParams so the page stays statically
+ * rendered — a useSearchParams() here would opt the whole route into client rendering.
+ * Out-of-range or non-numeric values fall back to a normal, rankable run.
+ */
+const MAX_DEBUG_LEVEL = 99;
+
+function bootLevel(): number {
+  if (typeof window === "undefined") return 1;
+  const raw = new URLSearchParams(window.location.search).get("level");
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n) || n < 1 || n > MAX_DEBUG_LEVEL) return 1;
+  return n;
 }
 
 const KEY_TO_DIR: Record<string, Dir> = {
@@ -245,6 +271,7 @@ export const ChompCanvas = forwardRef<
       score: state.score,
       lives: state.lives,
       level: state.level,
+      startLevel: state.startLevel,
       grainsEaten: state.grainsEaten,
       powerEaten: state.powerEaten,
       grainsRemaining: state.grainsRemaining,
@@ -308,7 +335,7 @@ export const ChompCanvas = forwardRef<
 
   useImperativeHandle(ref, () => ({
     reset: () => {
-      stateRef.current = createGame();
+      stateRef.current = createGame(bootLevel());
       accRef.current = 0;
       cutsceneMsRef.current = 0;
       pausedRef.current = false;
@@ -340,7 +367,7 @@ export const ChompCanvas = forwardRef<
     const canvas = canvasRef.current;
     if (!wrap || !canvas) return;
 
-    stateRef.current = createGame();
+    stateRef.current = createGame(bootLevel());
 
     /**
      * Letterbox: pick the largest whole-pixel tile that fits both axes, then size the

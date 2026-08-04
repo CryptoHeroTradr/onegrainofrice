@@ -7,6 +7,7 @@ import {
   beginPlay,
   createGame,
   endCutscene,
+  isScoreSubmittable,
   tick,
   type GameState,
 } from "@/components/chomp/engine/game";
@@ -22,6 +23,8 @@ import {
   CUTSCENE_STEAL,
   CUTSCENE_TICKS,
   FRIGHTENED_GONE_FROM_LEVEL,
+  PEST_CROSSOVER_LEVEL,
+  PEST_TOP_RATIO,
   bonusForLevel,
   levelTuning,
   secondsToTicks,
@@ -172,6 +175,45 @@ describe("cornering survives the speed curve", () => {
     // the table past it and this test is the thing that says so out loud.
     expect(ratioAt(99)).toBeLessThan(breakEven(22));
     expect(ratioAt(99)).toBeGreaterThan(breakEven(32));
+    // …and by how much. The margin is 0.19% — 1.0625 against a break-even of 1.0645 —
+    // and that is the entire distance between "the spawn loop still holds at level 21+"
+    // and "it does not". Luck that isn't asserted is luck you spend twice.
+    expect(breakEven(22) / ratioAt(99) - 1).toBeGreaterThan(0.0015);
+  });
+
+  it("crosses the player's speed exactly where PEST_CROSSOVER_LEVEL says", () => {
+    // The named constant and the table are two statements of the same decision, and this
+    // is what stops them drifting. Parity at the crossover, strictly faster after it,
+    // strictly slower before — a pest that overtook the player early would change the
+    // shape of the whole first act without anything in the code saying so.
+    for (let lv = 1; lv < PEST_CROSSOVER_LEVEL; lv++) expect(ratioAt(lv)).toBeLessThan(1);
+    expect(ratioAt(PEST_CROSSOVER_LEVEL)).toBe(1);
+    expect(ratioAt(PEST_CROSSOVER_LEVEL + 1)).toBeGreaterThan(1);
+  });
+
+  it("tops out at PEST_TOP_RATIO and never above it", () => {
+    expect(ratioAt(99)).toBeCloseTo(PEST_TOP_RATIO, 6);
+    for (const lv of LEVELS) expect(ratioAt(lv)).toBeLessThanOrEqual(PEST_TOP_RATIO);
+  });
+});
+
+describe("the debug entry point", () => {
+  it("starts on the level asked for, with that level's tuning", () => {
+    const g = createGame(9);
+    expect(g.level).toBe(9);
+    expect(g.tuning.pestSpeed).toBe(levelTuning(9).pestSpeed);
+  });
+
+  it("marks any run that did not start on level 1 unsubmittable, for good", () => {
+    expect(isScoreSubmittable(createGame())).toBe(true);
+    expect(isScoreSubmittable(createGame(1))).toBe(true);
+
+    const g = createGame(7);
+    expect(isScoreSubmittable(g)).toBe(false);
+    // And it survives play — clearing levels must not launder the flag back to rankable.
+    advance(beginPlay(g), 600);
+    g.level = 12;
+    expect(isScoreSubmittable(g)).toBe(false);
   });
 });
 

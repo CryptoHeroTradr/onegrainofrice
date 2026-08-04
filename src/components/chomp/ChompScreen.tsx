@@ -49,6 +49,7 @@ export function ChompScreen() {
     score: 0,
     lives: 3,
     level: 1,
+    startLevel: 1,
     grainsEaten: 0,
     powerEaten: 0,
     grainsRemaining: 0,
@@ -63,6 +64,10 @@ export function ChompScreen() {
 
   const gameOver = stats.phase === GAMEOVER;
   const seconds = (stats.tick / 60).toFixed(1);
+  // ?level=N started this run partway up the curve. Say so on the HUD and on the game-over
+  // card: a debug run must never be mistaken for a score, least of all by the person who
+  // just played it. Phase 7 gates submission on the same flag — see isScoreSubmittable().
+  const debugRun = stats.startLevel !== 1;
 
   return (
     // A GRID with a definite height, not `min-h-screen` + `flex-1`. `min-height` gives
@@ -101,6 +106,14 @@ export function ChompScreen() {
         <Stat label="Pests" value={String(stats.pestsEaten)} tone="text-tuna" />
         <Stat label="Left" value={String(stats.grainsRemaining)} tone="text-steamed/70" />
         <Stat label="Time" value={`${seconds}s`} tone="text-steamed/70" />
+        {debugRun && (
+          <span
+            title={`Started on level ${stats.startLevel} — not a submittable run`}
+            className="self-center border border-salmon/50 px-2 py-0.5 font-mono text-[0.6rem] tracking-[0.18em] text-salmon uppercase"
+          >
+            Debug · from {stats.startLevel}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
@@ -136,6 +149,7 @@ export function ChompScreen() {
             {gameOver && (
               <p className="font-mono text-xs text-steamed/60">
                 {stats.score} points · level {stats.level}
+                {debugRun && ` · debug run from level ${stats.startLevel}, not a score`}
               </p>
             )}
           </div>

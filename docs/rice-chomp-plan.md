@@ -776,6 +776,23 @@ open, no grain · `=` pen gate.
 > 27's pattern, leaving isolated single openings at cols 1, 7, 10, 17, 20, 26 that drop
 > into the bottom corridor. This is the same construction the genre uses (a fully open
 > bottom row fed by isolated gaps above it). Girth went 4 → 10.
+>
+> **Re-audited 2026-08-04**, because the girth-4 that triggered this change and the girth-4
+> that turned out to be the pen artifact are the same number, and 14 grains is too much to
+> spend on a measurement bug. Re-measured the counterfactual maze — draft row 28, row 24 as
+> it stood at the time — scoped to player-**reachable** tiles only, i.e. with the artifact
+> already excluded:
+>
+> | maze | reachable cells | grains | girth | 2×2 blocks |
+> |---|---:|---:|---:|---:|
+> | draft row 28 | 318 | 298 | **4** | **18**, all at rows 28–29 |
+> | shipped row 28 | 306 | 286 | **10** | 0 |
+>
+> The room was real. The 18 blocks run `(1,28)…(9,28)` and their mirror — the bottom two
+> rows, nowhere near the pen — and the pen artifact cannot produce them: its own girth-4
+> comes with the pen's 6×3 interior and nothing on row 28. The two findings coincide in the
+> number and in nothing else. Cost confirmed at exactly 14 grains (298 → 284 against the
+> same row 24), and it bought girth 4 → 10.
 
 **Machine-verified** (re-measured 2026-08-04 after the row-24 revision; the girth and 2×2
 checks are now committed tests in `test/chomp-maze.test.ts` rather than scratchpad scripts):

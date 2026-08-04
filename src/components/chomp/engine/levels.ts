@@ -281,17 +281,65 @@ export interface LevelTuning {
 
 /**
  * Player speed is flat across levels and the pests ramp past it. That is the difficulty
- * curve: from about level 13 a pest on open path is faster than the player, and the only
- * way to gain ground is cornering. Making the player faster instead would flatten the
- * skill expression the corner glide exists to create.
+ * curve: the only way to gain ground on a faster pest is cornering. Making the player
+ * faster instead would flatten the skill expression the corner glide exists to create.
  */
 const PLAYER_TILES_PER_SEC = 8;
 
-/** Pest speed by level, tiles/second. Index 0 is level 1; later levels clamp to the end. */
+/**
+ * THE CROSSOVER. The level at which a pest on open path first matches the player's
+ * straight-line speed. Parity here; strictly faster from the level after.
+ *
+ * ── THIS IS A BIGGER LEVER THAN IT LOOKS ────────────────────────────────────────
+ * The reference game never lets a pursuer exceed the player's open-corridor speed: the
+ * pressure comes from the eating freeze and the shrinking frightened window, so a player
+ * who plays perfectly can always out-run one in a straight line. Past the crossover that
+ * stops being true here — a straight corridor is no longer an escape, and CORNERING
+ * becomes the player's only remaining resource.
+ *
+ * That is a deliberate choice, not an oversight, and the loop maths says it holds: see
+ * "cornering survives the speed curve" in test/chomp-levels.test.ts, which proves a
+ * perfect player keeps the tight loops at every level in the table. But it holds for a
+ * PERFECT player, so if levels 7+ read as unfair rather than hard, PEST_RATIO_CAP below
+ * is the one edit that reverts it.
+ */
+export const PEST_CROSSOVER_LEVEL = 7;
+
+/**
+ * Top of the speed table as a multiple of player speed: 6.25% faster. Asserted against
+ * the table in the level tests, so the two cannot drift apart silently.
+ *
+ * The size of this number is load-bearing. It sits ~0.2% under the ratio at which perfect
+ * cornering stops holding the 22-tile spawn loop (break-even 1.065) — margin that thin is
+ * luck unless it is asserted, which is why the test asserts it.
+ */
+export const PEST_TOP_RATIO = 1.0625;
+
+/**
+ * THE REVERT LEVER. Hard ceiling on pest speed as a multiple of player speed, applied
+ * after the table lookup.
+ *
+ * At PEST_TOP_RATIO it changes nothing — the table already tops out there. Set it below 1
+ * (0.98, say) and the curve becomes strictly-slower-pests in the reference game's mould:
+ * every entry above the ceiling flattens onto it, every entry below is untouched, and the
+ * shape of the early levels is preserved exactly. One number, no table surgery.
+ */
+const PEST_RATIO_CAP = PEST_TOP_RATIO;
+
+/**
+ * Pest speed by level, tiles/second. Index 0 is level 1; later levels clamp to the end.
+ * Crosses the player's 8 tiles/sec at PEST_CROSSOVER_LEVEL and tops out at
+ * PLAYER_TILES_PER_SEC * PEST_TOP_RATIO.
+ */
 const PEST_TILES_PER_SEC: readonly number[] = [
   7.2, 7.4, 7.6, 7.7, 7.8, 7.9, 8.0, 8.05, 8.1, 8.15, 8.2, 8.25, 8.3, 8.32, 8.34, 8.36,
   8.38, 8.4, 8.42, 8.44, 8.5,
 ];
+
+/** Table lookup, then the ceiling. The only place pest speed is decided. */
+function pestTilesPerSec(idx: number): number {
+  return Math.min(pick(PEST_TILES_PER_SEC, idx), PLAYER_TILES_PER_SEC * PEST_RATIO_CAP);
+}
 
 /** Fraction of pest speed inside the tunnel, and while frightened. */
 const TUNNEL_SPEED_FACTOR = 0.55;
@@ -384,7 +432,7 @@ function cycleTicks(level: number): readonly number[] {
 export function levelTuning(level: number): LevelTuning {
   const lv = Math.max(1, Math.floor(level));
   const idx = lv - 1;
-  const pest = pick(PEST_TILES_PER_SEC, idx);
+  const pest = pestTilesPerSec(idx);
   const penBand = Math.min(band(lv), PEN_DOT_LIMITS.length - 1);
   return {
     playerSpeed: tilesPerSecond(PLAYER_TILES_PER_SEC),
