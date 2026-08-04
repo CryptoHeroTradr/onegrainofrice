@@ -25,7 +25,7 @@ export const ROWS = 31;
  *   (space) open, no grain             =  pen gate
  *
  * Row 14 is the warp tunnel: cols 0-5 and 22-27 are open and grain-free, and the two
- * edges connect to each other. The pen occupies cols 10-17, rows 12-16, with a 6×3
+ * edges connect to each other. The pen occupies cols 10-17, rows 12-17, with a 6×4
  * interior and a gate at row 12, cols 13-14 that opens UPWARD into the row-11
  * corridor.
  *
@@ -53,6 +53,27 @@ export const ROWS = 31;
  * corridor directly above the full-width row 29, joined by six shafts. That is a ladder,
  * and a ladder is the most kiteable shape there is. The whole point of the change is to
  * make the room harder to seal, not easier to farm.
+ *
+ * ── AMENDED 2026-08-04, Phase 5.5: row 16, cols 11-16 ───────────────────────────
+ * The pen interior grew from 6×3 (rows 13-15) to 6×4 (rows 13-16), by thinning the wall
+ * band below it from two rows to one: row 16 was solid `########` across cols 10-17 and is
+ * now the pen's fourth floor row, leaving row 17 as the single wall between the pen and
+ * the row-18 sub-pen corridor.
+ *
+ * It is deliberately a change to a region NO PLAYER TILE TOUCHES, and that is the whole
+ * reason it is safe. The six tiles that changed were wall enclosed on every side by the
+ * pen's own walls (cols 10 and 17, row 17), so they join the pen's sealed room rather than
+ * the corridor network: the player-reachable graph is byte-identical before and after, and
+ * with it every property measured over that graph — 282 grains + 4 golden, girth 10, no
+ * 2×2 open block outside the pen, no dead ends, full warp-aware connectivity, four ways
+ * out of the spawn pocket. The pest graph gains exactly those six tiles (326 → 332) and
+ * the eyes' route field does not see them at all, because it is built pen-blind.
+ *
+ * The pit grew DOWNWARD on purpose. PEN_LANE_ROW stays at 14, so the distance a pest
+ * glides from its slot to the gate is unchanged and the staggered exit keeps its exact
+ * tick timing; the new row is headroom below the pests, which is where the pit backdrop
+ * wants it. Growing the pit upward would have moved the gate, and the gate's row is what
+ * every exit timing and the eyes' BFS target are measured from.
  */
 export const MAZE: readonly string[] = [
   "############################", //  0
@@ -71,7 +92,7 @@ export const MAZE: readonly string[] = [
   "######.##.#      #.##.######", // 13
   "      .##.#      #.##.      ", // 14  <- warp tunnel
   "######.##.#      #.##.######", // 15
-  "######.##.########.##.######", // 16
+  "######.##.#      #.##.######", // 16
   "######.##.########.##.######", // 17
   "######.##..........##.######", // 18  <- sub-pen loop corridor
   "######.##.########.##.######", // 19
@@ -100,13 +121,14 @@ export const PLAYER_SPAWN_COL = 14;
 export const PLAYER_SPAWN_ROW = 25;
 
 // --- the pen ----------------------------------------------------------------
-// Walls cols 10-17 rows 12-16; interior cols 11-16, rows 13-15; gate at row 12, cols
+// Walls cols 10-17 rows 12-17; interior cols 11-16, rows 13-16; gate at row 12, cols
 // 13-14 opening UPWARD into the row-11 corridor.
 
 export const PEN_LEFT = 11;
 export const PEN_RIGHT = 16;
 export const PEN_TOP = 13;
-export const PEN_BOTTOM = 15;
+/** Last interior row. 15 until 2026-08-04 Phase 5.5 — see the row-16 amendment above. */
+export const PEN_BOTTOM = 16;
 export const GATE_ROW = 12;
 
 /**
@@ -116,7 +138,12 @@ export const GATE_ROW = 12;
  * on a centre, costs nothing visually and removes a whole class of special case.
  */
 export const PEN_LANE_COL = 13;
-/** The row inside the pen that pests sit on, and route along on the way out. */
+/**
+ * The row inside the pen that pests sit on, and route along on the way out. It stayed at
+ * 14 when the pit gained row 16: it is measured from the GATE, not from the floor, so
+ * moving it to re-centre the pests in the taller room would lengthen every exit glide and
+ * shift the staggered release by a few ticks for no gameplay reason.
+ */
 export const PEN_LANE_ROW = 14;
 /** The corridor tile immediately above the gate. Where pests emerge, and where eyes aim. */
 export const PEN_ENTRY_COL = PEN_LANE_COL;

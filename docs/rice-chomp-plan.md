@@ -14,6 +14,11 @@ high-contrast board. `levels.ts` holds every tuning number. Tests:
 carries the Phase 3 and Phase 4 measurements. Still to come: the paddy board treatment
 (blocked on an asset) and the leaderboard.
 
+**Phase 5.5 (visual upgrade) is under way.** Step 1 of five has landed: the centre pit is a
+row taller (maze row 16), audited in full at §7 Revision 4 — no player-reachable tile moved,
+so no maze property changed. The remaining four steps are the wall texture, the pit
+backdrop, the wall lettering and rice-grain lives.
+
 > **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
 > here said it was missing; that was true only on the day this plan was written. Where the
 > spec and this plan disagree, **the spec wins** — it is the living document and is amended
@@ -781,7 +786,7 @@ open, no grain · `=` pen gate.
  13   ######.##.#      #.##.######
  14         .##.#      #.##.              <- WARP TUNNEL (both edges open)
  15   ######.##.#      #.##.######
- 16   ######.##.########.##.######
+ 16   ######.##.#      #.##.######        <- Revision 4: was wall; the pit is 6x4
  17   ######.##.########.##.######
  18   ######.##..........##.######        <- sub-pen loop corridor
  19   ######.##.########.##.######
@@ -851,15 +856,77 @@ open, no grain · `=` pen gate.
 > Cost confirmed at exactly 14 grains against a fixed row 24 (298 → 284, or 300 → 286), and
 > it bought girth 4 → 10.
 
-**Machine-verified** (re-measured 2026-08-04 after the row-24 revision; the girth and 2×2
+> **Revision 4 (row 16), 2026-08-04 — Phase 5.5. The pit is a row taller, and it is not a
+> maze change.** Row 16 was `######.##.########.##.######`; cols 11–16 are now floor, so the
+> pen interior is 6×4 over rows 13–16 and the wall band below it went from two rows (16, 17)
+> to one (17). The reason is presentational — the pit is about to hold a backdrop image and
+> a 6×3 rect was not worth looking at — but a change to the maze constant deserves the full
+> audit whatever the reason, so it got one.
+>
+> **The six tiles that changed were wall enclosed on every side by the pen's own walls**
+> (cols 10 and 17, and row 17 beneath). They therefore joined the sealed pen room, not the
+> corridor network, and the player-reachable graph is identical tile for tile:
+>
+> | measured over reachable tiles | before | after |
+> |---|---:|---:|
+> | grains + golden | 282 + 4 | **282 + 4** |
+> | reachable from spawn / player tiles | 306 / 306 | **306 / 306** |
+> | girth | 10 | **10** |
+> | 2×2 open blocks outside the pen | 0 | **0** |
+> | dead ends | 0 | **0** |
+> | spawn-pocket ways out | 4 | **4** |
+> | mirror symmetry | yes | **yes** |
+> | pen interior cells | 18 | 24 |
+> | pest-walkable / pest-reachable | 326 / 326 | 332 / 332 |
+> | eyes' BFS route field cells | 306 | **306** |
+>
+> **No grain count changed, so no test with a hardcoded count needed updating** — the tiles
+> were wall, not grain. Three hardcoded pen bounds in `test/chomp-maze.test.ts` moved from
+> row 15 to row 16 (`inPen`, `inPenBlock`, and the seal test's loop), and `PEN_BOTTOM` went
+> 15 → 16. Nothing else in the engine reads the pen's extent: the renderer is grid-driven,
+> the eyes' field is built pen-blind so it never saw the new tiles, and the pen state
+> machine is keyed on `PEN_LANE_ROW` and `PEN_ENTRY_ROW`, which did not move.
+>
+> **The pit grew downward on purpose.** `PEN_LANE_ROW` stays at 14, so a pest's glide from
+> its slot to the gate is the same distance and the staggered release keeps its exact tick
+> timing; the new row is headroom below the pests, which is where a backdrop wants it.
+> Growing the pit upward would have moved the gate, and the gate's row is what every exit
+> timing and the eyes' BFS target are measured from. Gate (row 12, cols 13–14), the release
+> corridor (row 11), player spawn (row 25), the four scatter corners and the bonus tile
+> (row 18) are all unmoved — row 18 is still the first open corridor below the pen, now one
+> wall row beneath it instead of two.
+>
+> **Both bots agree to the tick.** The kiting bot and the clearing bot were re-run at levels
+> 1, 5 and 9 against the old and new maze in the same session; every figure is identical,
+> which is the strongest available evidence that the simulation did not change:
+>
+> ```
+> KITING BOT (power disarmed, board stripped)        old maze      new maze
+>   L1  died 18.0s   | 2× lookahead 40.3s              same          same
+>   L5  died 23.0s   | 2× lookahead 81.5s              same          same
+>   L9  died 10.4s   | 2× lookahead  8.3s              same          same
+> CLEARING BOT (seed 1000)
+>   L1  CLEARED 282/282 grains, 66.4s, 1 life left     same          same
+>   L5  CLEARED 282/282 grains, 68.3s, 1 life left     same          same
+>   L9  not cleared, 252/282, 53.4s, 0 lives left      same          same
+> ```
+>
+> Level 1 is still completable — the acceptance criterion — and `test/chomp-difficulty.test.ts`
+> still clears it on all six seeds. Level 9 not falling to the clearing bot is the curve
+> working and is not a criterion; only level 1 is. No stored input trace or replay fixture
+> exists to invalidate: the one "recorded trace" test (`test/chomp-movement.test.ts`) builds
+> its trace in-process and replays it in the same run, and there are no non-`.ts` files under
+> `test/`.
+
+**Machine-verified** (re-measured 2026-08-04 after the row-16 revision; the girth and 2×2
 checks are now committed tests in `test/chomp-maze.test.ts` rather than scratchpad scripts):
 
 ```
-player-walkable cells: 324 | reachable by the player: 306 | grains: 282 | golden: 4
-pen interior cells: 18 (cols 11-16, rows 13-15) — open floor, sealed behind the gate
+player-walkable cells: 330 | reachable by the player: 306 | grains: 282 | golden: 4
+pen interior cells: 24 (cols 11-16, rows 13-16) — open floor, sealed behind the gate
 dead ends (<=1 exit): none
-unreachable from spawn: only the 18 pen cells   [flood fill, warp-aware]
-pest graph: 326/326 reachable                   [gate passable]
+unreachable from spawn: only the 24 pen cells   [flood fill, warp-aware]
+pest graph: 332/332 reachable                   [gate passable]
 tunnel row 14 left/right edge: [" ", " "]
 structural problems: none                       [28x31, every row 28 wide, col x == col 27-x]
 2x2 open blocks outside the pen: none           [every corridor exactly 1 tile wide]
@@ -869,7 +936,7 @@ spawn-pocket ways out: 4                        [was 2 — see Revision 3]
 
 > **Scope the measurement to REACHABLE tiles.** The first run of the validator included the
 > pen interior in the player graph and reported girth 4, ten 2×2 blocks and a cycle rank of
-> 32. All of those were the pen's own 6×3 room — a room the player can never enter. The
+> 32. All of those were the pen's own 6×4 room — a room the player can never enter. The
 > numbers above, and the committed tests, are over tiles reachable from the spawn.
 
 ### 7.1 Loop / kiting analysis
@@ -1047,7 +1114,7 @@ the one geometry change that was needed was for a different problem: the spawn p
 - **Warp tunnel** on row 14 only, both edges open. Cols 0–5 and 22–27 are deliberately
   **pellet-free** so the tunnel is an escape route, not a scoring lane. It feeds the
   col-6 / col-21 vertical shafts.
-- **Central pen**: walls cols 10–17 rows 12–16, interior 6×3 (cols 11–16, rows 13–15) —
+- **Central pen**: walls cols 10–17 rows 12–17, interior 6×4 (cols 11–16, rows 13–16) —
   room for four pests plus a spawn point. Gate `==` at row 12, cols 13–14. Ghosts exit
   **upward** into the row-11 corridor, which connects to the col-9 and col-18 shafts.
 - **Four power pellets** at the classic-genre positions: rows 3 and 23, cols 1 and 26.

@@ -66,9 +66,15 @@ function playerNeighbours(col: number, row: number): [number, number][] {
   return out;
 }
 
-/** The pen interior: open floor, but sealed off from the player by the gate. */
+/**
+ * The pen interior: open floor, but sealed off from the player by the gate.
+ * Rows 13-16 since 2026-08-04 (Phase 5.5) — the pit gained a fourth floor row when the
+ * wall band below it was thinned from two rows to one. Deliberately NOT derived from
+ * PEN_TOP/PEN_BOTTOM: this file's job is to catch the maze constant drifting away from
+ * the geometry it was signed off on, and a bound that follows the code cannot do that.
+ */
 function inPen(col: number, row: number): boolean {
-  return row >= 13 && row <= 15 && col >= 11 && col <= 16;
+  return row >= 13 && row <= 16 && col >= 11 && col <= 16;
 }
 
 /** Every tile the player can stand on. Excludes the pen interior (pest-only). */
@@ -127,10 +133,10 @@ describe("maze topology", () => {
     // which breaks pursuit outright. This is the check that caught the original row 28
     // (rows 28-29 formed a 2-tile-wide room; girth was 4).
     //
-    // The pen is exempt: it is a 6x3 ROOM by design, and its mouth over the gate is
+    // The pen is exempt: it is a 6x4 ROOM by design, and its mouth over the gate is
     // legitimately two tiles wide. Nothing outside it may be.
     const inPenBlock = (c: number, r: number) =>
-      c >= 10 && c + 1 <= 17 && r >= 11 && r + 1 <= 15;
+      c >= 10 && c + 1 <= 17 && r >= 11 && r + 1 <= 16;
 
     const bad: string[] = [];
     for (let r = 0; r < ROWS - 1; r++) {
@@ -180,7 +186,7 @@ describe("maze topology", () => {
         }
       }
     }
-    for (let r = 13; r <= 15; r++) {
+    for (let r = 13; r <= 16; r++) {
       for (let c = 11; c <= 16; c++) {
         // Floor, not wall — pests live in here.
         expect(tileAt(grid, c, r)).toBe(EMPTY);
