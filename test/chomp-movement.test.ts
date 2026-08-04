@@ -3,11 +3,13 @@ import {
   PLAYER_SPEED,
   TURN_TOLERANCE,
   advance,
+  beginPlay,
   createGame,
   playerTile,
   replay,
   setWanted,
   tick,
+  type GameState,
 } from "@/components/chomp/engine/game";
 import { PLAYER_SPAWN_ROW, TUNNEL_ROW, offsetFromCentre, tileCentre } from "@/components/chomp/engine/maze";
 import { COLS } from "@/components/chomp/engine/maze";
@@ -21,7 +23,20 @@ import { DOWN, LEFT, RIGHT, SPEED_SCALE, SUB, TICK_HZ, UP, type Dir } from "@/co
  * The determinism tests are the important ones: server-side replay verification (the
  * anti-cheat plan's option (c)) is only a server change later if the simulation is
  * reproducible now.
+ *
+ * PHASE 3 NOTE. Two things changed under these tests and both are deliberate:
+ *   - A run now opens on a READY hold before anything moves, so every test that measures
+ *     movement starts by skipping it.
+ *   - The board has pests on it. A test about turning must not be decided by a rat, so
+ *     the movement tests empty the board and keep the player to themselves.
  */
+
+/** A game with the ready hold skipped and nobody else on the board. */
+function sandbox(): GameState {
+  const g = beginPlay(createGame());
+  g.pests = [];
+  return g;
+}
 
 describe("speed units", () => {
   it("resolves 8 tiles/second to a whole number of subunits per tick", () => {
@@ -35,7 +50,12 @@ describe("speed units", () => {
    * pocket on row 25 is deliberately short, so speed is measured here instead.
    */
   function onLongCorridor() {
-    const g = createGame();
+    const g = sandbox();
+    // Cleared, because this measures speed on OPEN path. With grains down the player is
+    // slower by exactly one frozen tick per grain, which is the chomp freeze and is
+    // measured on its own in test/chomp-pests.test.ts.
+    for (let i = 0; i < g.grid.length; i++) if (g.grid[i] === 2 || g.grid[i] === 3) g.grid[i] = 1;
+    g.grainsRemaining = 9999;
     g.player.y = tileCentre(29);
     g.player.x = tileCentre(24);
     g.player.dir = LEFT;
@@ -60,7 +80,7 @@ describe("speed units", () => {
 
 describe("walls", () => {
   it("stops dead at a wall instead of passing through it", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 600); // far more than the corridor is long
     expect(g.player.blocked).toBe(true);
@@ -69,14 +89,14 @@ describe("walls", () => {
   });
 
   it("keeps facing the wall it is stopped against", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 600);
     expect(g.player.dir).toBe(LEFT);
   });
 
   it("ignores a turn into a wall and keeps going", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 30);
     const before = g.player.dir;
@@ -92,7 +112,7 @@ describe("walls", () => {
 
 describe("turning feel", () => {
   it("reverses instantly, mid-corridor, without snapping to a centre", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 7); // deliberately land off-centre
     const offBefore = offsetFromCentre(g.player.x);
@@ -104,7 +124,7 @@ describe("turning feel", () => {
   });
 
   it("accepts a perpendicular turn keyed slightly early", () => {
-    const g = createGame();
+    const g = sandbox();
     // Walk left to a junction, then ask to go down just before reaching its centre.
     setWanted(g, LEFT);
     advance(g, 45);
@@ -114,7 +134,7 @@ describe("turning feel", () => {
   });
 
   it("snaps onto the corridor centre when a perpendicular turn is taken", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 45);
     setWanted(g, DOWN);
@@ -125,7 +145,7 @@ describe("turning feel", () => {
   });
 
   it("holds a buffered direction until it becomes legal", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 5);
     // Ask for a direction that is illegal right now and never clear it.
@@ -140,12 +160,22 @@ describe("turning feel", () => {
   });
 
   it("never leaves the player off-centre on the axis it is not travelling along", () => {
-    const g = createGame();
+    // Except mid-corner. Phase 3 added the corner glide, which deliberately runs both
+    // axes at once for up to CORNER_LEAD subunits — that diagonal IS the off-centre
+    // state, and it is the mechanism the player gains distance with. What still has to
+    // hold is that it always lands back on the centre when the glide ends, which is what
+    // the second assertion checks.
+    const g = sandbox();
     const dirs: Dir[] = [LEFT, DOWN, RIGHT, UP, LEFT, LEFT, DOWN, RIGHT];
+    let sawGlide = false;
     for (const d of dirs) {
       setWanted(g, d);
       for (let i = 0; i < 40; i++) {
         tick(g);
+        if (g.player.glideSteps > 0) {
+          sawGlide = true;
+          continue;
+        }
         const off =
           g.player.dir === UP || g.player.dir === DOWN
             ? offsetFromCentre(g.player.x)
@@ -153,6 +183,7 @@ describe("turning feel", () => {
         expect(off).toBe(0);
       }
     }
+    expect(sawGlide).toBe(true);
   });
 
   it("has a turn tolerance smaller than half a tile", () => {
@@ -164,7 +195,7 @@ describe("turning feel", () => {
 
 describe("warp tunnel", () => {
   it("carries the player from one edge to the other", () => {
-    const g = createGame();
+    const g = sandbox();
     // Drive to the tunnel row, then head left through the edge.
     g.player.y = tileCentre(TUNNEL_ROW);
     g.player.x = tileCentre(3);
@@ -176,7 +207,7 @@ describe("warp tunnel", () => {
   });
 
   it("keeps the position inside the grid after wrapping", () => {
-    const g = createGame();
+    const g = sandbox();
     g.player.y = tileCentre(TUNNEL_ROW);
     g.player.x = tileCentre(1);
     g.player.dir = LEFT;
@@ -189,7 +220,7 @@ describe("warp tunnel", () => {
 
 describe("eating", () => {
   it("clears grains it passes over and counts them", () => {
-    const g = createGame();
+    const g = sandbox();
     const before = g.grainsRemaining;
     setWanted(g, LEFT);
     advance(g, 120);
@@ -198,7 +229,7 @@ describe("eating", () => {
   });
 
   it("does not eat the same grain twice", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     advance(g, 60);
     const eaten = g.grainsEaten;
@@ -212,7 +243,7 @@ describe("eating", () => {
   });
 
   it("starts the player on a spawn tile with no grain under it", () => {
-    const g = createGame();
+    const g = sandbox();
     expect(g.grainsEaten).toBe(0);
     expect(playerTile(g).row).toBe(PLAYER_SPAWN_ROW);
   });
@@ -229,7 +260,7 @@ describe("determinism", () => {
       [200, DOWN],
     ];
     const run = () => {
-      const g = createGame();
+      const g = sandbox();
       let i = 0;
       for (let t = 0; t < 400; t++) {
         while (i < script.length && script[i][0] === t) {
@@ -248,6 +279,8 @@ describe("determinism", () => {
   });
 
   it("replays a recorded input trace to the same state", () => {
+    // The full game, pests and all: replay() rebuilds a real run, so the run it is
+    // checked against has to be a real one too.
     const g = createGame();
     const script: [number, Dir][] = [
       [0, LEFT],
@@ -275,7 +308,7 @@ describe("determinism", () => {
   });
 
   it("does not log a repeated press of the direction already queued", () => {
-    const g = createGame();
+    const g = sandbox();
     setWanted(g, LEFT);
     setWanted(g, LEFT);
     setWanted(g, LEFT);
@@ -283,7 +316,7 @@ describe("determinism", () => {
   });
 
   it("advances exactly one tick per tick() call", () => {
-    const g = createGame();
+    const g = sandbox();
     advance(g, 123);
     expect(g.tick).toBe(123);
   });

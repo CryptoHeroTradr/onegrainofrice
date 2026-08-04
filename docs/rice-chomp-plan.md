@@ -1,9 +1,13 @@
 # RICE CHOMP — recon & build plan
 
-**Status (2026-08-04):** Phase 2 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
-`ChompCanvas.tsx` and `engine/{game,maze,render,types}.ts` — the maze and a playable
-player grain. Sections 1–7 below are recon and remain accurate; treat the sections about
-what does *not* exist yet as describing the phases still to come.
+**Status (2026-08-04):** Phase 3 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
+`ChompCanvas.tsx` and `engine/{game,levels,maze,pests,render,types}.ts` — the maze, the
+player grain, the four pests, the scatter/chase cycle, the pen, frightened mode, lives and
+death, and cornering. `levels.ts` holds every tuning number. Tests:
+`test/chomp-{maze,movement,pests,cornering,kiting}.test.ts` plus `test/chomp-support.ts`
+(the bot). Sections 1–6 below are recon and remain accurate; §7 has been updated with the
+Phase 3 measurements. Still to come: bonus items, cutscenes, audio, touch controls, the
+board treatment, and the leaderboard.
 
 > **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
 > here said it was missing; that was true only on the day this plan was written. Where the
@@ -736,7 +740,7 @@ open, no grain · `=` pen gate.
  21   #.####.#####.##.#####.####.#
  22   #.####.#####.##.#####.####.#
  23   #o...........##...........o#
- 24   ####.##.############.##.####
+ 24   ####.##.##.######.##.##.####        <- cols 10, 17: the spawn pocket's lateral exits
  25   #.......##........##.......#
  26   #.#####.##.######.##.#####.#
  27   #.#####.##.######.##.#####.#
@@ -744,6 +748,24 @@ open, no grain · `=` pen gate.
  29   #..........................#
  30   ############################
 ```
+
+> **Revision 3 (row 24), 2026-08-04 — Phase 3, and the reason the kiting bot was built.**
+> Row 24 was `####.##.############.##.####`, which left the bottom-centre room — row 25
+> cols 10–17, the two shafts under it, and the stretch of row 29 they land on — with
+> **exactly two ways out, both on row 29**. Every corridor here is one tile wide, so a pest
+> standing on a way out is a closed door, and two pests shut the room completely. The
+> player **spawns in that room**. Measured, not argued: two pests parked on the two exits
+> killed a competent bot inside a second with no move that survived, and over a long
+> unassisted run the live AI covered both exits about **1.5% of ticks** by accident.
+> Opening `(10,24)` and `(17,24)` takes it from two exits to four, upward into the row-23
+> corridor. Re-verified after the change: girth still 10, still no 2×2 open block outside
+> the pen, still no dead ends, still mirror-symmetric, still fully connected. Two pests no
+> longer seal it; four still do, which is the point — it stays a risk pocket.
+>
+> Not done sideways along row 25 (cols 8–9 and 18–19), which is the more literal reading of
+> "a lateral exit": that fuses the three bottom rooms into one full-width corridor directly
+> above the full-width row 29, joined by six shafts. That is a ladder, and a ladder is the
+> most kiteable shape there is — the opposite of what the change is for.
 
 > **Revision 2 (row 28).** The first draft had row 28 as
 > `#..........######..........#`. Against row 29 (fully open) that made rows 28–29 a
@@ -754,17 +776,26 @@ open, no grain · `=` pen gate.
 > into the bottom corridor. This is the same construction the genre uses (a fully open
 > bottom row fed by isolated gaps above it). Girth went 4 → 10.
 
-**Machine-verified** (throwaway validators in the scratchpad, not in the repo):
+**Machine-verified** (re-measured 2026-08-04 after the row-24 revision; the girth and 2×2
+checks are now committed tests in `test/chomp-maze.test.ts` rather than scratchpad scripts):
 
 ```
-walkable cells: 324 | pellets: 280 | power pellets: 4
-pen interior cells: 18 (cols 11-16, rows 13-15)
+player-walkable cells: 324 | reachable by the player: 306 | grains: 282 | golden: 4
+pen interior cells: 18 (cols 11-16, rows 13-15) — open floor, sealed behind the gate
 dead ends (<=1 exit): none
-unreachable from (1,1): none          [flood fill, warp-aware]
+unreachable from spawn: only the 18 pen cells   [flood fill, warp-aware]
+pest graph: 326/326 reachable                   [gate passable]
 tunnel row 14 left/right edge: [" ", " "]
-structural problems: none             [28x31, every row 28 wide, col x == col 27-x]
-no 2x2 open blocks: confirmed         [every corridor exactly 1 tile wide]
+structural problems: none                       [28x31, every row 28 wide, col x == col 27-x]
+2x2 open blocks outside the pen: none           [every corridor exactly 1 tile wide]
+girth (shortest cycle): 10
+spawn-pocket ways out: 4                        [was 2 — see Revision 3]
 ```
+
+> **Scope the measurement to REACHABLE tiles.** The first run of the validator included the
+> pen interior in the player graph and reported girth 4, ten 2×2 blocks and a cycle rank of
+> 32. All of those were the pen's own 6×3 room — a room the player can never enter. The
+> numbers above, and the committed tests, are over tiles reachable from the spawn.
 
 ### 7.1 Loop / kiting analysis
 
@@ -812,14 +843,63 @@ longest blind run between two entrances:
 - **Pests are released onto the loop, not outside it.** The pen gate opens upward into
   row 11, cols 13–14, which sits in the middle of the loop's top edge. A player circling
   the pen runs into freshly-released pests rather than accumulating a tail behind them.
-- **The weakest loop is the 22-tile one at rows 25–29, cols 10–17** — only 2 entrances,
+- ~~**The weakest loop is the 22-tile one at rows 25–29, cols 10–17** — only 2 entrances,
   both on the bottom row at cols 10 and 17, with a 14-tile blind run over the top. Two
   pests taking the two entrances close it completely. I'm keeping it: it reads as a
-  deliberate risk pocket, not an exploit.
+  deliberate risk pocket, not an exploit.~~ **Wrong, and fixed 2026-08-04.** Keeping it was
+  a mistake for a reason the analysis missed: *the player spawns inside it*. A risk pocket
+  you choose to enter is a design; a risk pocket you are placed in at the start of every
+  life, which two wandering pests can shut, is a death trap. It now has four entrances —
+  see Revision 3 and §7.2.
 
-**The honest caveat.** Geometry alone cannot make kiting impossible — it only makes it
-*defeatable*. Whether a competent player can farm the pen loop is decided in Phase 3 by
-the AI and the speed curve, and it needs three specific guarantees:
+### 7.2 The Phase 3 answer — measured, 2026-08-04
+
+The caveat below was written before the AI existed and asked for empirical verification.
+Here it is. `test/chomp-support.ts` holds a bot with a breadth-first danger field that
+decides one tile ahead (so it corners like a person) and runs wherever it can still reach
+the most maze before the pests cut it off. `test/chomp-kiting.test.ts` runs it against the
+finished AI with **golden grains disarmed** — a power window is the answer to kiting, not
+kiting — and a five-minute budget.
+
+**Can a competent player kite all four pests indefinitely around any loop? No.**
+
+| strategy | result |
+|---|---|
+| blind orbit, pen loop (32 tiles) | dead in **0.2 s**, 0 laps — it emerges into the pests' own doorway |
+| blind orbit, spawn pocket (22 tiles) | dead in **13 s**, 5 laps |
+| blind orbit, bottom-right ring (girth 10) | dead in **11 s**, 10 laps |
+| adaptive bot, cleared board, from four starts | dead in **3.5 s – 103 s** |
+| adaptive bot, grains down (chomp freeze in play) | dead in **49 s**; best observed **141 s** |
+| adaptive bot at **double** lookahead | still dead — so this is a finding about the maze, not about the bot |
+
+Deepening the bot's horizon from 8 to 40 tiles moved survival around within 26 s–128 s and
+never approached the budget, which is the check that matters: a bot that died of myopia
+would look identical to a maze that cannot be farmed. The three guarantees the caveat asked
+for all hold — the Sparrow does take the opposite arc, scatter does break the orbit, and
+pest speed sits at 90–106% of the player's across the level curve.
+
+The other side of the same coin: it is not a coin toss either. A good player gets minutes,
+not seconds, which is what the suite asserts as a floor.
+
+**Can two pests seal the spawn pocket at row 25, cols 10–17? It could — that is why the
+maze changed.** With the original two exits, two pests on them killed the bot in under a
+second and the live AI wandered into that configuration on ~1.5% of ticks. See Revision 3
+above. After opening `(10,24)` and `(17,24)`: two pests no longer seal it (the bot survives
+the whole budget), four pests still do, and the live AI never once produced a four-way seal
+while the bot was inside the room.
+
+**Cornering.** Worth exactly `cornerLead` (40 subunits, a third of a tile) per corner, so
+**1⅓ tiles per lap** of a four-corner loop — a 157-tick lap against 167 without it, ~6%.
+Pests turn only on tile centres and can never take it back. Measured in
+`test/chomp-cornering.test.ts` against a control run with `cornerLead` set to 0.
+
+---
+
+**The honest caveat** *(written before Phase 3; answered by §7.2 above, kept because the
+reasoning is still the reason the maze is shaped this way).* Geometry alone cannot make
+kiting impossible — it only makes it *defeatable*. Whether a competent player can farm the
+pen loop is decided in Phase 3 by the AI and the speed curve, and it needs three specific
+guarantees:
 
 1. **The Sparrow must genuinely take the opposite arc.** Targeting 4 tiles ahead of the
    player's facing means that on a loop the shortest path to that target is usually the
@@ -834,7 +914,8 @@ the AI and the speed curve, and it needs three specific guarantees:
 
 I'll verify this empirically in Phase 3 by scripting a kiting bot against the finished
 AI and measuring how many laps it survives; if the answer is "indefinitely", the fix is
-AI/speed tuning first, and only then geometry.
+AI/speed tuning first, and only then geometry. *(Done — see §7.2. The answer was "no", and
+the one geometry change that was needed was for a different problem: the spawn pocket.)*
 
 **Design notes**
 
@@ -858,12 +939,13 @@ AI/speed tuning first, and only then geometry.
 - **The col-6 / col-21 shafts** (rows 9–19) are long, straight, and branch only at the
   tunnel. That is intentional and genre-correct: they are the high-risk / high-reward
   routes, and the tunnel is the payoff.
-- 280 pellets + 4 power pellets = **284 collectables** per level.
+- 282 pellets + 4 power pellets = **286 collectables** per level. *(280 + 4 until the
+  row-24 revision added two tiles.)*
 
-**Not yet decided by this layout:** player spawn point (proposal: row 23, col 13/14 area
-— just under the pen, on the wide corridor), pest scatter targets (proposal: the four
-corners, rows 1/29 × cols 1/26), and fruit/bonus spawn (proposal: row 17-ish centre,
-but that's a wall right now — needs a tweak or a different spot if we want fruit).
+**Decided since:** player spawn is row 25, straddling cols 13/14. Scatter corners are the
+four corner corridor tiles — Rat (26,1), Sparrow (1,1), Weevil (26,29), Locust (1,29) —
+and live in `levels.ts`. **Still open:** fruit/bonus spawn (proposal was row 17-ish centre,
+but that is a wall — needs a tweak or a different spot), which is a Phase 5 problem.
 
 ---
 
@@ -929,7 +1011,16 @@ but that's a wall right now — needs a tweak or a different spot if we want fru
     `src/lib/sound.ts` + the existing `SoundToggle`, and should I extend
     `scripts/gen-sfx.mjs` to generate chomp/death/power sounds?
 
-11. **The four pests.** Absent the spec: names, look, and AI personality. Genre-standard
-    is direct-chase / ambush-ahead / flanking-vector / shy-scatter. A rice-field reading
-    would be e.g. weevil, planthopper, field rat, sparrow. Do you have names and
-    personalities already, or should I propose a set?
+11. ~~**The four pests.** Absent the spec: names, look, and AI personality.~~
+    **Answered.** The spec has them: Rat (direct), Sparrow (ambush 4 ahead), Weevil
+    (flanking vector off the Rat), Locust (skittish inside 8 tiles). Built in Phase 3.
+    One correction went back into the spec rather than staying here: the Weevil's wording
+    read literally as `2 × rat − player`, which aims the flanker away from the player. It
+    is `2 × pivot − rat`, pivot two tiles ahead of the player. See the spec's amendment.
+
+12. **Pest colours are carrying less weight than usual, on purpose.** Rat tuna, Sparrow
+    salmon, Weevil bamboo, Locust olive — and bamboo and olive are closer to each other
+    than I would normally allow. That is deliberate: the requirement is that the four read
+    apart in **monochrome**, so the silhouettes do the work and colour is a bonus channel.
+    Worth a look on a phone once the paddy texture lands in Phase 4; if the two greens
+    still fight, the fix is the Locust's bone highlight, not a new palette entry.

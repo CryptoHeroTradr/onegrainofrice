@@ -1,0 +1,283 @@
+/**
+ * RICE CHOMP — every tuning number in the game.
+ *
+ * Pure module: no React, no DOM, no clock. The spec's rule is absolute — "Every tuning
+ * number — speeds, timers, mode durations, score values, and the per-grain eating freeze
+ * — lives in levels.ts. No magic numbers in engine code." If you are about to type a
+ * number into game.ts, pests.ts or render.ts that a designer might one day want to
+ * change, it belongs here instead.
+ *
+ * Two constants that predate this file (PLAYER_SPEED and TURN_TOLERANCE, which Phase 2
+ * kept in game.ts because levels.ts did not exist yet) have moved here as well.
+ *
+ * ── UNITS ───────────────────────────────────────────────────────────────────────
+ * Speeds are authored in tiles/second and converted once, at module load, by
+ * tilesPerSecond(). Durations are authored in seconds and converted by secondsToTicks().
+ * Distances are in subunits (SUB = 120 per tile). Everything the simulation reads is an
+ * integer, because the simulation is replayed server-side and floats do not replay.
+ */
+
+import { SUB, TICK_HZ, tilesPerSecond } from "./types";
+
+/** Whole ticks for a duration in seconds. Rounds, so 0.5s is 30 ticks exactly. */
+export function secondsToTicks(seconds: number): number {
+  return Math.round(seconds * TICK_HZ);
+}
+
+// --- movement feel ----------------------------------------------------------
+// These do not vary by level: they are how the game controls, not how hard it is.
+
+/**
+ * How far past a tile centre a perpendicular turn is still accepted, in subunits.
+ * A quarter tile. This is LATE-turn forgiveness only — it exists so a turn keyed a
+ * couple of ticks after the junction still takes.
+ *
+ * It is deliberately NOT the cornering dial. Widening this to make cornering feel
+ * better would just make late inputs sloppier; see CORNER_LEAD.
+ */
+export const TURN_TOLERANCE = 30;
+
+/**
+ * CORNERING. How far BEFORE a tile centre a perpendicular turn may begin, in subunits.
+ * A third of a tile.
+ *
+ * This is the skill ceiling of the genre and it is a separate dial from TURN_TOLERANCE
+ * on purpose. A turn accepted this far early does not wait for the centre and then turn
+ * — the player glides diagonally through the corner, advancing on BOTH axes at once,
+ * and arrives on the new axis having skipped up to CORNER_LEAD subunits of path. Pests
+ * cannot do this: they turn only at exact tile centres. So every corner a player takes
+ * early buys real distance on a pursuer, and a player who turns late pays it back (the
+ * glide runs the other way — see cornerGlide in game.ts).
+ *
+ * Sized by eye against the sprite: a third of a tile is enough to be worth chasing —
+ * four corners of a loop is more than a whole tile of lead — while keeping the visible
+ * clip into the wall corner smaller than the player's own outline.
+ */
+export const CORNER_LEAD = 40;
+
+/**
+ * How close two entities' centres must be to count as a collision, per axis, in
+ * subunits. Half a tile: the sprites are about 0.9 tiles wide, so at this range they
+ * are visibly overlapping and nobody feels robbed.
+ */
+export const COLLIDE_DIST = SUB / 2;
+
+// --- eating -----------------------------------------------------------------
+
+/**
+ * The chomp freeze. Eating costs whole frozen ticks, not a reduced speed — this is the
+ * mechanism that lets a pursuer close real distance on a player clearing a fresh
+ * corridor, and it is why chases tighten where the grains are thickest.
+ *
+ * At the base speed the player crosses a tile in 7.5 ticks, so one frozen tick per
+ * grain is a ~12% tax through dense corridor and none at all through cleared corridor.
+ * There is no separate eating-speed dial; this is it.
+ */
+export const GRAIN_FREEZE_TICKS = 1;
+export const POWER_FREEZE_TICKS = 3;
+
+// --- scoring ----------------------------------------------------------------
+
+export const SCORE_GRAIN = 10;
+export const SCORE_POWER = 50;
+/** Pest chain within a single power window. Resets when the window closes. */
+export const SCORE_PEST_CHAIN: readonly number[] = [200, 400, 800, 1600];
+
+export const STARTING_LIVES = 3;
+export const EXTRA_LIFE_SCORE = 10_000;
+
+// --- phase timings ----------------------------------------------------------
+
+/** "Ready" hold at the start of a life, before anything moves. */
+export const READY_TICKS = secondsToTicks(2);
+/** Everything stops for a beat when the player is caught, before the death animation. */
+export const DEATH_PAUSE_TICKS = secondsToTicks(0.5);
+/** Length of the death animation itself. */
+export const DEATH_TICKS = secondsToTicks(1.5);
+/** Both sides freeze while an eaten pest's score is on screen. */
+export const EAT_PEST_FREEZE_TICKS = secondsToTicks(0.5);
+/** Maze-clear flash before the next level. */
+export const CLEAR_TICKS = secondsToTicks(2);
+
+// --- the pests --------------------------------------------------------------
+
+/** Index order is fixed and load-bearing: it is the pen release order. */
+export const RAT = 0;
+export const SPARROW = 1;
+export const WEEVIL = 2;
+export const LOCUST = 3;
+export type PestKind = typeof RAT | typeof SPARROW | typeof WEEVIL | typeof LOCUST;
+export const PEST_COUNT = 4;
+
+/**
+ * Scatter corners, in tiles. Each pest owns one, so scatter breaks up any stable orbit
+ * by pulling the four of them to four different places and then re-entering the maze
+ * from four different directions.
+ *
+ * All four are real corridor tiles rather than off-board points: the maze's corners are
+ * open loops, so a pest that reaches its corner circles it instead of jamming into a
+ * wall, which is the behaviour we want and one fewer special case.
+ */
+export const SCATTER_CORNERS: readonly { col: number; row: number }[] = [
+  { col: 26, row: 1 }, // Rat     — top right
+  { col: 1, row: 1 }, //  Sparrow — top left
+  { col: 26, row: 29 }, // Weevil — bottom right
+  { col: 1, row: 29 }, //  Locust — bottom left
+];
+
+/** How far ahead of the player the Sparrow aims, in tiles. */
+export const SPARROW_LEAD = 4;
+/** How far ahead of the player the Weevil's pivot sits, in tiles. */
+export const WEEVIL_PIVOT = 2;
+/** Inside this range the Locust loses its nerve and runs for its corner. Tiles. */
+export const LOCUST_SHY_RANGE = 8;
+/** Squared, because the AI never takes a square root. */
+export const LOCUST_SHY_RANGE_SQ = LOCUST_SHY_RANGE * LOCUST_SHY_RANGE;
+
+// --- the pen ----------------------------------------------------------------
+
+/** Vertical bob of a penned pest, in subunits either side of its home row. */
+export const PEN_BOB_AMPLITUDE = 10;
+/** Subunits of bob travel per tick. */
+export const PEN_BOB_SPEED = 1;
+/** Speed of the shuffle out of the pen and of eyes descending back into it. */
+export const PEN_SPEED = tilesPerSecond(4);
+
+// --- per-level tuning -------------------------------------------------------
+
+export interface LevelTuning {
+  /** Player speed on open path, in speed units. */
+  playerSpeed: number;
+  /**
+   * The two movement-feel dials, carried per level so they can be varied and, more
+   * usefully, so a test can set cornerLead to 0 and measure exactly what cornering is
+   * worth by playing the same game twice. They do not currently change with the level.
+   */
+  cornerLead: number;
+  turnTolerance: number;
+  /** Pest speed in chase and scatter. */
+  pestSpeed: number;
+  /** Pest speed inside the warp tunnel. Slower — the tunnel is an escape route. */
+  pestTunnelSpeed: number;
+  /** Pest speed while frightened. */
+  pestFrightSpeed: number;
+  /** Speed of a pair of eyes routing home. Fast, so a kill is not a free rest. */
+  eyesSpeed: number;
+  /** How long a golden grain frightens for. Zero means golden grains no longer scare. */
+  frightenedTicks: number;
+  /**
+   * Alternating scatter/chase durations in ticks, starting with SCATTER. The last entry
+   * is effectively forever — once the cycle is exhausted the pests stay in chase.
+   */
+  modeCycle: readonly number[];
+  /** Grains that must be eaten this life before each pest leaves the pen. */
+  penDotLimits: readonly number[];
+  /** A penned pest leaves anyway if this long passes with nobody released. */
+  penTimeoutTicks: number;
+}
+
+/**
+ * Player speed is flat across levels and the pests ramp past it. That is the difficulty
+ * curve: from about level 13 a pest on open path is faster than the player, and the only
+ * way to gain ground is cornering. Making the player faster instead would flatten the
+ * skill expression the corner glide exists to create.
+ */
+const PLAYER_TILES_PER_SEC = 8;
+
+/** Pest speed by level, tiles/second. Index 0 is level 1; later levels clamp to the end. */
+const PEST_TILES_PER_SEC: readonly number[] = [
+  7.2, 7.4, 7.6, 7.7, 7.8, 7.9, 8.0, 8.05, 8.1, 8.15, 8.2, 8.25, 8.3, 8.32, 8.34, 8.36,
+  8.38, 8.4, 8.42, 8.44, 8.5,
+];
+
+/** Fraction of pest speed inside the tunnel, and while frightened. */
+const TUNNEL_SPEED_FACTOR = 0.55;
+const FRIGHT_SPEED_FACTOR = 0.62;
+/** Eyes move at a flat multiple of the player's speed. */
+const EYES_TILES_PER_SEC = 15;
+
+/**
+ * Frightened duration by level, in seconds. Shortens, with the occasional reprieve level
+ * — a monotonic slide gives the player nothing to look forward to. Zero from level 17,
+ * where golden grains stop frightening entirely and become pure points; the spec's "from
+ * level 5 frightened mode is eventually disabled" starts biting at level 5 (2s is barely
+ * a window) and finishes here.
+ */
+const FRIGHTENED_SECONDS: readonly number[] = [
+  6, 5, 4, 3, 2, 5, 2, 2, 1, 5, 2, 1, 1, 3, 1, 1, 0, 1, 0, 0, 0,
+];
+
+/**
+ * Mode cycles. Authored in seconds, alternating scatter/chase and starting with scatter.
+ * Scatter phases shorten as levels progress; chase lengthens. The trailing chase is
+ * unbounded — after the last listed phase the pests never scatter again, which is what
+ * makes a long level frightening rather than merely long.
+ */
+const CYCLE_SECONDS: readonly (readonly number[])[] = [
+  [7, 20, 7, 20, 5, 20, 5], // levels 1
+  [6, 22, 6, 22, 4, 24, 3], // levels 2-4
+  [5, 24, 5, 24, 3, 26, 2], // levels 5-12
+  [4, 26, 4, 28, 2, 30, 1], // levels 13+
+];
+
+/** The last chase phase runs for this long, i.e. longer than any level will last. */
+const FOREVER_TICKS = secondsToTicks(60 * 60);
+
+/** Pen dot limits by level band, per pest index. The Rat never waits in the pen. */
+const PEN_DOT_LIMITS: readonly (readonly number[])[] = [
+  [0, 0, 30, 60], // level 1
+  [0, 0, 0, 50], //  levels 2-4
+  [0, 0, 0, 0], //   levels 5+
+];
+
+const PEN_TIMEOUT_SECONDS: readonly number[] = [4, 4, 3];
+
+function pick<T>(table: readonly T[], index: number): T {
+  const i = Math.max(0, Math.min(table.length - 1, index));
+  return table[i];
+}
+
+/** Which band a level falls into, for the tables above that are banded rather than per-level. */
+function band(level: number): number {
+  if (level <= 1) return 0;
+  if (level <= 4) return 1;
+  if (level <= 12) return 2;
+  return 3;
+}
+
+function cycleTicks(level: number): readonly number[] {
+  const seconds = pick(CYCLE_SECONDS, band(level));
+  const ticks = seconds.map(secondsToTicks);
+  ticks.push(FOREVER_TICKS);
+  return ticks;
+}
+
+/**
+ * Every dial for a level. Levels beyond the end of the tables clamp to the last entry,
+ * so level 99 is playable rather than undefined.
+ */
+export function levelTuning(level: number): LevelTuning {
+  const lv = Math.max(1, Math.floor(level));
+  const idx = lv - 1;
+  const pest = pick(PEST_TILES_PER_SEC, idx);
+  const penBand = Math.min(band(lv), PEN_DOT_LIMITS.length - 1);
+  return {
+    playerSpeed: tilesPerSecond(PLAYER_TILES_PER_SEC),
+    cornerLead: CORNER_LEAD,
+    turnTolerance: TURN_TOLERANCE,
+    pestSpeed: tilesPerSecond(pest),
+    pestTunnelSpeed: tilesPerSecond(pest * TUNNEL_SPEED_FACTOR),
+    pestFrightSpeed: tilesPerSecond(pest * FRIGHT_SPEED_FACTOR),
+    eyesSpeed: tilesPerSecond(EYES_TILES_PER_SEC),
+    frightenedTicks: secondsToTicks(pick(FRIGHTENED_SECONDS, idx)),
+    modeCycle: cycleTicks(lv),
+    penDotLimits: pick(PEN_DOT_LIMITS, penBand),
+    penTimeoutTicks: secondsToTicks(pick(PEN_TIMEOUT_SECONDS, penBand)),
+  };
+}
+
+/**
+ * Player speed at level 1, exported for the Phase 2 movement tests and for anything that
+ * wants the base value without building a whole tuning record.
+ */
+export const PLAYER_SPEED = tilesPerSecond(PLAYER_TILES_PER_SEC);

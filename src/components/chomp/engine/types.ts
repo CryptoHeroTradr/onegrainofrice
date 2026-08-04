@@ -74,6 +74,32 @@ export function isVertical(d: Dir): boolean {
   return d === UP || d === DOWN;
 }
 
+// --- randomness -------------------------------------------------------------
+
+/**
+ * The engine's only source of randomness: a seeded xorshift32. Frightened pests pick
+ * semi-randomly at junctions, and that pick has to replay identically on the server, so
+ * Math.random() is banned (see the determinism note at the top of this file). The seed
+ * is part of the game state and is advanced explicitly.
+ *
+ * Returns the next seed. Always a non-zero uint32 — xorshift is dead at zero, so a zero
+ * seed is nudged rather than allowed to stick.
+ */
+export function rngNext(seed: number): number {
+  let s = seed >>> 0;
+  if (s === 0) s = 0x9e3779b9;
+  s ^= s << 13;
+  s >>>= 0;
+  s ^= s >>> 17;
+  s ^= s << 5;
+  return s >>> 0;
+}
+
+/** A value in [0, n) from a seed. Cheap modulo bias is fine for a junction coin-flip. */
+export function rngBelow(seed: number, n: number): number {
+  return n <= 1 ? 0 : seed % n;
+}
+
 // --- tiles ------------------------------------------------------------------
 
 export const WALL = 0;

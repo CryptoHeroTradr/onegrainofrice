@@ -16,7 +16,8 @@
  */
 
 import { COLS, ROWS, tileAt } from "./maze";
-import { DOWN, GRAIN, LEFT, POWER, RIGHT, SUB, UP, type Dir } from "./types";
+import { DOWN, DX, DY, GRAIN, LEFT, POWER, RIGHT, SUB, UP, type Dir } from "./types";
+import { EYES, type Pest } from "./pests";
 import type { Player } from "./game";
 
 const WALL_FILL = "#2a4d8f"; // porcelain
@@ -322,4 +323,399 @@ export function drawPlayer(
   ctx.fill();
 
   ctx.restore();
+}
+
+/**
+ * The death animation: the grain keeps opening until there is nothing left of it.
+ * `progress` runs 0 → 1 and is derived from the tick count, so it replays like everything
+ * else. Deliberately the same shape as the chomp — the player is not killed by a
+ * different mechanic, they are simply left open.
+ */
+export function drawPlayerDeath(
+  ctx: CanvasRenderingContext2D,
+  player: Player,
+  tilePx: number,
+  progress: number,
+): void {
+  const t = Math.max(0, Math.min(1, progress));
+  const px = (player.x / SUB) * tilePx;
+  const py = (player.y / SUB) * tilePx;
+  const scale = 1 - t * 0.35;
+  const rx = tilePx * 0.46 * scale;
+  const ry = tilePx * 0.36 * scale;
+  // Sweeps from the widest chomp to a full circle of nothing.
+  const mouth = MOUTH_MAX + (Math.PI - MOUTH_MAX) * t;
+  if (mouth >= Math.PI - 0.02) return;
+
+  ctx.save();
+  ctx.translate(px, py);
+  FACING[player.dir](ctx);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx, ry, 0, mouth, -mouth);
+  ctx.lineTo(0, 0);
+  ctx.closePath();
+  ctx.fillStyle = PLAYER_FILL;
+  ctx.fill();
+  ctx.strokeStyle = PLAYER_RIM;
+  ctx.lineWidth = Math.max(1, tilePx * 0.05);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// --- the pests --------------------------------------------------------------
+
+/**
+ * LEGIBILITY: four SILHOUETTES, not four colours of one shape.
+ *
+ * Colour is the first thing to fail here. A textured paddy background is coming in a
+ * later phase, and a coloured blob on a photograph is a coloured blob; a colourblind
+ * player never had the channel to begin with; a phone in sunlight has neither. So each
+ * pest is built around one outline feature that survives being printed in black and
+ * white, and every one of them is stroked in nori so the shape holds its edge against
+ * whatever ends up behind it:
+ *
+ *   Rat     — two round EARS on top and a long bare TAIL trailing behind. Low, long body.
+ *   Sparrow — a wedge BEAK and a fanned TAIL kicked up behind. Plump and round.
+ *   Weevil  — a fat domed shell and a long down-curving SNOUT. Wide and low.
+ *   Locust  — a Z-kinked JUMPING LEG standing above the back, and long ANTENNAE. Narrow.
+ *
+ * Squint at them, or turn the saturation off, and they are still four different animals.
+ *
+ * ORIENTATION differs from the player on purpose. The player is one right-facing sprite
+ * rotated bodily, which works because a grain of rice reads at any angle. A rat rotated
+ * 90° does not read as a rat, and the silhouette is the entire point here — so pests stay
+ * upright, mirror horizontally to face left, and show direction with a lean and with
+ * where the eye is looking rather than by turning the body.
+ */
+const PEST_BODY: readonly string[] = [
+  "#c1443a", // Rat     — tuna
+  "#f4a08a", // Sparrow — salmon
+  "#4e7a3e", // Weevil  — bamboo
+  "#6a6c3a", // Locust  — olive
+];
+const PEST_EDGE = "#14110d"; // nori — every pest carries it, on every background
+const PEST_LIGHT = "#f4efe2"; // bone — the highlight that lifts the darker two
+const PEST_EYE_WHITE = "#fbf7ee";
+const PEST_EYE_PUPIL = "#14110d";
+
+/** Frightened: drained of colour, same silhouette — you still know what is running away. */
+const FRIGHT_FILL = "#d9cfb8"; // paper-dark
+const FRIGHT_EDGE = "#474d2e"; // olive-deep
+const FRIGHT_FLASH = "#f4efe2"; // bone
+
+/** How long before a power window ends the frightened pests start flashing, in ticks. */
+export const FRIGHT_FLASH_TICKS = 120;
+
+/** Eyes look where the pest is going. Offset in tile units. */
+const PUPIL_SHIFT = 0.07;
+
+function eyePair(
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  dir: Dir,
+  x: number,
+  y: number,
+  spread: number,
+  radius: number,
+): void {
+  const r = Math.max(1.2, tilePx * radius);
+  const dx = DX[dir] * tilePx * PUPIL_SHIFT;
+  const dy = DY[dir] * tilePx * PUPIL_SHIFT;
+  for (const side of [-1, 1]) {
+    const ex = x * tilePx + side * spread * tilePx;
+    const ey = y * tilePx;
+    ctx.beginPath();
+    ctx.ellipse(ex, ey, r, r * 1.15, 0, 0, Math.PI * 2);
+    ctx.fillStyle = PEST_EYE_WHITE;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ex + dx, ey + dy, r * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = PEST_EYE_PUPIL;
+    ctx.fill();
+  }
+}
+
+/** Rat: long low body, round ears, bare tail. */
+function drawRat(ctx: CanvasRenderingContext2D, tilePx: number, fill: string, edge: string): void {
+  const s = tilePx;
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = edge;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // Tail first, so the body sits over its root.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.34, s * 0.04);
+  ctx.quadraticCurveTo(-s * 0.62, s * 0.1, -s * 0.5, -s * 0.22);
+  ctx.strokeStyle = edge;
+  ctx.lineWidth = Math.max(1, s * 0.055);
+  ctx.stroke();
+
+  // Ears — the read at a glance, and they sit proud of the head outline.
+  for (const ear of [-0.02, 0.16]) {
+    ctx.beginPath();
+    ctx.arc(ear * s, -s * 0.27, s * 0.13, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, s * 0.05);
+    ctx.stroke();
+  }
+
+  // Body: long, low, with the snout drawn out to a point at the front.
+  ctx.beginPath();
+  ctx.moveTo(s * 0.46, -s * 0.02); // nose
+  ctx.quadraticCurveTo(s * 0.28, -s * 0.24, s * 0.02, -s * 0.24);
+  ctx.quadraticCurveTo(-s * 0.36, -s * 0.24, -s * 0.36, s * 0.04);
+  ctx.quadraticCurveTo(-s * 0.36, s * 0.3, s * 0.0, s * 0.3);
+  ctx.quadraticCurveTo(s * 0.3, s * 0.3, s * 0.46, -s * 0.02);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.stroke();
+
+  // Nose tip.
+  ctx.beginPath();
+  ctx.arc(s * 0.43, -s * 0.02, s * 0.035, 0, Math.PI * 2);
+  ctx.fillStyle = edge;
+  ctx.fill();
+}
+
+/** Sparrow: plump round body, wedge beak, fanned tail kicked up behind. */
+function drawSparrow(
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  fill: string,
+  edge: string,
+): void {
+  const s = tilePx;
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = edge;
+  ctx.lineJoin = "round";
+
+  // Fan tail, behind and above — a notched wedge, not a point.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.22, s * 0.02);
+  ctx.lineTo(-s * 0.52, -s * 0.26);
+  ctx.lineTo(-s * 0.44, -s * 0.06);
+  ctx.lineTo(-s * 0.54, s * 0.06);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.stroke();
+
+  // Body: a fat teardrop.
+  ctx.beginPath();
+  ctx.ellipse(0, s * 0.02, s * 0.36, s * 0.32, -0.12, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.stroke();
+
+  // Wing, as a closed shape so it survives at small sizes.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.16, -s * 0.04);
+  ctx.quadraticCurveTo(s * 0.02, s * 0.02, -s * 0.06, s * 0.22);
+  ctx.quadraticCurveTo(-s * 0.2, s * 0.14, -s * 0.16, -s * 0.04);
+  ctx.closePath();
+  ctx.fillStyle = PEST_LIGHT;
+  ctx.globalAlpha = 0.55;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.stroke();
+
+  // Beak: a hard triangular wedge, the one thing no other pest has.
+  ctx.beginPath();
+  ctx.moveTo(s * 0.3, -s * 0.12);
+  ctx.lineTo(s * 0.54, -s * 0.03);
+  ctx.lineTo(s * 0.3, s * 0.06);
+  ctx.closePath();
+  ctx.fillStyle = PEST_LIGHT;
+  ctx.fill();
+  ctx.stroke();
+}
+
+/** Weevil: wide domed shell, split down the middle, with a long curving snout. */
+function drawWeevil(
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  fill: string,
+  edge: string,
+): void {
+  const s = tilePx;
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.strokeStyle = edge;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // Legs, short and stubby, poking out under the shell.
+  for (const lx of [-0.24, 0, 0.2]) {
+    ctx.beginPath();
+    ctx.moveTo(lx * s, s * 0.16);
+    ctx.lineTo(lx * s - s * 0.06, s * 0.34);
+    ctx.lineWidth = Math.max(1, s * 0.045);
+    ctx.stroke();
+  }
+
+  // The snout: long, thin, curving down and forward. The weevil's whole identity.
+  ctx.beginPath();
+  ctx.moveTo(s * 0.24, -s * 0.06);
+  ctx.quadraticCurveTo(s * 0.5, -s * 0.02, s * 0.52, s * 0.22);
+  ctx.lineWidth = Math.max(1, s * 0.07);
+  ctx.stroke();
+
+  // Shell: a wide low dome.
+  ctx.beginPath();
+  ctx.ellipse(-s * 0.04, -s * 0.02, s * 0.4, s * 0.28, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.stroke();
+
+  // Elytra seam, front to back.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.42, -s * 0.02);
+  ctx.lineTo(s * 0.24, -s * 0.02);
+  ctx.lineWidth = Math.max(1, s * 0.04);
+  ctx.strokeStyle = edge;
+  ctx.stroke();
+}
+
+/** Locust: narrow body, long antennae, and a big Z-kinked jumping leg above the back. */
+function drawLocust(
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  fill: string,
+  edge: string,
+): void {
+  const s = tilePx;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = edge;
+
+  // Antennae, swept forward.
+  ctx.lineWidth = Math.max(1, s * 0.04);
+  for (const spread of [-0.06, 0.06]) {
+    ctx.beginPath();
+    ctx.moveTo(s * 0.2, -s * 0.12);
+    ctx.quadraticCurveTo(s * 0.4, -s * 0.34 + spread * s, s * 0.54, -s * 0.3 + spread * s);
+    ctx.stroke();
+  }
+
+  // Body: narrow and long.
+  ctx.beginPath();
+  ctx.ellipse(0, s * 0.04, s * 0.42, s * 0.21, -0.06, 0, Math.PI * 2);
+  ctx.fillStyle = fill;
+  ctx.lineWidth = Math.max(1, s * 0.05);
+  ctx.fill();
+  ctx.stroke();
+
+  // Folded wing case along the back.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.34, -s * 0.04);
+  ctx.quadraticCurveTo(-s * 0.02, -s * 0.16, s * 0.26, -s * 0.02);
+  ctx.lineWidth = Math.max(1, s * 0.04);
+  ctx.stroke();
+
+  // THE LEG. A hard Z above the body line — the shape that names this pest in monochrome,
+  // and the reason the locust is drawn narrow: the leg needs somewhere to be.
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.04, s * 0.06);
+  ctx.lineTo(-s * 0.3, -s * 0.34);
+  ctx.lineTo(-s * 0.46, s * 0.02);
+  ctx.lineWidth = Math.max(1.2, s * 0.075);
+  ctx.stroke();
+  ctx.strokeStyle = PEST_LIGHT;
+  ctx.lineWidth = Math.max(1, s * 0.035);
+  ctx.stroke();
+}
+
+const PEST_ART: readonly ((
+  ctx: CanvasRenderingContext2D,
+  tilePx: number,
+  fill: string,
+  edge: string,
+) => void)[] = [drawRat, drawSparrow, drawWeevil, drawLocust];
+
+/** Where the eyes sit on each pest, in tile units: x, y, spread, radius. */
+const PEST_EYES: readonly { x: number; y: number; spread: number; r: number }[] = [
+  { x: 0.16, y: -0.08, spread: 0.055, r: 0.05 }, // Rat
+  { x: 0.16, y: -0.12, spread: 0.05, r: 0.055 }, // Sparrow
+  { x: 0.06, y: -0.09, spread: 0.09, r: 0.05 }, //  Weevil
+  { x: 0.2, y: -0.02, spread: 0.045, r: 0.05 }, //  Locust
+];
+
+/** Just the eyes, for a pest that has been eaten and is on its way home. */
+function drawEyesOnly(ctx: CanvasRenderingContext2D, kind: number, tilePx: number, dir: Dir): void {
+  const e = PEST_EYES[kind];
+  eyePair(ctx, tilePx, dir, 0, e.y, 0.13, 0.075);
+}
+
+/**
+ * Draw one pest.
+ *
+ * `flashTicks` is the number of ticks left in the power window, or 0 when none is open;
+ * it drives the end-of-window flash. `wobble` is a small deterministic bob supplied by
+ * the caller so a frightened pest reads as panicking without any per-frame randomness.
+ */
+export function drawPest(
+  ctx: CanvasRenderingContext2D,
+  pest: Pest,
+  tilePx: number,
+  frightTicks: number,
+  animate: boolean,
+): void {
+  const px = (pest.x / SUB) * tilePx;
+  const py = (pest.y / SUB) * tilePx;
+
+  ctx.save();
+  ctx.translate(px, py);
+
+  if (pest.state === EYES) {
+    drawEyesOnly(ctx, pest.kind, tilePx, pest.dir);
+    ctx.restore();
+    return;
+  }
+
+  // Face the way we are going without ever rotating the silhouette off its feet: mirror
+  // for left, and lean into a vertical move rather than turning on its side.
+  if (pest.dir === LEFT) ctx.scale(-1, 1);
+  else if (pest.dir === UP) ctx.rotate(-0.22);
+  else if (pest.dir === DOWN) ctx.rotate(0.22);
+
+  let fill = PEST_BODY[pest.kind];
+  let edge = PEST_EDGE;
+  if (pest.frightened) {
+    // Flash near the end of the window. On the tick count, so it cannot desync.
+    const flashing = frightTicks > 0 && frightTicks < FRIGHT_FLASH_TICKS;
+    const on = flashing && animate && Math.floor(frightTicks / 8) % 2 === 0;
+    fill = on ? FRIGHT_FLASH : FRIGHT_FILL;
+    edge = FRIGHT_EDGE;
+  }
+
+  PEST_ART[pest.kind](ctx, tilePx, fill, edge);
+
+  const e = PEST_EYES[pest.kind];
+  // A frightened pest looks straight ahead at nothing in particular.
+  eyePair(ctx, tilePx, pest.frightened ? RIGHT : pest.dir, e.x, e.y, e.spread, e.r);
+
+  ctx.restore();
+}
+
+/** Draw all four, penned pests last so an emerging pest is never hidden behind the gate. */
+export function drawPests(
+  ctx: CanvasRenderingContext2D,
+  pests: readonly Pest[],
+  tilePx: number,
+  frightTicks: number,
+  animate: boolean,
+): void {
+  for (const pest of pests) drawPest(ctx, pest, tilePx, frightTicks, animate);
+}
+
+/** Small standing sprite for the HUD's remaining-lives row. */
+export function drawPestIcon(
+  ctx: CanvasRenderingContext2D,
+  kind: number,
+  tilePx: number,
+): void {
+  PEST_ART[kind](ctx, tilePx, PEST_BODY[kind], PEST_EDGE);
 }

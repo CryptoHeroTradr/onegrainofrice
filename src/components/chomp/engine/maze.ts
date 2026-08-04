@@ -30,8 +30,29 @@ export const ROWS = 31;
  * corridor.
  *
  * Reviewed and signed off before implementation; see docs/rice-chomp-plan.md §7 for
- * the loop analysis (22 independent loops, every one with 2+ entrances, so no loop
- * can be kited indefinitely by geometry alone).
+ * the loop analysis (every loop has 2+ entrances, so no loop can be kited indefinitely
+ * by geometry alone).
+ *
+ * ── AMENDED 2026-08-04: row 24, cols 10 and 17 ──────────────────────────────────
+ * The bottom-centre room — row 25 cols 10-17, the two shafts beneath it, and the stretch
+ * of row 29 they land on — is where the PLAYER SPAWNS, and it originally had exactly two
+ * ways out, both on row 29 and eight tiles apart. Two pests standing on those two tiles
+ * seal it completely: every corridor is one tile wide, so there is nothing to squeeze
+ * past. Measured, not guessed — test/chomp-kiting.test.ts parks two pests on the two
+ * gateways and a competent bot dies inside a second with no move that survives, and over
+ * a long unassisted run the live AI covers both gateways about 1.5% of the time by
+ * accident. A spawn point that can be sealed by two pests wandering into position is a
+ * death trap, not a risk pocket.
+ *
+ * Opening (10,24) and (17,24) gives the room two further exits, upward into the row-23
+ * corridor, and takes it from two gateways to four. It keeps every corridor one tile
+ * wide, keeps the mirror symmetry, and adds two grains.
+ *
+ * Why upward rather than sideways along row 25: opening row 25 at cols 8-9 and 18-19 —
+ * the literal lateral cut — would fuse the three bottom rooms into one full-width
+ * corridor directly above the full-width row 29, joined by six shafts. That is a ladder,
+ * and a ladder is the most kiteable shape there is. The whole point of the change is to
+ * make the room harder to seal, not easier to farm.
  */
 export const MAZE: readonly string[] = [
   "############################", //  0
@@ -58,7 +79,7 @@ export const MAZE: readonly string[] = [
   "#.####.#####.##.#####.####.#", // 21
   "#.####.#####.##.#####.####.#", // 22
   "#o...........##...........o#", // 23
-  "####.##.############.##.####", // 24
+  "####.##.##.######.##.##.####", // 24  <- cols 10 and 17: the pocket's lateral exits
   "#.......##........##.......#", // 25
   "#.#####.##.######.##.#####.#", // 26
   "#.#####.##.######.##.#####.#", // 27
@@ -77,6 +98,49 @@ export const TUNNEL_ROW = 14;
  */
 export const PLAYER_SPAWN_COL = 14;
 export const PLAYER_SPAWN_ROW = 25;
+
+// --- the pen ----------------------------------------------------------------
+// Walls cols 10-17 rows 12-16; interior cols 11-16, rows 13-15; gate at row 12, cols
+// 13-14 opening UPWARD into the row-11 corridor.
+
+export const PEN_LEFT = 11;
+export const PEN_RIGHT = 16;
+export const PEN_TOP = 13;
+export const PEN_BOTTOM = 15;
+export const GATE_ROW = 12;
+
+/**
+ * The single column pests use to enter and leave. The gate is two tiles wide, but a pest
+ * that exits down the boundary between them would sit permanently off-centre and break
+ * the invariant that the off-axis coordinate is always exactly a tile centre. One lane,
+ * on a centre, costs nothing visually and removes a whole class of special case.
+ */
+export const PEN_LANE_COL = 13;
+/** The row inside the pen that pests sit on, and route along on the way out. */
+export const PEN_LANE_ROW = 14;
+/** The corridor tile immediately above the gate. Where pests emerge, and where eyes aim. */
+export const PEN_ENTRY_COL = PEN_LANE_COL;
+export const PEN_ENTRY_ROW = 11;
+
+/**
+ * Where each pest waits, indexed by the pest order in levels.ts (Rat, Sparrow, Weevil,
+ * Locust). The Rat starts on the corridor above the gate rather than inside it — the
+ * direct pursuer is on the board from the first tick, which is what makes the opening
+ * seconds of a level feel like a chase rather than a warm-up.
+ */
+export const PEST_HOMES: readonly { col: number; row: number; inPen: boolean }[] = [
+  { col: PEN_ENTRY_COL, row: PEN_ENTRY_ROW, inPen: false }, // Rat
+  { col: PEN_LANE_COL, row: PEN_LANE_ROW, inPen: true }, //    Sparrow
+  { col: PEN_LEFT, row: PEN_LANE_ROW, inPen: true }, //        Weevil
+  { col: PEN_RIGHT, row: PEN_LANE_ROW, inPen: true }, //       Locust
+];
+
+/** Is this tile the pen gate or the pen interior? Off-limits to pests that are out. */
+export function isPenTile(col: number, row: number): boolean {
+  const c = wrapCol(col);
+  if (row === GATE_ROW) return c === 13 || c === 14;
+  return row >= PEN_TOP && row <= PEN_BOTTOM && c >= PEN_LEFT && c <= PEN_RIGHT;
+}
 
 const CHAR_TO_TILE: Record<string, Tile> = {
   "#": WALL,
@@ -162,9 +226,23 @@ export function isOpenForPlayer(grid: Uint8Array, col: number, row: number): boo
   return t !== WALL && t !== GATE;
 }
 
-/** Can a PEST occupy this tile? Same, but the gate is passable. */
-export function isOpenForPest(grid: Uint8Array, col: number, row: number): boolean {
-  return tileAt(grid, col, row) !== WALL;
+/**
+ * Can a PEST occupy this tile?
+ *
+ * `allowPen` is the whole subtlety. A pest that is out in the maze must not be able to
+ * duck back into the pen — without this it would treat the pen as a shortcut and park in
+ * the one place the player cannot follow. Only a pest that is deliberately leaving
+ * (EXITING) or deliberately returning (EYES / ENTERING) passes the gate.
+ */
+export function isOpenForPest(
+  grid: Uint8Array,
+  col: number,
+  row: number,
+  allowPen = false,
+): boolean {
+  if (tileAt(grid, col, row) === WALL) return false;
+  if (!allowPen && isPenTile(col, row)) return false;
+  return true;
 }
 
 // --- subunit <-> tile conversion -------------------------------------------
@@ -186,4 +264,20 @@ export function tileOf(sub: number): number {
 export function offsetFromCentre(sub: number): number {
   const t = tileOf(sub);
   return sub - tileCentre(t);
+}
+
+/**
+ * Horizontal separation between two subunit x coordinates, taking the shorter way round
+ * the warp. Used for collision: two entities either side of the tunnel mouth are half a
+ * tile apart, not twenty-seven tiles apart.
+ *
+ * Deliberately NOT used by the pest AI's distance-to-target comparison — see the note in
+ * pests.ts on why the AI is kept warp-blind.
+ */
+export function wrapDeltaSub(a: number, b: number): number {
+  const span = COLS * SUB;
+  let d = a - b;
+  if (d > span / 2) d -= span;
+  else if (d < -span / 2) d += span;
+  return d;
 }

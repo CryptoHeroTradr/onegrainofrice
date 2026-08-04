@@ -28,6 +28,27 @@ import { EMPTY, GATE, GRAIN, POWER, SUB, WALL } from "@/components/chomp/engine/
 
 const { grid } = parseMaze();
 
+/**
+ * Every tile the player can actually stand on. The pen interior is open floor but is
+ * sealed behind the gate, so it is walkable-looking and permanently unreachable — and
+ * including it in a topology measurement gives an answer about a room nobody can enter.
+ */
+function reachableFromSpawn(): Set<string> {
+  const seen = new Set([`${PLAYER_SPAWN_COL},${PLAYER_SPAWN_ROW}`]);
+  const stack: [number, number][] = [[PLAYER_SPAWN_COL, PLAYER_SPAWN_ROW]];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur) break;
+    for (const n of playerNeighbours(cur[0], cur[1])) {
+      const k = n.join(",");
+      if (seen.has(k)) continue;
+      seen.add(k);
+      stack.push(n);
+    }
+  }
+  return seen;
+}
+
 /** Walkable-by-player neighbours, with the tunnel row wrapping. */
 function playerNeighbours(col: number, row: number): [number, number][] {
   const out: [number, number][] = [];
@@ -79,7 +100,9 @@ describe("maze shape", () => {
 
   it("parses to the counts the design was signed off on", () => {
     const parsed = parseMaze();
-    expect(parsed.totalGrains).toBe(280);
+    // 280 until 2026-08-04, when opening (10,24) and (17,24) to give the spawn pocket
+    // two more ways out added a grain each. See the amendment note in maze.ts.
+    expect(parsed.totalGrains).toBe(282);
     expect(parsed.totalPower).toBe(4);
     expect(parsed.grid).toHaveLength(COLS * ROWS);
   });
@@ -165,6 +188,89 @@ describe("maze topology", () => {
         expect(reachable.has(`${c},${r}`)).toBe(false);
       }
     }
+  });
+
+  /**
+   * GIRTH — the length of the shortest cycle in the corridor network.
+   *
+   * It is the number that says whether the maze is a network of loops or a set of tight
+   * rings a player can spin in. It was verified once by a throwaway script when the layout
+   * was signed off; it is a test now because the row-24 amendment (see maze.ts) changed
+   * the loop structure and "I checked it that one time" is not a guarantee that survives
+   * the next edit.
+   *
+   * The pen is excluded, and that exclusion matters: the pen is a 6×3 room, so including
+   * it reports a girth of 4 and ten 2×2 blocks that are not corridors at all.
+   */
+  it("has a shortest cycle of at least ten tiles", () => {
+    const reachable = reachableFromSpawn();
+    const key = (c: number, r: number) => `${c},${r}`;
+    const nbrs = (c: number, r: number) =>
+      playerNeighbours(c, r).filter(([nc, nr]) => reachable.has(key(nc, nr)));
+
+    // Standard shortest-cycle search: drop each edge in turn and find the shortest path
+    // that still joins its endpoints. That path plus the dropped edge is a cycle.
+    let girth = Infinity;
+    for (const cell of reachable) {
+      const [c, r] = cell.split(",").map(Number);
+      for (const [nc, nr] of nbrs(c, r)) {
+        // Breadth-first from (c,r) to (nc,nr) without using the direct edge.
+        const seen = new Map<string, number>([[key(c, r), 0]]);
+        let frontier: [number, number][] = [[c, r]];
+        let found = Infinity;
+        while (frontier.length && found === Infinity) {
+          const next: [number, number][] = [];
+          for (const [cc, rr] of frontier) {
+            const d = seen.get(key(cc, rr)) as number;
+            if (d + 1 >= girth) continue;
+            for (const [xc, xr] of nbrs(cc, rr)) {
+              if (cc === c && rr === r && xc === nc && xr === nr) continue; // the dropped edge
+              if (xc === c && xr === r && cc === nc && rr === nr) continue;
+              const k = key(xc, xr);
+              if (seen.has(k)) continue;
+              seen.set(k, d + 1);
+              if (xc === nc && xr === nr) {
+                found = d + 1;
+                break;
+              }
+              next.push([xc, xr]);
+            }
+            if (found !== Infinity) break;
+          }
+          frontier = next;
+        }
+        if (found + 1 < girth) girth = found + 1;
+      }
+    }
+    expect(girth).toBeGreaterThanOrEqual(10);
+  });
+
+  /**
+   * The room the player spawns in must not be sealable by two pests.
+   *
+   * It was, until 2026-08-04: row 25 cols 10-17 plus the two shafts under it had exactly
+   * two ways out, both on row 29, and a pest on each one is a closed box — every corridor
+   * here is one tile wide, so there is nothing to slip past. Two pests wandering into
+   * position ended the run wherever the player happened to be standing.
+   * test/chomp-kiting.test.ts measures that end of it; this asserts the geometry that
+   * makes it survivable.
+   */
+  it("gives the spawn pocket more than two ways out", () => {
+    const inPocket = (c: number, r: number) => {
+      if (c < 10 || c > 17) return false;
+      if (r === 25) return true;
+      return (c === 10 || c === 17) && r >= 26 && r <= 28;
+    };
+    const ways: string[] = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!inPocket(c, r)) continue;
+        for (const [nc, nr] of playerNeighbours(c, r)) {
+          if (!inPocket(nc, nr)) ways.push(`${c},${r} -> ${nc},${nr}`);
+        }
+      }
+    }
+    expect(ways).toHaveLength(4);
   });
 
   it("has a gate above the pen that the player cannot pass", () => {

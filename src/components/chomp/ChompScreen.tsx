@@ -4,14 +4,15 @@ import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ChompCanvas, type ChompCanvasHandle, type ChompStats } from "./ChompCanvas";
+import { GAMEOVER } from "./engine/game";
 
 /**
  * RICE CHOMP — the screen. HUD, framing and controls; the game itself is
  * <ChompCanvas />.
  *
- * PHASE 2: maze and player, keyboard only. No pests, no audio, no leaderboard. The
- * point of this build is to judge how movement feels, so the chrome stays out of the
- * way and the numbers on show are the ones that tell you the loop is running.
+ * PHASE 3: the four pests, the chase, lives and cornering. Still keyboard only; no audio,
+ * no bonus items, no leaderboard. The chrome stays out of the way — what is on show is
+ * what tells you the chase is working.
  *
  * The HUD is marked translate="no": TranslateProvider mounts Google Translate site-wide
  * and it will happily rewrite live score digits mid-run.
@@ -41,17 +42,22 @@ export function ChompScreen() {
   const reduced = usePrefersReducedMotion();
   const gameRef = useRef<ChompCanvasHandle>(null);
   const [stats, setStats] = useState<ChompStats>({
+    score: 0,
+    lives: 3,
+    level: 1,
     grainsEaten: 0,
     powerEaten: 0,
     grainsRemaining: 0,
+    pestsEaten: 0,
     tick: 0,
     paused: false,
+    phase: 0,
   });
 
   // Identity-stable so ChompCanvas never re-runs its boot effect.
   const onStats = useCallback((s: ChompStats) => setStats(s), []);
 
-  const cleared = stats.grainsRemaining === 0 && stats.tick > 0;
+  const gameOver = stats.phase === GAMEOVER;
   const seconds = (stats.tick / 60).toFixed(1);
 
   return (
@@ -67,7 +73,7 @@ export function ChompScreen() {
             RICE CHOMP
           </h1>
           <span className="font-mono text-[0.6rem] tracking-[0.18em] text-steamed/35 uppercase">
-            Phase 2 · movement test
+            Phase 3 · the pests
           </span>
         </div>
         <Link
@@ -82,9 +88,11 @@ export function ChompScreen() {
         translate="no"
         className="notranslate flex flex-wrap items-end gap-x-8 gap-y-3 border-y border-steamed/10 px-4 py-3 sm:px-6"
       >
-        <Stat label="Grains" value={String(stats.grainsEaten)} tone="text-khaki" />
-        <Stat label="Golden" value={String(stats.powerEaten)} tone="text-salmon" />
-        <Stat label="Left" value={String(stats.grainsRemaining)} />
+        <Stat label="Score" value={String(stats.score)} tone="text-khaki" />
+        <Stat label="Lives" value={"◆".repeat(stats.lives) || "—"} tone="text-salmon" />
+        <Stat label="Level" value={String(stats.level)} />
+        <Stat label="Pests" value={String(stats.pestsEaten)} tone="text-tuna" />
+        <Stat label="Left" value={String(stats.grainsRemaining)} tone="text-steamed/70" />
         <Stat label="Time" value={`${seconds}s`} tone="text-steamed/70" />
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -113,11 +121,16 @@ export function ChompScreen() {
           className="h-full w-full"
         />
 
-        {(stats.paused || cleared) && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-nori/70">
+        {(stats.paused || gameOver) && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-nori/70">
             <p className="font-display-round text-3xl font-semibold text-khaki">
-              {cleared ? "Maze cleared" : "Paused"}
+              {gameOver ? "Game over" : "Paused"}
             </p>
+            {gameOver && (
+              <p className="font-mono text-xs text-steamed/60">
+                {stats.score} points · level {stats.level}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -140,7 +153,8 @@ export function ChompScreen() {
           <span>pause</span>
         </span>
         <span className="text-steamed/30">
-          Keyboard only for now — touch controls and the pests come next.
+          Turn early into a corner and you gain ground — the pests can only turn dead
+          centre. Keyboard only for now; touch controls come next.
         </span>
       </footer>
     </main>

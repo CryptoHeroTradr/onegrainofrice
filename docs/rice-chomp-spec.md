@@ -63,11 +63,18 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
 `vitest` here is node-env and DOM-free by design. Maze parsing, per-pest target-tile selection, junction tiebreak, mode-cycle timing and scoring must be pure functions, importable without a DOM, and unit tested. The render layer can stay untested. `noUncheckedIndexedAccess` is off, so bounds-guard every tile lookup by hand.
 
+**The bot is part of the test suite, not a throwaway.** *Added 2026-08-04.* `test/chomp-support.ts` holds a playing bot — breadth-first danger field, one-tile-ahead decisions so it corners like a person, scored by how much of the maze it can still reach before the pests cut it off. `test/chomp-kiting.test.ts` uses it to answer questions the geometry can only half-answer: whether any loop can be orbited forever, and whether a room can be sealed. Two rules learned the hard way and worth keeping:
+
+- **A bot that dithers is a bot bug, not a maze verdict.** The first version re-decided every tile and spent whole runs oscillating between two adjacent tiles, which made the maze look far more lethal than it is. It commits in corridors and only re-decides at junctions.
+- **Check the check.** A bot that dies because it cannot see far enough looks exactly like a maze that cannot be farmed. The suite re-runs the conclusion at double the lookahead; if that rescued it, the finding was about the bot.
+
 ## The maze
 
 - 28 columns × 31 rows on the logical 8-unit tile grid (see *Tile grid vs render strategy*).
 - Original symmetrical layout, warp tunnel on the left and right edges, central pen, no unfair dead ends, fully connected under warp-aware flood fill.
-- Enough cross-connections that the maze is a network of loops, not parallel shafts — but no loop so long or so well-connected that all four pests can be kited around it indefinitely.
+- Enough cross-connections that the maze is a network of loops, not parallel shafts — but no loop so long or so well-connected that all four pests can be kited around it indefinitely. **Measured in Phase 3, not assumed:** `test/chomp-kiting.test.ts` drives a bot that reads the whole board and runs wherever there is most room, and it dies every time. See *Testability*.
+- **No room the player can be sealed into by two pests.** Every corridor is one tile wide, so a pest standing on a way out is a closed door; a room with two ways out is therefore a box that two pests can shut. *Added 2026-08-04: the bottom-centre room the player SPAWNS in had exactly two, both on row 29. Row 24 cols 10 and 17 were opened to take it to four. The girth is unchanged at 10 and there are still no 2×2 open blocks outside the pen.*
+- **Girth (shortest cycle) is 10, and no corridor is two tiles wide.** A 2-wide region lets pests pass each other and lets the player sidestep, which breaks pursuit outright. Both are asserted in `test/chomp-maze.test.ts`, over the tiles the player can actually **reach** — the pen is a 6×3 room, and including it reports a girth of 4 about a room nobody can enter.
 - Stored as a string array map, easy to edit, structured so additional layouts can be dropped in per level.
 - Tile types: wall, path, grain, golden grain, pen door, tunnel, empty.
 
@@ -84,7 +91,10 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
   **The hat is attached to the character, not to the screen.** Going UP the hat therefore points screen-left and the eye sits left of the mouth; going DOWN the hat points screen-right. That is intended and must not be "fixed" — a body leaning one way under a hat counter-rotated the other way reads as broken. *Amended 2026-08-04: this replaces a per-facing placement table that positioned the hat and eye in screen space. That approach needed a special inverted-cone hat for UP, because with the mouth opening through the top of the frame there was no room left above the head. Under a single-sprite transform the mouth only ever opens through the sprite's own right-hand side, which is never where the hat is, so the hat and the mouth cone can no longer compete for space at any facing and the UP special case is deleted rather than worked around.*
 - Grid-aligned movement with a **queued turn buffer**: a direction pressed before a junction is taken the instant it becomes legal. This is what makes the genre feel good — it is not optional.
-- Slightly faster than the pests on open path.
+- **CORNERING is the skill ceiling, and it is a mechanic, not a feel.** A turn keyed *early* — up to `cornerLead` subunits before the junction centre — does not wait for the centre. The player glides diagonally through the corner, advancing on both axes at once, and leaves the junction having skipped that much path. A turn keyed *late*, within `turnTolerance` past the centre, is still accepted but glides backwards and pays the same distance instead of banking it. **Pests cannot do this: they turn only on exact tile centres.** So every corner taken early is real distance bought off a pursuer, and it compounds — a four-corner loop is a tile and a third per lap, measured. *Added 2026-08-04, Phase 3.*
+  - **`cornerLead` and `turnTolerance` are separate dials and must stay separate.** Widening the tolerance to chase a better cornering feel is the classic mistake: it produces the same symptom (turns take more readily) and none of the benefit (a late turn still costs you the corner). `turnTolerance` is late-input forgiveness only. Both live in `levels.ts`, and `test/chomp-cornering.test.ts` pins them apart.
+  - The whole glide is contained inside one tile, so it can never clip a wall, skip a grain, or enter a tile the turn did not check.
+- **Faster than the pests early, slower than them late.** The player's speed is flat across levels and the pests ramp past it from around level 13. That is the difficulty curve, and it is why cornering exists: once a pest is faster on open path, the corner is the only place a player can still gain. *Amended 2026-08-04: this originally said "slightly faster than the pests on open path" without qualification, which describes level 1 and nothing after it.*
 - **Eating costs whole frozen ticks, not a reduced speed:** 1 tick of no movement per grain, 3 ticks per golden grain. *Amended 2026-08-03: this originally said "slightly slower while chomping grains". A blanket eating-speed value does not produce the same texture — the freeze is the mechanism that lets a pursuer close real distance on a player clearing a fresh corridor, and it is the reason the genre's chases tighten where the grains are thickest. There is no separate eating-speed dial; the freeze counts live in `levels.ts` with every other tuning number.*
 - 3 lives, extra life at 10,000 points.
 
@@ -92,16 +102,31 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
 1. **Rat** — direct pursuit: targets the player's current tile.
 2. **Sparrow** — ambusher: targets 4 tiles ahead of the player's facing direction.
-3. **Weevil** — flanker: targets a tile derived from the player's position mirrored through the Rat's position.
+3. **Weevil** — flanker: take the tile **2 ahead of the player's facing** as a pivot, then **double the vector from the Rat to that pivot**. Target = `2 × pivot − rat`. It swings wide when the Rat is far and pinches tight when the Rat is close, so the two of them cover both ends of a corridor without either being told to. *Amended 2026-08-04: this originally read "a tile derived from the player's position mirrored through the Rat's position". Read literally that is `2 × rat − player`, which puts the target on the far side of the Rat from the player — i.e. behind them whenever the Rat is chasing — and sends the flanker away from the fight. The formula above is what "flanker" means and is what is implemented; `test/chomp-pests.test.ts` pins the direction so the literal reading cannot creep back.*
 4. **Locust** — skittish: pursues directly when far from the player, retreats to its scatter corner within 8 tiles.
 
 Shared behavior:
 
 - Never reverse direction except on a mode change.
-- At each junction, choose the legal direction minimizing Euclidean distance to the current target tile, tiebreak order up / left / down / right.
-- Mode cycle per level: scatter → chase → scatter → chase, scatter phases shortening as levels progress. Each pest has its own scatter corner.
-- Frightened mode on golden grain: pale, slowed, semi-random at junctions. Eaten pests become eyes that route back to the pen and respawn.
-- Pen exit on a dot counter plus timer, staggered so all four don't emerge together.
+- At each junction, choose the legal direction minimizing Euclidean distance to the current target tile, tiebreak order up / left / down / right. Distances are compared **squared** (monotonic, so it changes no decision, and it keeps the AI in integer arithmetic) and are **warp-blind** — the AI does not know the tunnel joins the two edges of the maze, which is what makes the tunnel an escape route rather than a corridor with extra steps.
+- **Pests turn only on exact tile centres.** This is the asymmetry cornering is built on; see *The player*.
+- Mode cycle per level: scatter → chase → scatter → chase, scatter phases shortening as levels progress. Each pest has its own scatter corner, and all four are **real corridor tiles** rather than off-board points, so a pest that reaches its corner circles it instead of jamming into a wall. The cycle clock **pauses while a power window is open**, so using a golden grain never silently costs the player a scatter phase.
+- Frightened mode on golden grain: pale, slowed, semi-random at junctions from a **seeded** PRNG — never `Math.random()`, because the run has to replay. Frightened is per-pest, not global: one eaten mid-window comes back as itself and hunts while its siblings are still fleeing.
+- Eaten pests become eyes that route back to the pen and respawn. Eyes follow a **precomputed breadth-first field**, not the greedy junction rule — greedy pursuit of a fixed point can stall in a local minimum, and an eye that never gets home is a pest that never comes back.
+- Pen exit on a dot counter plus timer, staggered so all four don't emerge together. The Rat starts outside; the other three wait.
+
+### Legibility — four silhouettes, not four colours
+
+*Added 2026-08-04, Phase 3, for the same reason the player has a hat.*
+
+A textured paddy background is coming in Phase 4+, and colour alone will not survive it — nor will it survive a colourblind player, or a phone in sunlight. **Each pest is built around one outline feature that reads in monochrome**, and every one is stroked in nori so its shape holds an edge against whatever ends up behind it:
+
+- **Rat** — two round ears proud of the head, and a long bare tail. Low, long body.
+- **Sparrow** — a hard wedge beak and a fanned tail kicked up behind. Plump and round.
+- **Weevil** — a wide low domed shell with a seam, and a long down-curving snout.
+- **Locust** — a Z-kinked jumping leg standing above the back, and long antennae. Narrow body.
+
+**Orientation differs from the player's rule, deliberately.** The player is one right-facing sprite rotated bodily, which works because a grain of rice reads at any angle. A rat rotated 90° does not read as a rat. Pests therefore stay upright, mirror horizontally to face left, lean slightly into a vertical move, and show direction with **where the eye is looking** rather than by turning the body.
 
 ## Scoring and progression
 
@@ -109,7 +134,7 @@ Shared behavior:
 - Bonus items appear twice per level at maze center for ~9 seconds: soy sauce bottle, chopsticks, nori sheet, sake cup, chili, sesame — escalating values by level.
 - Level completes when all grains are cleared → maze flash → next level, faster pests, shorter frightened duration. From level 5 frightened mode is eventually disabled entirely.
 - Interstitial cutscenes after levels 2 and 5: a short procedurally-animated beat (rat steals a grain, bowl chases it off-screen). Under 4 seconds, skippable.
-- **Every tuning number** — speeds, timers, mode durations, score values, and the per-grain eating freeze — lives in `levels.ts`. No magic numbers in engine code. (`levels.ts` is created in Phase 3; Phase 2 predates it and holds its two movement constants in `engine/game.ts`.)
+- **Every tuning number** — speeds, timers, mode durations, score values, the per-grain eating freeze, and the two movement dials (`cornerLead`, `turnTolerance`) — lives in `levels.ts`. No magic numbers in engine code. *Amended 2026-08-04: `levels.ts` now exists, and the two constants Phase 2 kept in `engine/game.ts` have moved into it. `game.ts` re-exports them as a compatibility seam and nothing else.* Speeds are authored in tiles/second and durations in seconds, converted once at module load; everything the simulation reads is an integer, because the simulation is replayed server-side and floats do not replay.
 
 ## Controls
 

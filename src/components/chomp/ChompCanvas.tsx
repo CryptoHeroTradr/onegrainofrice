@@ -3,13 +3,24 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { COLS, ROWS } from "./engine/maze";
 import {
+  DYING,
+  READY,
   createGame,
   setWanted,
   tick as stepGame,
   type GameState,
 } from "./engine/game";
+import { DEATH_PAUSE_TICKS, DEATH_TICKS } from "./engine/levels";
 import { DOWN, LEFT, RIGHT, TICK_HZ, UP, type Dir } from "./engine/types";
-import { bakeGrains, bakeWalls, drawPlayer, drawPower, syncGrainLayer } from "./engine/render";
+import {
+  bakeGrains,
+  bakeWalls,
+  drawPests,
+  drawPlayer,
+  drawPlayerDeath,
+  drawPower,
+  syncGrainLayer,
+} from "./engine/render";
 
 /**
  * Canvas host for RICE CHOMP. Owns the render loop, the canvas sizing and the keyboard,
@@ -33,11 +44,17 @@ const MAX_DPR = 2;
 const STATS_MS = 100;
 
 export interface ChompStats {
+  score: number;
+  lives: number;
+  level: number;
   grainsEaten: number;
   powerEaten: number;
   grainsRemaining: number;
+  pestsEaten: number;
   tick: number;
   paused: boolean;
+  /** One of the engine's Phase constants; the screen only distinguishes game over. */
+  phase: number;
 }
 
 export interface ChompCanvasHandle {
@@ -89,6 +106,8 @@ export const ChompCanvas = forwardRef<
   const bakedRef = useRef<Uint8Array | null>(null);
   const tileRef = useRef(0);
   const dprRef = useRef(1);
+  /** The level the baked layers belong to. A new level refills the maze, so it re-bakes. */
+  const bakedLevelRef = useRef(0);
 
   const statsAtRef = useRef(0);
   const onStatsRef = useRef(onStats);
@@ -105,6 +124,7 @@ export const ChompCanvas = forwardRef<
     wallsRef.current = bakeWalls(state.grid, tilePx, dpr);
     grainsRef.current = bakeGrains(state.grid, tilePx, dpr);
     bakedRef.current = Uint8Array.from(state.grid);
+    bakedLevelRef.current = state.level;
   };
 
   const paint = () => {
@@ -118,6 +138,10 @@ export const ChompCanvas = forwardRef<
     const dpr = dprRef.current;
     const w = COLS * tilePx;
     const h = ROWS * tilePx;
+
+    // A new level puts every grain back, and the eaten-grain layer only ever ERASES.
+    // Re-bake rather than trying to patch grains back into it.
+    if (bakedLevelRef.current !== state.level) bake();
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#000000";
@@ -137,7 +161,17 @@ export const ChompCanvas = forwardRef<
     // Pulse is time-free: derived from the tick count, so it cannot desync.
     const pulse = reducedRef.current ? 1 : (Math.sin(state.tick / 9) + 1) / 2;
     drawPower(ctx, state.grid, tilePx, pulse);
-    drawPlayer(ctx, state.player, tilePx, !state.player.blocked);
+
+    if (state.phase === DYING) {
+      // The pests leave the board the moment the player is caught, so the last thing on
+      // screen is the mistake rather than the crowd that punished it.
+      const elapsed = DEATH_PAUSE_TICKS + DEATH_TICKS - state.phaseTicks;
+      drawPlayerDeath(ctx, state.player, tilePx, (elapsed - DEATH_PAUSE_TICKS) / DEATH_TICKS);
+      return;
+    }
+
+    drawPests(ctx, state.pests, tilePx, state.frightTicks, !reducedRef.current);
+    drawPlayer(ctx, state.player, tilePx, !state.player.blocked && state.phase !== READY);
   };
 
   const publishStats = (now: number, force = false) => {
@@ -146,11 +180,16 @@ export const ChompCanvas = forwardRef<
     if (!force && now - statsAtRef.current < STATS_MS) return;
     statsAtRef.current = now;
     onStatsRef.current?.({
+      score: state.score,
+      lives: state.lives,
+      level: state.level,
       grainsEaten: state.grainsEaten,
       powerEaten: state.powerEaten,
       grainsRemaining: state.grainsRemaining,
+      pestsEaten: state.pestsEaten,
       tick: state.tick,
       paused: pausedRef.current,
+      phase: state.phase,
     });
   };
 
