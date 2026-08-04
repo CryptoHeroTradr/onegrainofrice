@@ -323,6 +323,12 @@ export const PEST_TOP_RATIO = 1.0625;
  * (0.98, say) and the curve becomes strictly-slower-pests in the reference game's mould:
  * every entry above the ceiling flattens onto it, every entry below is untouched, and the
  * shape of the early levels is preserved exactly. One number, no table surgery.
+ *
+ * It is one edit HERE, not one edit overall — measured, not assumed: setting the cap to
+ * 0.98 fails six tests in test/chomp-levels.test.ts, all of them assertions that the
+ * crossover exists (parity at 7, faster after, tops out at PEST_TOP_RATIO, stops paying on
+ * the 32-tile pen loop). That is the alarm working: reverting the crossover means telling
+ * those six tests the game no longer has one. Nothing else in the engine reads the table.
  */
 const PEST_RATIO_CAP = PEST_TOP_RATIO;
 

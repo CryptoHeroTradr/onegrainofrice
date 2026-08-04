@@ -783,16 +783,25 @@ open, no grain · `=` pen gate.
 > it stood at the time — scoped to player-**reachable** tiles only, i.e. with the artifact
 > already excluded:
 >
-> | maze | reachable cells | grains | girth | 2×2 blocks |
-> |---|---:|---:|---:|---:|
-> | draft row 28 | 318 | 298 | **4** | **18**, all at rows 28–29 |
-> | shipped row 28 | 306 | 286 | **10** | 0 |
+> | maze | row 24 | reachable cells | grains + power | girth | 2×2 blocks |
+> |---|---|---:|---:|---:|---:|
+> | draft row 28 | pre-amendment | 318 | 298 | **4** | **18**, all at rows 28–29 |
+> | shipped row 28 | pre-amendment | 304 | 284 | **10** | 0 |
+> | draft row 28 | current | 320 | 300 | **4** | **18**, all at rows 28–29 |
+> | shipped row 28 | current | 306 | 286 | **10** | 0 |
+>
+> *Corrected 2026-08-04, second pass: the first version of this table had two rows measured
+> against **different** row 24s — draft against the pre-amendment row 24, shipped against
+> the current one — which made the cost read as 12. Both row-24 states are given now, and
+> the cost is 14 either way. A table whose rows are not the same experiment is worse than
+> no table.*
 >
 > The room was real. The 18 blocks run `(1,28)…(9,28)` and their mirror — the bottom two
-> rows, nowhere near the pen — and the pen artifact cannot produce them: its own girth-4
-> comes with the pen's 6×3 interior and nothing on row 28. The two findings coincide in the
-> number and in nothing else. Cost confirmed at exactly 14 grains (298 → 284 against the
-> same row 24), and it bought girth 4 → 10.
+> rows, nowhere near the pen — and the pen artifact cannot produce them: filtering to
+> reachable tiles removes the pen's own 12 blocks (rows 11–14, cols 11–15) entirely, and
+> the 18 survive that filter. The two findings coincide in the number and in nothing else.
+> Cost confirmed at exactly 14 grains against a fixed row 24 (298 → 284, or 300 → 286), and
+> it bought girth 4 → 10.
 
 **Machine-verified** (re-measured 2026-08-04 after the row-24 revision; the girth and 2×2
 checks are now committed tests in `test/chomp-maze.test.ts` rather than scratchpad scripts):
