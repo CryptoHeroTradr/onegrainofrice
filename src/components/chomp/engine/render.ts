@@ -28,6 +28,15 @@ const PLAYER_RIM = "#c4b370"; // khaki
 const PLAYER_EYE = "#14110d"; // nori
 const GATE_FILL = "#f4a08a"; // salmon
 
+// Farmer hat. Straw is khaki, the brim catches more light (paper-dark), and the whole
+// silhouette is outlined in olive-deep. That outline is doing the real work: the pellet
+// grains are flat khaki with no stroke, so a hard dark edge is the one feature the player
+// has that nothing else on the board does.
+const HAT_CONE = "#c4b370"; // khaki
+const HAT_BRIM = "#d9cfb8"; // paper-dark
+const HAT_EDGE = "#474d2e"; // olive-deep
+const HAT_RIDGE = "#6a6c3a"; // olive
+
 /** Subunits travelled per full open→closed→open chomp. Two tiles per chomp. */
 const CHOMP_PERIOD = SUB * 2;
 /** Widest mouth half-angle, radians. */
@@ -165,13 +174,98 @@ export function drawPower(
   }
 }
 
-/** Facing angle in radians, indexed by Dir (UP, LEFT, DOWN, RIGHT). */
-const DIR_ANGLE: Record<Dir, number> = {
-  [UP]: -Math.PI / 2,
-  [LEFT]: Math.PI,
-  [DOWN]: Math.PI / 2,
-  [RIGHT]: 0,
+/**
+ * ORIENTATION. There is ONE sprite, and it faces RIGHT: the mouth opens rightward, the
+ * eye sits above the mouth, the hat sits on top of the head. Hat and eye are drawn in the
+ * character's own frame, not the screen's — the hat is worn, so it goes where the head
+ * goes.
+ *
+ * The four facings are transforms of that single sprite, applied to the whole character:
+ *
+ *   RIGHT  no transform
+ *   LEFT   horizontal mirror, scale(-1, 1) — NOT a 180° rotation, so the character stays
+ *          upright with the hat on top and the eye above the mouth
+ *   UP     rotate 90° counter-clockwise
+ *   DOWN   rotate 90° clockwise
+ *
+ * The tilted facings are therefore tilted whole: going UP the hat points to screen-left
+ * and the eye is left of the mouth; going DOWN the hat points screen-right. That is the
+ * intended read, not a bug to correct. Counter-rotating the hat to keep it screen-up
+ * while the body turns is the thing that looks broken — a body leaning one way under a
+ * hat leaning the other.
+ *
+ * It also dissolves the old UP problem. The mouth now only ever opens through the sprite's
+ * own right-hand side, which is never where the hat is, so the hat and the mouth cone can
+ * no longer compete for the same space at any facing. The inverted-cone UP hat is gone.
+ */
+type Facing = (ctx: CanvasRenderingContext2D) => void;
+
+const FACING: Record<Dir, Facing> = {
+  [RIGHT]: () => {},
+  [LEFT]: (ctx) => ctx.scale(-1, 1),
+  [UP]: (ctx) => ctx.rotate(-Math.PI / 2),
+  [DOWN]: (ctx) => ctx.rotate(Math.PI / 2),
 };
+
+/** Hat geometry, in tile units. */
+export const HAT_HALF_WIDTH = 0.38;
+export const HAT_HEIGHT = 0.34;
+
+/**
+ * Hat and eye placement on the base RIGHT-facing sprite, in tile units.
+ *
+ * The mouth is a NOTCH cut out of the body, so anything drawn across it fills the gap and
+ * reads as a shut mouth even without touching the body outline. The mouth opens in a cone
+ * of about ±53° around +x, so both the hat and the eye sit clear of that cone: the hat is
+ * set back and tilted so its apex leans behind the head, and the eye sits above and just
+ * forward, past the upper lip of the widest chomp.
+ */
+const HAT_X = -0.2;
+const HAT_Y = -0.24;
+const HAT_TILT = -0.42;
+const EYE_X = 0.08;
+const EYE_Y = -0.16;
+
+/**
+ * A conical straw hat, centred on the origin with the brim level and the apex up. Drawn
+ * brim-first so the cone sits over it and the brim shows as a rim either side, which is
+ * what sells the cone shape at small sizes.
+ */
+function drawHat(ctx: CanvasRenderingContext2D, tilePx: number): void {
+  const hw = tilePx * HAT_HALF_WIDTH;
+  const hh = tilePx * HAT_HEIGHT;
+  const edge = Math.max(1, tilePx * 0.045);
+
+  ctx.lineJoin = "round";
+  ctx.lineWidth = edge;
+  ctx.strokeStyle = HAT_EDGE;
+
+  ctx.beginPath();
+  ctx.ellipse(0, 0, hw, hw * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = HAT_BRIM;
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(-hw * 0.86, 0);
+  ctx.quadraticCurveTo(-hw * 0.4, -hh, 0, -hh);
+  ctx.quadraticCurveTo(hw * 0.4, -hh, hw * 0.86, 0);
+  ctx.closePath();
+  ctx.fillStyle = HAT_CONE;
+  ctx.fill();
+  ctx.stroke();
+
+  // A single straw seam. Below ~20px tiles it is sub-pixel, so it is skipped rather
+  // than smeared into a grey haze over the cone.
+  if (tilePx >= 20) {
+    ctx.beginPath();
+    ctx.moveTo(0, -hh * 0.86);
+    ctx.lineTo(0, -hh * 0.06);
+    ctx.strokeStyle = HAT_RIDGE;
+    ctx.lineWidth = Math.max(0.75, tilePx * 0.022);
+    ctx.stroke();
+  }
+}
 
 /**
  * The player: a grain of rice with a mouth. Longer than it is tall, so it reads as a
@@ -198,8 +292,10 @@ export function drawPlayer(
 
   ctx.save();
   ctx.translate(px, py);
-  ctx.rotate(DIR_ANGLE[player.dir]);
+  // One transform for the whole character — body, hat and eye together. See FACING.
+  FACING[player.dir](ctx);
 
+  // Body. The mouth opens along +x, which the facing transform has already aimed.
   ctx.beginPath();
   if (mouth > 0.02) {
     ctx.ellipse(0, 0, rx, ry, 0, mouth, -mouth);
@@ -214,11 +310,14 @@ export function drawPlayer(
   ctx.lineWidth = Math.max(1, tilePx * 0.05);
   ctx.stroke();
 
-  // One eye, set back from the mouth. Drawn in the rotated frame but counter-rotated
-  // so it never ends up below the grain when travelling left.
-  const flip = player.dir === LEFT ? -1 : 1;
+  ctx.save();
+  ctx.translate(HAT_X * tilePx, HAT_Y * tilePx);
+  ctx.rotate(HAT_TILT);
+  drawHat(ctx, tilePx);
+  ctx.restore();
+
   ctx.beginPath();
-  ctx.arc(-rx * 0.12, -ry * 0.44 * flip, Math.max(1, tilePx * 0.055), 0, Math.PI * 2);
+  ctx.arc(EYE_X * tilePx, EYE_Y * tilePx, Math.max(1, tilePx * 0.055), 0, Math.PI * 2);
   ctx.fillStyle = PLAYER_EYE;
   ctx.fill();
 

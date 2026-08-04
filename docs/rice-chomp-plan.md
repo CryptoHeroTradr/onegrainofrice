@@ -1,17 +1,45 @@
 # RICE CHOMP — recon & build plan
 
-**Status:** planning only. No gameplay code, components, routes, config or dependencies
-have been added. This document and `docs/rice-chomp-plan.md` are the only artefacts.
+**Status (2026-08-04):** Phase 2 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
+`ChompCanvas.tsx` and `engine/{game,maze,render,types}.ts` — the maze and a playable
+player grain. Sections 1–7 below are recon and remain accurate; treat the sections about
+what does *not* exist yet as describing the phases still to come.
 
-> ### ⚠️ The spec is missing
-> `docs/rice-chomp-spec.md` **is not present.** `docs/` contains only `docs/grains/`
-> (`DEPLOY.md`, `LOADTEST.md`, `RECON.md`). A search across `/home/deploy` and `/tmp`
-> for `*chomp*` / `*rice-chomp*` returned nothing outside this file.
->
-> Everything below is derived from (a) the repo as it actually is and (b) the brief in
-> the request. Anything the spec would have pinned down — pest names and personalities,
-> scoring table, level curve, art direction, sound design — is listed as an open
-> question rather than invented. See **Open questions**.
+> **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
+> here said it was missing; that was true only on the day this plan was written. Where the
+> spec and this plan disagree, **the spec wins** — it is the living document and is amended
+> in the same commit as any decision that supersedes it.
+
+---
+
+## 0. How we work
+
+Read this section and `docs/rice-chomp-spec.md` at the start of every phase. These two
+files are the durable context; the chat log is not.
+
+- **Fresh session per phase.** Each phase begins with `/clear`, not a carried-forward
+  conversation. `/compact` mid-phase if one runs long. Anything from a session that a
+  later phase needs goes into these two files *before* the clear — if it is not written
+  down here, it does not survive.
+- **No visual-proof artifacts. Do not use the `artifact-design` skill on this project.**
+  The preview server is running and the owner can see the game directly; building a
+  separate interactive harness to demonstrate something already visible in the running
+  game is the most expensive habit available and it buys nothing. When something static
+  genuinely has to be shown: a plain HTML file, no skill, no design system, under ~100
+  lines, served on the preview port — or just say which screen to look at.
+- **Watch the context window.** Long contexts dominate cost. Prefer targeted reads over
+  re-reading whole files, and end phases rather than letting them sprawl.
+- **Cheap model for mechanical implementation.** Reserve the expensive model for design
+  and architecture decisions. If a heavy skill must run at all, scope it down or pin a
+  cheaper model in its frontmatter.
+
+### The preview server
+
+`http://127.0.0.1:3099` — a **production build**, not `next dev`, started with
+`NEXT_DIST_DIR=builds/<sha> BUILD_ID=<sha>`. It does **not** hot-reload. To show a change
+there, build a new dist and restart it against the new sha. It is separate from pm2 and
+from live; restarting it never touches production. Live deploy is still
+`deploy/build.sh` then `deploy/promote.sh <sha>` — see the deploy notes in §3.
 
 ---
 
