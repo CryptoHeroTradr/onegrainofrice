@@ -88,8 +88,20 @@ export const EXTRA_LIFE_SCORE = 10_000;
 
 // --- phase timings ----------------------------------------------------------
 
-/** "Ready" hold at the start of a life, before anything moves. */
+/**
+ * "Ready" hold at the start of a LEVEL, before anything moves — player and pests alike.
+ * Nothing ticks during it: no movement, no mode clock, no pen timer.
+ */
 export const READY_TICKS = secondsToTicks(2);
+
+/**
+ * The same hold, but after a death. Split from READY_TICKS because the two want different
+ * lengths for different reasons: at level start the player is composed and waiting, while
+ * after a death they are re-reading a board that has just rearranged itself and needs a
+ * moment to find the pests again. Longer here is the kinder default, and having it as its
+ * own dial means tuning one does not silently retune the other.
+ */
+export const RESPAWN_READY_TICKS = secondsToTicks(2.5);
 /** Everything stops for a beat when the player is caught, before the death animation. */
 export const DEATH_PAUSE_TICKS = secondsToTicks(0.5);
 /** Length of the death animation itself. */

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { useRice } from "@/components/rice/RiceParticles";
+import { isPlaySurface } from "@/lib/playSurfaces";
 import { playPour } from "@/lib/sound";
 
 /**
@@ -26,8 +28,13 @@ const SEQUENCE = [
 
 export function KonamiRice() {
   const { pour } = useRice();
+  // Six of the ten keys in the sequence are arrows, which on a game route are the primary
+  // control. Dumping rice across the viewport because someone doubled back twice while
+  // being chased is not an easter egg, it is a bug with a smile on.
+  const onPlaySurface = isPlaySurface(usePathname());
 
   useEffect(() => {
+    if (onPlaySurface) return;
     let idx = 0;
     const onKey = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
@@ -44,7 +51,7 @@ export function KonamiRice() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pour]);
+  }, [pour, onPlaySurface]);
 
   return null;
 }

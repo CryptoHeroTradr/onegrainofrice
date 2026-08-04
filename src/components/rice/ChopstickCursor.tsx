@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import { isPlaySurface } from "@/lib/playSurfaces";
 import { playClack } from "@/lib/sound";
 
 /**
@@ -28,13 +29,6 @@ const TEXT_SELECTOR = 'input, textarea, [contenteditable=""], [contenteditable="
 const TIP_X = 39;
 const TIP_Y = 72;
 
-/**
- * Routes that own the whole viewport as a play surface and must not have a
- * decorative cursor floating over them (it also hides the native cursor
- * site-wide via the `chopsticks-active` body class, which reads as a bug on a
- * keyboard-driven game). /chomp is RICE CHOMP.
- */
-const CURSOR_FREE_ROUTES = ["/chomp"];
 
 function Stick({ side }: { side: "left" | "right" }) {
   return (
@@ -63,11 +57,14 @@ export function ChopstickCursor() {
   const pressed = useRef(false);
   const overGrab = useRef(false);
   const pinchApplied = useRef(false);
-  // usePathname() is basePath-stripped, so it compares against plain routes.
+  // Derived, not stored: the route is already reactive, so mirroring it into state would
+  // just be a second source of truth (and a setState inside an effect). A decorative
+  // cursor that hides the native one site-wide has no business over a game — the route
+  // list is shared with the other ambient decorations in @/lib/playSurfaces.
+  // Hoisted out of the && below: short-circuiting there would make the hook call
+  // conditional, and hooks have to run in the same order on every render.
   const pathname = usePathname();
-  // Derived, not stored: the route is already reactive, so mirroring it into state
-  // would just be a second source of truth (and a setState inside an effect).
-  const enabled = mediaAllows && !CURSOR_FREE_ROUTES.includes(pathname);
+  const enabled = mediaAllows && !isPlaySurface(pathname);
 
   // Media eligibility: fine pointer + motion allowed. Reactive to changes.
   useEffect(() => {

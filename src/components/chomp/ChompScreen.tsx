@@ -142,15 +142,37 @@ export function ChompScreen() {
         />
 
         {(stats.paused || gameOver) && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-nori/70">
+          // Only the game-over overlay takes pointer events: it has a real control on it.
+          // The paused one stays inert so a stray click cannot swallow anything.
+          <div
+            className={`absolute inset-0 flex flex-col items-center justify-center gap-3 bg-nori/70 ${
+              gameOver ? "" : "pointer-events-none"
+            }`}
+          >
             <p className="font-display-round text-3xl font-semibold text-khaki">
               {gameOver ? "Game over" : "Paused"}
             </p>
             {gameOver && (
-              <p className="font-mono text-xs text-steamed/60">
-                {stats.score} points · level {stats.level}
-                {debugRun && ` · debug run from level ${stats.startLevel}, not a score`}
-              </p>
+              <>
+                <p className="font-mono text-xs text-steamed/60">
+                  {stats.score} points · level {stats.level}
+                  {debugRun && ` · debug run from level ${stats.startLevel}, not a score`}
+                </p>
+                {/* Focused on appearance, so Space and Enter reach it natively — and so a
+                    keyboard player is never left on a screen with nothing focused. The
+                    window handler in ChompCanvas covers the case where focus is elsewhere. */}
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => gameRef.current?.reset()}
+                  className="mt-1 min-h-11 border-2 border-khaki px-5 font-mono text-sm tracking-[0.15em] text-khaki uppercase transition-colors hover:bg-khaki hover:text-nori focus-visible:bg-khaki focus-visible:text-nori focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steamed"
+                >
+                  Play again
+                </button>
+                <p className="font-mono text-[0.7rem] tracking-wide text-steamed/45">
+                  or press <Key>Space</Key> / <Key>Enter</Key>
+                </p>
+              </>
             )}
           </div>
         )}

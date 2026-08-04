@@ -9,6 +9,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
+import { isPlaySurface } from "@/lib/playSurfaces";
 
 /**
  * Site-wide rice particle system: ONE fixed, pointer-events-none canvas plus an
@@ -97,6 +99,18 @@ export function RiceProvider({ children }: { children: ReactNode }) {
   const sizeRef = useRef({ w: 0, h: 0 });
   const lastTrail = useRef(0);
   const bowlLevels = useRef<WeakMap<HTMLElement, number>>(new WeakMap());
+
+  // The provider stays mounted everywhere so `useRice()` never changes identity, but on a
+  // play surface it renders nothing and traces nothing. A ref rather than a dependency:
+  // the pointer listener should not be torn down and rebuilt on every navigation.
+  const onPlaySurface = isPlaySurface(usePathname());
+  const playSurfaceRef = useRef(onPlaySurface);
+  // Mirrored in an effect rather than assigned during render: writing a ref while
+  // rendering is not safe under concurrent rendering, and the listener only reads it
+  // on a real pointer event, which is always after commit.
+  useEffect(() => {
+    playSurfaceRef.current = onPlaySurface;
+  }, [onPlaySurface]);
 
   // --- drawing ---------------------------------------------------------------
   const draw = useCallback(() => {
@@ -399,8 +413,11 @@ export function RiceProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener("visibilitychange", onVisibility);
 
-    // Cursor trail — mouse only, throttled, off under reduced motion.
+    // Cursor trail — mouse only, throttled, off under reduced motion, and off entirely
+    // on a play surface: trailing grains across a maze full of grains is noise on exactly
+    // the pixels the player is reading.
     const onPointerMove = (e: PointerEvent) => {
+      if (playSurfaceRef.current) return;
       if (reducedRef.current || e.pointerType === "touch") return;
       const now = e.timeStamp;
       if (now - lastTrail.current < TRAIL_THROTTLE) return;
@@ -433,6 +450,9 @@ export function RiceProvider({ children }: { children: ReactNode }) {
         aria-hidden="true"
         data-rice-canvas=""
         className="pointer-events-none fixed inset-0 z-40"
+        // Belt and braces with the trail guard above: even if something else calls pour()
+        // or hose() while a game is on screen, nothing lands on top of the board.
+        style={onPlaySurface ? { display: "none" } : undefined}
       />
     </RiceContext.Provider>
   );

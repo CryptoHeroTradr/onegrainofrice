@@ -6,6 +6,7 @@ import {
   CLEARED,
   CUTSCENE,
   DYING,
+  GAMEOVER,
   READY,
   createGame,
   endCutscene,
@@ -333,16 +334,22 @@ export const ChompCanvas = forwardRef<
     rafRef.current = requestAnimationFrame(frame);
   };
 
+  /**
+   * Throw the run away and start again. Touches only refs, so the copy captured by the
+   * keyboard effect on first render stays correct for the life of the component.
+   */
+  const restart = () => {
+    stateRef.current = createGame(bootLevel());
+    accRef.current = 0;
+    cutsceneMsRef.current = 0;
+    pausedRef.current = false;
+    bake();
+    paint();
+    publishStats(performance.now(), true);
+  };
+
   useImperativeHandle(ref, () => ({
-    reset: () => {
-      stateRef.current = createGame(bootLevel());
-      accRef.current = 0;
-      cutsceneMsRef.current = 0;
-      pausedRef.current = false;
-      bake();
-      paint();
-      publishStats(performance.now(), true);
-    },
+    reset: restart,
     togglePause: () => {
       pausedRef.current = !pausedRef.current;
       publishStats(performance.now(), true);
@@ -447,12 +454,30 @@ export const ChompCanvas = forwardRef<
 
       const dir = KEY_TO_DIR[e.key];
       if (dir !== undefined) {
-        // Arrow keys scroll the page by default, which would fight every input.
+        // Arrows scroll the page and WASD can trigger browser quick-find; either would
+        // fight every input. Space is handled below for the same reason.
         e.preventDefault();
         const state = stateRef.current;
         if (state) setWanted(state, dir);
         return;
       }
+
+      // Space and Enter restart from game over. GAMEOVER runs no simulation, so without
+      // this the board is inert and every key is dead — a dead end, not a screen.
+      //
+      // Skipped when a button has focus: the overlay's own "Play again" is focused on
+      // game over, and the browser already turns Space and Enter into a click on it.
+      // Handling both here as well would restart twice.
+      const onButton = target?.tagName === "BUTTON";
+      if (e.key === " " || e.key === "Enter") {
+        const state = stateRef.current;
+        // preventDefault regardless of phase: space scrolls the page, and the page
+        // scrolling under a fixed-size board is the bug this stops.
+        if (!onButton) e.preventDefault();
+        if (!onButton && state && state.phase === GAMEOVER) restart();
+        return;
+      }
+
       if (e.key === "p" || e.key === "P" || e.key === "Escape") {
         e.preventDefault();
         pausedRef.current = !pausedRef.current;
@@ -462,6 +487,9 @@ export const ChompCanvas = forwardRef<
     // Not passive: we preventDefault on the arrow keys.
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // `restart` is deliberately omitted: it touches only refs, so the copy captured on the
+    // first render stays correct, and listing it would rebind this listener every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- pause when the page is not visible -----------------------------------

@@ -45,6 +45,7 @@ import {
   GRAIN_FREEZE_TICKS,
   POWER_FREEZE_TICKS,
   READY_TICKS,
+  RESPAWN_READY_TICKS,
   SCORE_GRAIN,
   SCORE_PEST_CHAIN,
   SCORE_POWER,
@@ -680,7 +681,9 @@ function resetPositions(state: GameState): void {
   state.bonus.ticks = 0;
   state.bonus.scoreTicks = 0;
   state.phase = READY;
-  state.phaseTicks = READY_TICKS;
+  // A respawn gets its own hold: the board has just rearranged itself and the player is
+  // looking for four pests that were not there a second ago. See RESPAWN_READY_TICKS.
+  state.phaseTicks = RESPAWN_READY_TICKS;
 }
 
 function nextLevel(state: GameState): void {
