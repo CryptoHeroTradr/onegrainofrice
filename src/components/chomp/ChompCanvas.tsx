@@ -26,6 +26,10 @@ import {
 } from "./engine/levels";
 import { DOWN, LEFT, RIGHT, TICK_HZ, UP, type Dir } from "./engine/types";
 import {
+  CONTRAST_GRAIN_FILL,
+  CONTRAST_LIP_SCALE,
+  CONTRAST_WALL_EDGE,
+  CONTRAST_WALL_FILL,
   bakeGrains,
   bakeWalls,
   drawBonus,
@@ -37,6 +41,30 @@ import {
   drawPower,
   syncGrainLayer,
 } from "./engine/render";
+import {
+  CUE_BONUS,
+  CUE_CHOMP,
+  CUE_DEATH,
+  CUE_EXTRA_LIFE,
+  CUE_GOLDEN,
+  CUE_LEVEL_CLEAR,
+  CUE_PEST,
+  createCueWatch,
+  observeCues,
+  syncCueWatch,
+} from "./engine/cues";
+import {
+  playChomp,
+  playChompBonus,
+  playChompDeath,
+  playChompExtraLife,
+  playChompGolden,
+  playChompLevelClear,
+  playChompPest,
+  preloadChomp,
+  resetChompVoice,
+  toggleSound,
+} from "@/lib/sound";
 
 /**
  * Canvas host for RICE CHOMP. Owns the render loop, the canvas sizing and the keyboard,
@@ -64,6 +92,15 @@ const STATS_MS = 100;
  */
 const FLASH_FILL = "#f4efe2";
 const FLASH_EDGE = "#c4b370";
+/**
+ * How far a thumb has to travel before it counts as a swipe, in CSS pixels. Low
+ * enough that a flick of the thumb registers, high enough that the tap which
+ * starts the game is not read as a turn. The origin RESETS after every turn, so a
+ * player can trace a whole route with one continuous drag instead of lifting and
+ * re-placing their thumb at each corner — which is what "playable one-thumbed"
+ * actually means in a game where the corner is the skill.
+ */
+const SWIPE_PX = 22;
 
 export interface ChompStats {
   score: number;
@@ -79,14 +116,26 @@ export interface ChompStats {
   paused: boolean;
   /** One of the engine's Phase constants; the screen only distinguishes game over. */
   phase: number;
+  /**
+   * True while the attract screen is up. HOST-SIDE ONLY — the engine has no such
+   * phase, no simulation runs, and the run that eventually starts is a brand new
+   * state. See engine/cues.ts.
+   */
+  attract: boolean;
+  /** Bumped on every fresh run, so the screen can file a score exactly once. */
+  runId: number;
 }
 
 export interface ChompCanvasHandle {
   /** Throw the run away and start again. */
   reset: () => void;
+  /** Leave the attract screen and begin a run. */
+  start: () => void;
+  /** Abandon the run and go back to the attract screen. */
+  toAttract: () => void;
   /** Toggle pause; returns the new paused state. */
   togglePause: () => boolean;
-  /** Queue a direction, for on-screen controls in a later phase. */
+  /** Queue a direction. The d-pad's only engine call, and the keyboard's too. */
   steer: (dir: Dir) => void;
 }
 
@@ -134,11 +183,20 @@ export const ChompCanvas = forwardRef<
   {
     /** Polled roughly every 100ms with the run's headline numbers. */
     onStats?: (stats: ChompStats) => void;
-    /** Strips the golden-grain pulse. Gameplay is unaffected. */
+    /**
+     * Strips the golden-grain pulse, the bonus bob, the maze flash and the
+     * interstitials. Presentation only — a reduced-motion run and a normal run are
+     * tick-for-tick identical, which is the property the spec asks for.
+     */
     reducedMotion?: boolean;
+    /** Repaints the static layers in the high-contrast palette. See render.ts. */
+    contrast?: boolean;
     className?: string;
   }
->(function ChompCanvas({ onStats, reducedMotion = false, className }, ref) {
+>(function ChompCanvas(
+  { onStats, reducedMotion = false, contrast = false, className },
+  ref,
+) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -161,11 +219,24 @@ export const ChompCanvas = forwardRef<
   /** Milliseconds into the current interstitial. Host-side; never touches the run. */
   const cutsceneMsRef = useRef(0);
 
+  /**
+   * THE ATTRACT SCREEN IS A HOST FLAG, NOT A GAME PHASE. While it is set, tick() is
+   * never called, so the attract screen provably costs the simulation nothing —
+   * and starting a run builds a brand new state anyway, so nothing that happened
+   * while it was up could reach the run even in principle.
+   */
+  const attractRef = useRef(true);
+  const runIdRef = useRef(0);
+
+  /** Previous-tick snapshot the audio cues are diffed against. Never written back. */
+  const cueRef = useRef(createCueWatch());
+
   const statsAtRef = useRef(0);
   const onStatsRef = useRef(onStats);
   onStatsRef.current = onStats;
   const reducedRef = useRef(reducedMotion);
   reducedRef.current = reducedMotion;
+  const contrastRef = useRef(contrast);
 
   /** Re-bake the static layers at the current tile size. */
   const bake = () => {
@@ -173,9 +244,17 @@ export const ChompCanvas = forwardRef<
     const tilePx = tileRef.current;
     const dpr = dprRef.current;
     if (!state || tilePx <= 0) return;
-    wallsRef.current = bakeWalls(state.grid, tilePx, dpr);
+    const hc = contrastRef.current;
+    wallsRef.current = hc
+      ? bakeWalls(state.grid, tilePx, dpr, CONTRAST_WALL_FILL, CONTRAST_WALL_EDGE, CONTRAST_LIP_SCALE)
+      : bakeWalls(state.grid, tilePx, dpr);
     flashRef.current = bakeWalls(state.grid, tilePx, dpr, FLASH_FILL, FLASH_EDGE);
-    grainsRef.current = bakeGrains(state.grid, tilePx, dpr);
+    grainsRef.current = bakeGrains(
+      state.grid,
+      tilePx,
+      dpr,
+      hc ? CONTRAST_GRAIN_FILL : undefined,
+    );
     bakedRef.current = Uint8Array.from(state.grid);
     bakedLevelRef.current = state.level;
   };
@@ -280,7 +359,32 @@ export const ChompCanvas = forwardRef<
       tick: state.tick,
       paused: pausedRef.current,
       phase: state.phase,
+      attract: attractRef.current,
+      runId: runIdRef.current,
     });
+  };
+
+  /**
+   * Turn what the last tick did into sound.
+   *
+   * Called immediately after tick(), inside the fixed-timestep loop. It reads the
+   * state and writes nothing to it — observeCues() takes a readonly view and
+   * allocates nothing — and every play call is fire-and-forget, so a browser with
+   * no AudioContext, a blocked decode or a muted player all cost exactly the same
+   * as a player with sound on: nothing. Audio can therefore neither stall the
+   * simulation nor change it. See engine/cues.ts for why sound is derived here
+   * rather than pushed from the engine.
+   */
+  const soundFor = (state: GameState) => {
+    const cues = observeCues(cueRef.current, state);
+    if (cues === 0) return;
+    if (cues & CUE_CHOMP) playChomp();
+    if (cues & CUE_GOLDEN) playChompGolden();
+    if (cues & CUE_PEST) playChompPest(cueRef.current.chain);
+    if (cues & CUE_BONUS) playChompBonus();
+    if (cues & CUE_EXTRA_LIFE) playChompExtraLife();
+    if (cues & CUE_LEVEL_CLEAR) playChompLevelClear();
+    if (cues & CUE_DEATH) playChompDeath();
   };
 
   const ensureRunning = () => {
@@ -295,6 +399,16 @@ export const ChompCanvas = forwardRef<
 
       const raw = t - lastRef.current;
       lastRef.current = t;
+
+      // Attract. The board is painted as a still life behind the overlay and the
+      // simulation is not touched at all — not one tick, not the RNG, nothing.
+      if (attractRef.current) {
+        accRef.current = 0;
+        paint();
+        publishStats(t);
+        rafRef.current = requestAnimationFrame(frame);
+        return;
+      }
 
       if (state.phase === CUTSCENE) {
         // The simulation does not advance at all here. The cutscene has its own clock,
@@ -321,6 +435,7 @@ export const ChompCanvas = forwardRef<
         let n = 0;
         while (accRef.current >= TICK_MS && n < MAX_TICKS_PER_FRAME) {
           stepGame(state);
+          soundFor(state);
           accRef.current -= TICK_MS;
           n++;
         }
@@ -339,10 +454,31 @@ export const ChompCanvas = forwardRef<
    * keyboard effect on first render stays correct for the life of the component.
    */
   const restart = () => {
-    stateRef.current = createGame(bootLevel());
+    const state = createGame(bootLevel());
+    stateRef.current = state;
     accRef.current = 0;
     cutsceneMsRef.current = 0;
     pausedRef.current = false;
+    attractRef.current = false;
+    runIdRef.current++;
+    // Point the cue watcher at the new run before a tick happens, so the first
+    // observation is a diff and not a burst of cues for a game coming into being.
+    syncCueWatch(cueRef.current, state);
+    resetChompVoice();
+    bake();
+    paint();
+    publishStats(performance.now(), true);
+  };
+
+  /** Back to the attract screen, with a fresh board painted behind it. */
+  const toAttract = () => {
+    const state = createGame(bootLevel());
+    stateRef.current = state;
+    accRef.current = 0;
+    cutsceneMsRef.current = 0;
+    pausedRef.current = false;
+    attractRef.current = true;
+    syncCueWatch(cueRef.current, state);
     bake();
     paint();
     publishStats(performance.now(), true);
@@ -350,7 +486,13 @@ export const ChompCanvas = forwardRef<
 
   useImperativeHandle(ref, () => ({
     reset: restart,
+    start: restart,
+    toAttract,
     togglePause: () => {
+      // Pause is meaningless on the attract screen and on a finished run, and a
+      // pause overlay that can be raised over "Game over" is a dead end.
+      const state = stateRef.current;
+      if (attractRef.current || !state || state.phase === GAMEOVER) return false;
       pausedRef.current = !pausedRef.current;
       publishStats(performance.now(), true);
       return pausedRef.current;
@@ -358,6 +500,10 @@ export const ChompCanvas = forwardRef<
     steer: (dir: Dir) => {
       const state = stateRef.current;
       if (!state) return;
+      if (attractRef.current) {
+        restart();
+        return;
+      }
       // On-screen controls skip an interstitial too, for the same reason the keyboard
       // does: a tap should mean "get on with it", not nothing.
       if (state.phase === CUTSCENE) {
@@ -374,7 +520,13 @@ export const ChompCanvas = forwardRef<
     const canvas = canvasRef.current;
     if (!wrap || !canvas) return;
 
-    stateRef.current = createGame(bootLevel());
+    const booted = createGame(bootLevel());
+    stateRef.current = booted;
+    syncCueWatch(cueRef.current, booted);
+    // Decode the eight clips now rather than on the first grain. A suspended
+    // AudioContext decodes fine, and the first chomp lands within a second of the
+    // player's first input with no second chance if it is not ready.
+    preloadChomp();
 
     /**
      * Letterbox: pick the largest whole-pixel tile that fits both axes, then size the
@@ -443,6 +595,27 @@ export const ChompCanvas = forwardRef<
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
+      // M mutes, and it drives the SITE's sound switch rather than a private one —
+      // there is one sound toggle on this site and this is it. See prefs.ts.
+      if (e.key === "m" || e.key === "M") {
+        e.preventDefault();
+        toggleSound();
+        return;
+      }
+
+      // Attract: press anything to play. Tab and the bare modifiers are excluded so
+      // that a keyboard player can still reach the Start button and the settings
+      // rather than having the game begin under them the moment they navigate.
+      if (attractRef.current) {
+        if (e.key === "Tab" || e.key === "Shift" || e.key === "Control" || e.key === "Alt") return;
+        // Space and Enter on a focused button are the browser's click; let it through
+        // or the run starts twice.
+        if (target?.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+        e.preventDefault();
+        restart();
+        return;
+      }
+
       // Cutscenes are skippable, and by ANY key rather than a documented one — a player
       // who wants the interstitial gone should not have to find out which button does it.
       const showing = stateRef.current;
@@ -480,6 +653,8 @@ export const ChompCanvas = forwardRef<
 
       if (e.key === "p" || e.key === "P" || e.key === "Escape") {
         e.preventDefault();
+        const s = stateRef.current;
+        if (!s || s.phase === GAMEOVER) return;
         pausedRef.current = !pausedRef.current;
         publishStats(performance.now(), true);
       }
@@ -491,6 +666,19 @@ export const ChompCanvas = forwardRef<
     // first render stays correct, and listing it would rebind this listener every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // --- contrast ------------------------------------------------------------
+  // The static layers carry the palette, so a change of preference is a re-bake and
+  // nothing else. Skipped on the first run, where boot has already baked.
+  const contrastBakedRef = useRef(contrast);
+  useEffect(() => {
+    contrastRef.current = contrast;
+    if (contrastBakedRef.current === contrast) return;
+    contrastBakedRef.current = contrast;
+    bake();
+    paint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contrast]);
 
   // --- pause when the page is not visible -----------------------------------
   useEffect(() => {
@@ -504,16 +692,88 @@ export const ChompCanvas = forwardRef<
     return () => document.removeEventListener("visibilitychange", onHide);
   }, []);
 
+  // --- swipe ----------------------------------------------------------------
+  /**
+   * A drag anywhere over the board steers. The origin is reset every time a turn
+   * fires, so one continuous thumb drag can trace a whole route — down, right, up —
+   * without ever lifting off. Lifting without having travelled far enough is a TAP,
+   * which means "get on with it": start the run, skip the interstitial, play again.
+   *
+   * Both routes end at steer(), which is setWanted() — the same and only engine call
+   * the keyboard makes. Touch adds no way to affect the run that the keyboard did not
+   * already have, which is why it cannot change a trace.
+   */
+  const swipeRef = useRef({ active: false, x: 0, y: 0, turned: false });
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    swipeRef.current = { active: true, x: e.clientX, y: e.clientY, turned: false };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = swipeRef.current;
+    if (!s.active) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (Math.abs(dx) < SWIPE_PX && Math.abs(dy) < SWIPE_PX) return;
+    const dir =
+      Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? RIGHT : LEFT) : dy > 0 ? DOWN : UP;
+    s.x = e.clientX;
+    s.y = e.clientY;
+    s.turned = true;
+    const state = stateRef.current;
+    if (attractRef.current) {
+      restart();
+      return;
+    }
+    if (state && state.phase === CUTSCENE) {
+      endCutscene(state);
+      return;
+    }
+    if (state) setWanted(state, dir);
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = swipeRef.current;
+    s.active = false;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    if (s.turned) return;
+    const state = stateRef.current;
+    if (attractRef.current) {
+      restart();
+      return;
+    }
+    if (!state) return;
+    if (state.phase === CUTSCENE) {
+      endCutscene(state);
+      return;
+    }
+    if (state.phase === GAMEOVER) restart();
+  };
+
   return (
     // The canvas is taken OUT of flow and centred absolutely so it can never
     // contribute to the size of the box being measured. Measuring an ancestor of the
     // thing you resize is a feedback loop waiting to happen; this makes it structurally
     // impossible rather than merely unlikely.
-    <div ref={wrapRef} className={className} style={{ position: "relative" }}>
+    //
+    // The swipe handlers sit on the WRAPPER rather than the canvas, so the letterbox
+    // bars are live too — on a portrait phone that is a meaningful strip of thumb room
+    // above and below the maze, and a swipe that dies because it started two pixels
+    // off the board is the kind of thing that makes touch controls feel broken.
+    <div
+      ref={wrapRef}
+      className={className}
+      style={{ position: "relative", touchAction: "none" }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label="RICE CHOMP maze. Steer the grain of rice with the arrow keys to clear every grain."
+        aria-label="RICE CHOMP maze. Steer the grain of rice with the arrow keys, or swipe, to clear every grain."
         style={{
           display: "block",
           position: "absolute",

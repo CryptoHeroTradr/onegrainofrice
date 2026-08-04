@@ -1,14 +1,18 @@
 # RICE CHOMP — recon & build plan
 
-**Status (2026-08-04):** Phase 4 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
-`ChompCanvas.tsx`, `BonusIcons.tsx` and `engine/{game,levels,maze,pests,render,types}.ts` —
-the maze, the player grain, the four pests, the scatter/chase cycle, the pen, frightened
-mode, lives and death, cornering, and now the per-level difficulty curve, level completion
-with the maze flash, the six bonus items and the two interstitials. `levels.ts` holds every
-tuning number. Tests: `test/chomp-{maze,movement,pests,cornering,levels,kiting}.test.ts`
-plus `test/chomp-support.ts` (the bot). Sections 1–6 below are recon and remain accurate;
-§7 carries the Phase 3 and Phase 4 measurements. Still to come: audio, touch controls, the
-paddy board treatment (blocked on an asset), the attract screen and the leaderboard.
+**Status (2026-08-04):** Phase 5 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
+`ChompCanvas.tsx`, `BonusIcons.tsx`, `PestPortrait.tsx`, `TouchControls.tsx`,
+`ChompAttract.tsx`, `ChompPause.tsx`, `ChompGameOver.tsx`, `ChompSettings.tsx`,
+`prefs.ts`, `scores.ts` and `engine/{game,levels,maze,pests,render,types,cues}.ts` — the
+maze, the player grain, the four pests, the scatter/chase cycle, the pen, frightened mode,
+lives and death, cornering, the per-level difficulty curve, level completion with the maze
+flash, the six bonus items, the two interstitials, and now eight synthesized sound cues,
+the attract/pause/game-over screens, swipe and an optional d-pad, reduced motion and the
+high-contrast board. `levels.ts` holds every tuning number. Tests:
+`test/chomp-{maze,movement,pests,cornering,levels,kiting,difficulty,audio}.test.ts` plus
+`test/chomp-support.ts` (the bot). Sections 1–6 below are recon and remain accurate; §7
+carries the Phase 3 and Phase 4 measurements. Still to come: the paddy board treatment
+(blocked on an asset) and the leaderboard.
 
 > **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
 > here said it was missing; that was true only on the day this plan was written. Where the
@@ -540,7 +544,29 @@ have**. This is the single strongest argument for the HTTP leaderboard in §5.
    same process makes this worse. Worth checking `pm2 logs onegrainofrice --err` before
    Phase 2.
 
-4. **`src/lib/highscore.ts` is a module-level variable on the server.** In a single fork
+4. **`/chomp` makes one third-party request, and it is Google Translate.** *Found
+   2026-08-04, Phase 5, measuring the spec's "zero third-party network requests"
+   acceptance criterion against a real build.*
+
+   ```
+   $ curl -s http://127.0.0.1:3099/chomp | grep -oE 'https?://[a-z0-9.-]+' | sort -u
+   https://1grainofrice.com
+   https://translate.google.com
+   ```
+
+   `layout.tsx:58` mounts `TranslateProvider` site-wide and it loads
+   `translate.google.com/translate_a/element.js`. It is the ONLY external host on the
+   page, it is in the Phase 4 build too (so Phase 5 did not introduce it), and nothing
+   in the game asks for it — everything RICE CHOMP itself loads is local.
+
+   Not fixed here, deliberately. `cdaa5af` scoped `ChopstickCursor` and the other
+   ambient decorations off `/chomp` because they actively fight a maze game; Translate
+   does not, and removing it takes translation off the game page for everyone, which is
+   a product decision rather than a bug fix. Flagged in the spec's acceptance criteria
+   as a known violation with the decision pending. The narrower fix, if wanted, is the
+   same one-line route check `ChopstickCursor` already uses.
+
+5. **`src/lib/highscore.ts` is a module-level variable on the server.** In a single fork
    process it happens to behave like a global shared across all users; the doc comment
    claims "session-only … resets on reload", which is only true because the client reads
    it at render. It is not a per-user store. Not used by RICE CHOMP, but don't copy it.
@@ -551,6 +577,17 @@ have**. This is the single strongest argument for the HTTP leaderboard in §5.
 
 Corrected against the real conventions above (thin `page.tsx` → `"use client"` screen →
 directive-free engine modules → server-only `src/lib/<domain>/`).
+
+> **Where Phase 5 diverged, and why.** `TouchControls.tsx` is the d-pad ONLY — the swipe
+> surface ended up on `ChompCanvas`'s own wrapper, because a swipe has to work over the
+> letterbox bars as well as the board and putting it on a sibling component would have
+> meant a second element stacked over the canvas fighting it for pointer capture. The
+> screen also grew four small siblings the proposal did not anticipate —
+> `ChompAttract.tsx`, `ChompPause.tsx`, `ChompGameOver.tsx`, `ChompSettings.tsx`, plus
+> `PestPortrait.tsx`, `prefs.ts` and `scores.ts` — rather than piling every overlay into
+> `ChompScreen.tsx`, which is the same split `grains/` uses for its HUD parts.
+> `engine/sprites.ts` never appeared: the prebake lives in `render.ts` alongside the art
+> it bakes. `engine/cues.ts` is new and is discussed in the spec's Sound section.
 
 ```
 src/app/chomp/page.tsx                       server component: metadata + <ChompScreen />
@@ -1069,29 +1106,38 @@ whole point of a bonus item.
 6. **Per-country leaderboard as well as global?** GeoIP is free on this vhost and the
    grains game already trains visitors to expect a country race. Costs one extra table.
 
-7. **`prefers-reduced-motion` policy.** `GrainCatch` disables gameplay outright under
-   reduced motion. For RICE CHOMP, do you want (a) the same — a "needs motion" notice,
-   (b) playable with flashing/shake/particles stripped but the maze still animating, or
-   (c) ignore the preference for this route since it's opt-in gameplay? I'd pick (b).
+7. ~~**`prefers-reduced-motion` policy.**~~ **Answered — (b), and built in Phase 5.**
+   `GrainCatch` disables gameplay outright under reduced motion; RICE CHOMP does not
+   copy that. The golden-grain pulse, the bonus bob and the maze flash are not drawn and
+   the interstitial is dismissed before its first frame, all of which is presentation —
+   a reduced-motion run and an ordinary one are tick-for-tick identical. There is no
+   screen shake to strip; none was ever built.
 
-8. **Mobile input:** swipe-to-turn, an on-screen d-pad, or both? And on a portrait
-   phone, should the 28×31 maze letterbox with a HUD above/below, or rotate to
-   landscape? There is no touch-control precedent in the repo, so this is all new.
+8. ~~**Mobile input.**~~ **Answered — both, and portrait letterbox. Built in Phase 5.**
+   Swipe is always live and re-anchors after every turn, so one unbroken thumb drag can
+   trace a whole route; the d-pad is an addition, defaulting on for a coarse pointer and
+   toggleable from the control bar. Portrait letterboxes and there is no rotate prompt,
+   because the maze is 28:31 and very nearly square — on a 390×844 phone the board takes
+   364×403 (13px tiles) with the compacted HUD above it and the d-pad plus control bar,
+   about 250px, below. The HUD sheds its secondary numbers under `sm:` for the same
+   reason: "pests eaten" is not worth a row of maze on a phone. Both routes end at
+   `setWanted()`, which is the same call the arrow keys make; that is what keeps touch
+   out of the input trace's business and it is asserted in `test/chomp-audio.test.ts`.
 
 9. **May I fix `globals.css:293` while I'm in here?** It's a live 404 —
    `/onegrainofrice/grains/chopstick-cursor.svg` should be `/grains/…` under the
    production basePath of `""`. One line, affects the existing grains game, not RICE
    CHOMP. Separate commit, or leave it alone?
 
-10. **Art and sound.** *(Art answered by practice: everything through Phase 4 — player,
-    four pests, six bonus items, both interstitials — is drawn procedurally on canvas, no
-    files under `public/chomp/` yet. The only planned image is the paddy wall texture,
-    which is blocked on an asset. Sound is still open.)* Everything on canvas today is
-    drawn procedurally (`riceBowlEngine`
-    paints grains with `ctx.ellipse` and prebakes to offscreen canvases). Do you want
-    RICE CHOMP the same way, or sprite art in `public/chomp/`? And for SFX — reuse
-    `src/lib/sound.ts` + the existing `SoundToggle`, and should I extend
-    `scripts/gen-sfx.mjs` to generate chomp/death/power sounds?
+10. ~~**Art and sound.**~~ **Answered.** Art, by practice: everything — player, four
+    pests, six bonus items, both interstitials, the attract portraits — is drawn
+    procedurally on canvas, and there is still nothing under `public/chomp/`. The only
+    planned image is the paddy wall texture, which is blocked on an asset. Sound, in
+    Phase 5: `scripts/gen-sfx.mjs` extended with eight synthesized clips into
+    `public/sfx/chomp-*.wav` (184 KB), played through `src/lib/sound.ts`, sharing the
+    site's one persisted sound switch. The design rules the chomp rests on are in the
+    spec's Sound section and in the script's own CHOMP header — they are the part that
+    would be "tidied" away by someone who had not sat with it for ninety seconds.
 
 11. ~~**The four pests.** Absent the spec: names, look, and AI personality.~~
     **Answered.** The spec has them: Rat (direct), Sparrow (ambush 4 ahead), Weevil

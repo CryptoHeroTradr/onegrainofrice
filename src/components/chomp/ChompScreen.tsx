@@ -1,29 +1,45 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { ChompCanvas, type ChompCanvasHandle, type ChompStats } from "./ChompCanvas";
 import { GAMEOVER } from "./engine/game";
+import type { Dir } from "./engine/types";
 import { BonusIcons } from "./BonusIcons";
+import { ChompAttract } from "./ChompAttract";
+import { ChompGameOver } from "./ChompGameOver";
+import { ChompPause } from "./ChompPause";
+import { ChompSettings } from "./ChompSettings";
+import { TouchControls } from "./TouchControls";
+import { useContrast, useDpad } from "./prefs";
+import { bestScore, recordScore } from "./scores";
 
 /**
- * RICE CHOMP — the screen. HUD, framing and controls; the game itself is
+ * RICE CHOMP — the screen. HUD, framing, menus and controls; the game itself is
  * <ChompCanvas />.
  *
- * PHASE 4: levels, the difficulty curve, bonus items and the two interstitials, on top of
- * Phase 3's chase. Still keyboard only; no audio, no touch controls, no leaderboard.
+ * PHASE 5: audio, the attract screen, a pause screen and a game-over screen, touch
+ * controls, reduced motion and the high-contrast toggle. Still no leaderboard.
  *
- * The level indicator is a row of bonus-item icons rather than a number, which is the
- * spec's ask and also the cheapest place to catch a legibility problem — six silhouettes
- * side by side at 22px is a harder read than any of them gets on the board.
+ * NONE OF IT REACHES THE SIMULATION. The menus run while the engine is not being
+ * ticked at all, the toggles change what is painted and what is heard, and the
+ * d-pad and the swipe surface both end at setWanted() — the same call the arrow
+ * keys make and already part of the input trace. That is the same argument the
+ * cutscenes rest on, and it is written out in full in engine/cues.ts.
  *
- * The HUD is marked translate="no": TranslateProvider mounts Google Translate site-wide
- * and it will happily rewrite live score digits mid-run.
+ * The level indicator is a row of bonus-item icons rather than a number, which is
+ * the spec's ask and also the cheapest place to catch a legibility problem — six
+ * silhouettes side by side at 22px is a harder read than any of them gets on the
+ * board.
+ *
+ * The HUD is marked translate="no": TranslateProvider mounts Google Translate
+ * site-wide and it will happily rewrite live score digits mid-run.
  */
 
-const HUD_LABEL = "font-mono text-[0.6rem] tracking-[0.18em] text-steamed/45 uppercase";
-const HUD_VALUE = "font-display-round text-2xl leading-none font-semibold tabular-nums";
+const HUD_LABEL = "font-mono text-[0.55rem] tracking-[0.18em] text-steamed/45 uppercase";
+const HUD_VALUE =
+  "font-display-round text-xl leading-none font-semibold tabular-nums sm:text-2xl";
 
 function Stat({ label, value, tone = "text-steamed" }: { label: string; value: string; tone?: string }) {
   return (
@@ -44,6 +60,8 @@ function Key({ children }: { children: React.ReactNode }) {
 
 export function ChompScreen() {
   const reduced = usePrefersReducedMotion();
+  const contrast = useContrast();
+  const dpad = useDpad();
   const gameRef = useRef<ChompCanvasHandle>(null);
   const [stats, setStats] = useState<ChompStats>({
     score: 0,
@@ -57,17 +75,37 @@ export function ChompScreen() {
     tick: 0,
     paused: false,
     phase: 0,
+    attract: true,
+    runId: 0,
   });
 
   // Identity-stable so ChompCanvas never re-runs its boot effect.
   const onStats = useCallback((s: ChompStats) => setStats(s), []);
 
-  const gameOver = stats.phase === GAMEOVER;
+  const gameOver = stats.phase === GAMEOVER && !stats.attract;
   const seconds = (stats.tick / 60).toFixed(1);
-  // ?level=N started this run partway up the curve. Say so on the HUD and on the game-over
-  // card: a debug run must never be mistaken for a score, least of all by the person who
-  // just played it. Phase 7 gates submission on the same flag — see isScoreSubmittable().
+  // ?level=N started this run partway up the curve. Say so on the HUD and on the
+  // game-over card: a debug run must never be mistaken for a score, least of all by
+  // the person who just played it. Phase 7 gates submission on the same flag — see
+  // isScoreSubmittable().
   const debugRun = stats.startLevel !== 1;
+
+  // File the finished run on the local board, exactly once. Keyed on runId rather
+  // than on the phase, because the phase stays GAMEOVER for as long as the card is
+  // up and an effect that watched it would re-file on every stats publish.
+  const [place, setPlace] = useState(0);
+  const [best, setBest] = useState(0);
+  const filedRef = useRef(0);
+  useEffect(() => {
+    if (!gameOver || filedRef.current === stats.runId) return;
+    filedRef.current = stats.runId;
+    // A debug run is not a score. It is kept off the board rather than filed and
+    // hidden, so there is nothing to leak into Phase 7's submission path later.
+    setPlace(debugRun ? 0 : recordScore(stats.score, stats.level, Date.now()));
+    setBest(bestScore());
+  }, [gameOver, stats.runId, stats.score, stats.level, debugRun]);
+
+  const steer = useCallback((dir: Dir) => gameRef.current?.steer(dir), []);
 
   return (
     // A GRID with a definite height, not `min-h-screen` + `flex-1`. `min-height` gives
@@ -75,19 +113,25 @@ export function ChompScreen() {
     // to collapse to its own content and lock the maze at the minimum tile size. An
     // explicit `100svh` (small viewport height — no jump when mobile browser chrome
     // hides) makes the 1fr row's height definite, so `h-full` inside it resolves.
+    //
+    // PORTRAIT IS THE DEFAULT CASE, NOT THE FALLBACK. The maze is 28:31, very nearly
+    // square, so it letterboxes into a portrait phone with room to spare — which is
+    // why there is no rotate prompt anywhere in this file and must never be one. The
+    // rows above and below the board are what get compact on a small screen; the board
+    // itself just takes the 1fr row and centres in it.
     <main className="grid h-[100svh] grid-rows-[auto_auto_1fr_auto] overflow-hidden bg-nori text-steamed">
-      <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-4 pt-4 pb-3 sm:px-6">
+      <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 px-4 pt-3 pb-2 sm:px-6 sm:pt-4">
         <div className="flex items-baseline gap-3">
-          <h1 className="font-display-round text-2xl font-semibold text-khaki sm:text-3xl">
+          <h1 className="font-display-round text-xl font-semibold text-khaki sm:text-3xl">
             RICE CHOMP
           </h1>
-          <span className="font-mono text-[0.6rem] tracking-[0.18em] text-steamed/35 uppercase">
-            Phase 4 · levels &amp; bonuses
+          <span className="hidden font-mono text-[0.6rem] tracking-[0.18em] text-steamed/35 uppercase sm:inline">
+            Phase 5 · sound &amp; screens
           </span>
         </div>
         <Link
           href="/"
-          className="font-mono text-xs text-steamed/50 underline-offset-4 transition-colors hover:text-khaki hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+          className="font-mono text-[0.7rem] text-steamed/50 underline-offset-4 transition-colors hover:text-khaki hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki sm:text-xs"
         >
           ← back to the paddy
         </Link>
@@ -95,17 +139,22 @@ export function ChompScreen() {
 
       <div
         translate="no"
-        className="notranslate flex flex-wrap items-end gap-x-8 gap-y-3 border-y border-steamed/10 px-4 py-3 sm:px-6"
+        className="notranslate flex flex-wrap items-end gap-x-5 gap-y-2 border-y border-steamed/10 px-4 py-2 sm:gap-x-8 sm:px-6 sm:py-3"
       >
-        <Stat label="Score" value={String(stats.score)} tone="text-khaki" />
+        <Stat label="Score" value={stats.score.toLocaleString()} tone="text-khaki" />
         <Stat label="Lives" value={"◆".repeat(stats.lives) || "—"} tone="text-salmon" />
         <div className="flex flex-col gap-1">
           <span className={HUD_LABEL}>Level {stats.level}</span>
           <BonusIcons level={stats.level} />
         </div>
-        <Stat label="Pests" value={String(stats.pestsEaten)} tone="text-tuna" />
-        <Stat label="Left" value={String(stats.grainsRemaining)} tone="text-steamed/70" />
-        <Stat label="Time" value={`${seconds}s`} tone="text-steamed/70" />
+        {/* Secondary numbers are desktop-only. On a phone the HUD is competing with
+            the board for the one thing there is not enough of, and "pests eaten" is
+            not worth a row of maze. */}
+        <div className="hidden items-end gap-8 sm:flex">
+          <Stat label="Pests" value={String(stats.pestsEaten)} tone="text-tuna" />
+          <Stat label="Left" value={String(stats.grainsRemaining)} tone="text-steamed/70" />
+          <Stat label="Time" value={`${seconds}s`} tone="text-steamed/70" />
+        </div>
         {debugRun && (
           <span
             title={`Started on level ${stats.startLevel} — not a submittable run`}
@@ -118,7 +167,8 @@ export function ChompScreen() {
           <button
             type="button"
             onClick={() => gameRef.current?.togglePause()}
-            className="min-h-9 border border-steamed/25 px-3 font-mono text-[0.65rem] tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+            disabled={stats.attract || gameOver}
+            className="min-h-9 border border-steamed/25 px-3 font-mono text-[0.65rem] tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki disabled:opacity-30 disabled:hover:border-steamed/25 disabled:hover:text-steamed/70"
           >
             {stats.paused ? "Resume" : "Pause"}
           </button>
@@ -138,71 +188,69 @@ export function ChompScreen() {
           ref={gameRef}
           onStats={onStats}
           reducedMotion={reduced}
+          contrast={contrast}
           className="h-full w-full"
         />
 
-        {(stats.paused || gameOver) && (
-          // Only the game-over overlay takes pointer events: it has a real control on it.
-          // The paused one stays inert so a stray click cannot swallow anything.
-          <div
-            className={`absolute inset-0 flex flex-col items-center justify-center gap-3 bg-nori/70 ${
-              gameOver ? "" : "pointer-events-none"
-            }`}
-          >
-            <p className="font-display-round text-3xl font-semibold text-khaki">
-              {gameOver ? "Game over" : "Paused"}
-            </p>
-            {gameOver && (
-              <>
-                <p className="font-mono text-xs text-steamed/60">
-                  {stats.score} points · level {stats.level}
-                  {debugRun && ` · debug run from level ${stats.startLevel}, not a score`}
-                </p>
-                {/* Focused on appearance, so Space and Enter reach it natively — and so a
-                    keyboard player is never left on a screen with nothing focused. The
-                    window handler in ChompCanvas covers the case where focus is elsewhere. */}
-                <button
-                  type="button"
-                  autoFocus
-                  onClick={() => gameRef.current?.reset()}
-                  className="mt-1 min-h-11 border-2 border-khaki px-5 font-mono text-sm tracking-[0.15em] text-khaki uppercase transition-colors hover:bg-khaki hover:text-nori focus-visible:bg-khaki focus-visible:text-nori focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steamed"
-                >
-                  Play again
-                </button>
-                <p className="font-mono text-[0.7rem] tracking-wide text-steamed/45">
-                  or press <Key>Space</Key> / <Key>Enter</Key>
-                </p>
-              </>
-            )}
-          </div>
+        {stats.attract && (
+          <ChompAttract
+            onStart={() => gameRef.current?.start()}
+            reducedMotion={reduced}
+          />
+        )}
+
+        {!stats.attract && stats.paused && !gameOver && (
+          <ChompPause
+            onResume={() => gameRef.current?.togglePause()}
+            onQuit={() => gameRef.current?.toAttract()}
+          />
+        )}
+
+        {gameOver && (
+          <ChompGameOver
+            score={stats.score}
+            level={stats.level}
+            place={place}
+            best={best}
+            debugFrom={debugRun ? stats.startLevel : 0}
+            onPlayAgain={() => gameRef.current?.reset()}
+            onQuit={() => gameRef.current?.toAttract()}
+          />
         )}
       </div>
 
-      <footer className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 pt-2 pb-5 font-mono text-xs text-steamed/45 sm:px-6">
-        <span className="flex items-center gap-1.5">
-          <Key>←</Key>
-          <Key>↑</Key>
-          <Key>↓</Key>
-          <Key>→</Key>
-          <span className="ml-1">or</span>
-          <Key>W</Key>
-          <Key>A</Key>
-          <Key>S</Key>
-          <Key>D</Key>
-          <span className="ml-1">to steer</span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Key>P</Key>
-          <span>pause</span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Key>any</Key>
-          <span>skips a cutscene</span>
-        </span>
-        <span className="text-steamed/30">
-          Turn early into a corner and you gain ground — the pests can only turn dead
-          centre. Keyboard only for now; touch controls come next.
-        </span>
+      <footer className="flex flex-col items-center gap-3 px-4 pt-2 pb-4 sm:px-6 sm:pb-5">
+        {/* The d-pad sits UNDER the board rather than over it, so it never covers a
+            corridor the player is trying to read. It is hidden while a menu is up:
+            steering into an overlay does nothing, and a live control behind a dialog
+            is a trap. */}
+        {dpad && !stats.attract && !stats.paused && !gameOver && (
+          <TouchControls onSteer={steer} />
+        )}
+
+        <div className="flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2 sm:justify-start">
+          <ChompSettings />
+          <span className="hidden items-center gap-1.5 font-mono text-xs text-steamed/45 sm:flex">
+            <Key>←</Key>
+            <Key>↑</Key>
+            <Key>↓</Key>
+            <Key>→</Key>
+            <span className="ml-1">or</span>
+            <Key>W</Key>
+            <Key>A</Key>
+            <Key>S</Key>
+            <Key>D</Key>
+          </span>
+          <span className="hidden items-center gap-1.5 font-mono text-xs text-steamed/45 sm:flex">
+            <Key>P</Key>
+            <span>pause</span>
+            <Key>M</Key>
+            <span>mute</span>
+          </span>
+          <span className="font-mono text-[0.7rem] text-steamed/30 sm:hidden">
+            Swipe the board to steer
+          </span>
+        </div>
       </footer>
     </main>
   );

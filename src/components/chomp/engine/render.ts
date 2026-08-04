@@ -67,13 +67,15 @@ export function bakeWalls(
    */
   fill: string = WALL_FILL,
   edge: string = WALL_EDGE,
+  /** Thickens the keyline for the high-contrast board, where the line IS the wall. */
+  lipScale = 1,
 ): HTMLCanvasElement {
   const cv = makeCanvas(Math.round(COLS * tilePx * dpr), Math.round(ROWS * tilePx * dpr));
   const ctx = cv.getContext("2d");
   if (!ctx) return cv;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const lip = Math.max(1, Math.round(tilePx * 0.075));
+  const lip = Math.max(1, Math.round(tilePx * 0.075 * lipScale));
   const isWall = (c: number, r: number) => r >= 0 && r < ROWS && tileAt(grid, c, r) === 0;
 
   for (let r = 0; r < ROWS; r++) {
@@ -104,8 +106,36 @@ export function bakeWalls(
   return cv;
 }
 
+/**
+ * THE HIGH-CONTRAST BOARD.
+ *
+ * Not a second art style — the same maze with the one thing that carries it
+ * turned all the way up. Ordinary walls are porcelain on black, which is a
+ * contrast ratio of about 2.4:1: pretty, and genuinely hard to read for anyone
+ * whose eyes or screen are not ideal. It also gets worse, not better, when the
+ * paddy wall texture lands, which is why the spec pairs that decoration with
+ * this switch.
+ *
+ * So: the wall FILL goes plain black — no texture, no image, nothing to decode —
+ * and the keyline that was decoration becomes the whole wall, in bone at double
+ * thickness. Bone on black is about 18:1. The grains go bone too, because khaki
+ * grains against a bone keyline is the one pair this change would otherwise make
+ * worse. Everything else is untouched: the player's hat outline, the four pest
+ * silhouettes and the six bonus shapes were already built to read in monochrome,
+ * and re-tinting them here would undo work rather than add to it.
+ */
+export const CONTRAST_WALL_FILL = "#000000";
+export const CONTRAST_WALL_EDGE = "#f4efe2"; // bone
+export const CONTRAST_GRAIN_FILL = "#f4efe2"; // bone
+export const CONTRAST_LIP_SCALE = 2;
+
 /** Paint every ordinary grain once. Golden grains are animated, so they are excluded. */
-export function bakeGrains(grid: Uint8Array, tilePx: number, dpr: number): HTMLCanvasElement {
+export function bakeGrains(
+  grid: Uint8Array,
+  tilePx: number,
+  dpr: number,
+  fill: string = GRAIN_FILL,
+): HTMLCanvasElement {
   const cv = makeCanvas(Math.round(COLS * tilePx * dpr), Math.round(ROWS * tilePx * dpr));
   const ctx = cv.getContext("2d");
   if (!ctx) return cv;
@@ -113,16 +143,22 @@ export function bakeGrains(grid: Uint8Array, tilePx: number, dpr: number): HTMLC
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (tileAt(grid, c, r) !== GRAIN) continue;
-      drawGrain(ctx, c * tilePx + tilePx / 2, r * tilePx + tilePx / 2, tilePx);
+      drawGrain(ctx, c * tilePx + tilePx / 2, r * tilePx + tilePx / 2, tilePx, fill);
     }
   }
   return cv;
 }
 
-function drawGrain(ctx: CanvasRenderingContext2D, cx: number, cy: number, tilePx: number): void {
+function drawGrain(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  tilePx: number,
+  fill: string = GRAIN_FILL,
+): void {
   const rx = Math.max(1.5, tilePx * 0.15);
   const ry = Math.max(1, tilePx * 0.08);
-  ctx.fillStyle = GRAIN_FILL;
+  ctx.fillStyle = fill;
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(-0.45); // a grain lies at a slight angle, never axis-aligned

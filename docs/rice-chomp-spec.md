@@ -63,7 +63,20 @@ therefore a decision, not a default — do not reintroduce a pixel-art path.*
 
 `vitest` here is node-env and DOM-free by design. Maze parsing, per-pest target-tile selection, junction tiebreak, mode-cycle timing and scoring must be pure functions, importable without a DOM, and unit tested. The render layer can stay untested. `noUncheckedIndexedAccess` is off, so bounds-guard every tile lookup by hand.
 
-Suites: `test/chomp-{maze,movement,pests,cornering,levels,kiting}.test.ts`.
+Suites: `test/chomp-{maze,movement,pests,cornering,levels,kiting,difficulty,audio}.test.ts`.
+
+**`chomp-audio.test.ts` is the host-boundary suite, not a sound suite.** *Added
+2026-08-04, Phase 5.* It owns the assertion that everything on the host side of the
+line — audio, the attract screen, the pause and game-over screens, the toggles, swipe
+and the d-pad — cannot reach the simulation. Sound is handed the live state through a
+proxy that throws on any write; a listened-to run is compared tick-for-tick against a
+silent one; pausing is modelled as "the host stopped calling `tick()`" and asserted to
+change nothing; and no module under `engine/` may import React, the DOM, `@/lib/sound`,
+a clock or `Math.random` (`render.ts` is exempt from the DOM rule only, because it
+paints and is never replayed). That last one is the structural version of the whole
+argument and the one that would silently rot: wiring sound up from inside `consume()`
+is a one-line change that works perfectly in a browser and throws on the server the
+first time a replay eats a grain.
 
 **The bot is part of the test suite, not a throwaway.** *Added 2026-08-04.* `test/chomp-support.ts` holds a playing bot — breadth-first danger field, one-tile-ahead decisions so it corners like a person, scored by how much of the maze it can still reach before the pests cut it off. `test/chomp-kiting.test.ts` uses it to answer questions the geometry can only half-answer: whether any loop can be orbited forever, and whether a room can be sealed. Two rules learned the hard way and worth keeping:
 
@@ -177,16 +190,66 @@ Each is built from one unmistakable outline property, so the six read apart in m
 
 - Keyboard: arrows and WASD. `P` or `Esc` pauses, `M` mutes.
 - Touch: swipe and an optional on-screen d-pad, both available, d-pad toggleable. Portrait letterbox; never force or nag about rotation. Must be genuinely playable one-thumbed in portrait.
-- Gamepad API if it's cheap; skip it if it isn't.
+- Gamepad API if it's cheap; skip it if it isn't. *Not built, and not because it was hard: nothing else in the repo speaks to a gamepad, so it would be the only input path with no second user. Reconsider if anyone asks.*
+- **Every input route ends at `setWanted()`.** *Added 2026-08-04, Phase 5.* Arrows, WASD, a swipe and a d-pad key are four ways of calling one function, and that is the property that keeps touch out of the input trace's business — a second entry point into the engine is a second thing server-side replay has to know about. `test/chomp-audio.test.ts` pins it.
+- **The swipe RE-ANCHORS after every turn.** A drag registers a direction at 22 CSS pixels of travel and then resets its origin to where the thumb currently is, so one unbroken drag can trace a whole route — down, right, up — without lifting off. That is what "playable one-thumbed" means in a game whose skill is the corner: a scheme that needs a separate flick per turn cannot corner early, and cornering early is the entire skill ceiling. A lift with no turn in it is a TAP, which means "get on with it" — start the run, skip the interstitial.
+- **`M` drives the SITE's sound switch (`grains:sound`), not a private one.** There is one sound toggle on this site, and the chopstick cursor and the grains clicker already answer to it. A game-local mute would mean a player who muted the site still gets chomped at. The d-pad and contrast preferences ARE game-local (`chomp:dpad`, `chomp:contrast`) because nothing else on the site has an opinion about them.
+
+## Sound
+
+*Added 2026-08-04, Phase 5. Eight clips, synthesized by `scripts/gen-sfx.mjs` into
+`public/sfx/chomp-*.wav` and played through `src/lib/sound.ts` — the same pipeline and
+the same player as the grains clicker. 184 KB total, 16-bit mono at 22.05 kHz, no files
+from outside the repo and no third-party request.*
+
+- **Sound is DERIVED from the simulation, never emitted by it.** The obvious wiring is
+  `playChomp()` inside `consume()`. That is exactly what must not happen: the run is
+  replayed server-side by a Node process with no speakers, and an event queue on the
+  state is state — allocated, appended to, drained by whoever is listening. So
+  `engine/cues.ts` diffs two snapshots of counters the engine already keeps and infers
+  what happened. It takes a readonly view, writes nothing, allocates nothing per tick,
+  and could be deleted without changing a tick of any run.
+- **The chomp is the one that matters, and it rests on four rules.** It fires up to
+  eight times a second for a whole run, which is a different design problem from a
+  sound heard twice a level. Any edit that breaks one of these undoes it:
+  1. **Nothing above ~1.2 kHz.** Fatigue lives in repeated high-frequency transients.
+     Measured: the two clips sit at a 338 Hz and 280 Hz spectral centroid with 2.3% and
+     1.7% of their energy above 1.2 kHz.
+  2. **No click.** A 4 ms attack ramp, not an instantaneous one. A click is inaudible
+     once and unbearable four hundred times.
+  3. **It ALTERNATES**, two clips a fourth apart, A B A B. One repeated sample is a
+     repetition; two alternating pitches are a *rhythm*, and a rhythm is something an
+     ear settles into instead of braces against. This is the single biggest factor and
+     it is what the arcade original does.
+  4. **It stops before it repeats.** `PLAYER_TILES_PER_SEC` is 8, so chomps are 125 ms
+     apart; the clip is 55 ms and never overlaps itself. Overlapping copies of one
+     sample is what turns a patter into a drone.
+- **The pest chain rises in pitch** — two semitones per link off one sample via
+  `playbackRate`, so the 200/400/800/1600 ladder is audible without four files, and the
+  fourth one is a sound worth chasing.
+- **Nothing plays before the player's first gesture, and the browser enforces that**
+  rather than us: the AudioContext is created suspended and only the module's own
+  first-gesture unlock resumes it. Since the game cannot start without a keypress or a
+  tap, the attract screen is silent by construction.
+- **Playback is fire-and-forget by contract.** Cues are dispatched from inside the
+  fixed-timestep loop, so a call that blocked would stall the *simulation* — which is
+  not a hitch but a divergence. Nothing is awaited, nothing throws to the caller, and a
+  browser with no AudioContext, a failed decode and a muted player all cost the same.
+- **The chomp clips are generated from a SEEDED PRNG**, so `pnpm gen:sfx chomp` is
+  byte-for-byte a no-op. Regenerating a WAV rewrites every byte of a binary file in git,
+  and the family filter (`pnpm gen:sfx chomp`) exists so the chomp set can be retuned
+  without churning the grains clips, which are still drawn from `Math.random()`.
 
 ## UI and presentation
 
-- Attract screen: title, pests introduced one at a time, high scores, start prompt.
-- HUD: score, high score, level indicator as bonus-item icons, lives as small bowl icons. *The bonus-item level indicator landed in Phase 4 (`BonusIcons.tsx`); score, high score and the lives row are still Phase 6.*
-- Game over → name entry → submission → leaderboard.
+- Attract screen: title, pests introduced one at a time, high scores, start prompt. *Built in Phase 5, 2026-08-04, and it is DOM rather than canvas — a decision, not a shortcut. A canvas attract screen would be closer to the arcade and would also be text a screen reader cannot see, a Start button a keyboard cannot reach and a layout hand-measured at every viewport. The one thing that genuinely needs canvas — the four pests — is canvas, one small context per portrait through the same `drawPestIcon` the board uses, so the silhouettes a player is taught before the run are pixel-for-pixel the ones that will chase them. The high scores are the local board (see Leaderboard). Attract is a HOST FLAG, not a game phase: while it is up `tick()` is never called, and the run it starts is a brand new state, so nothing that happens on it can reach a run even in principle.*
+- HUD: score, high score, level indicator as bonus-item icons, lives as small bowl icons. *The bonus-item level indicator landed in Phase 4 (`BonusIcons.tsx`). Score and lives are on the HUD; the lives row is still `◆` glyphs rather than bowl icons, and the high score is on the attract and game-over screens rather than the HUD, which is where a player actually reads it. Both are Phase 6 tidying, not gaps.*
+- Game over → name entry → submission → leaderboard. *Phase 5 built the game-over screen itself: score, level reached as its bonus-item strip, where the run placed on the local board, Play again, and Title screen. Name entry and submission wait for Phase 7. It deliberately does NOT take a tap anywhere to dismiss the way the attract screen does — a stray thumb landing a moment after the death that caused it would wipe the score off the screen before it had been read.*
+- **Pause is a screen, not a scrim.** *Added 2026-08-04, Phase 5.* Pause is where a player goes to change something, so the settings are on it rather than behind it, Resume is autofocused, and there is a way to abandon the run without reloading. Pausing costs the simulation nothing because it is not a feature of the simulation: the host stops calling `tick()` and stops feeding the accumulator, so no wall-clock is banked and no catch-up burst arrives on resume. That last clause is asserted, not assumed — a paused accumulator that kept accumulating would fire a burst of ticks on resume and diverge a run from a replay of its own trace.
 - **`/chomp?level=N` starts a run partway up the curve, and that run can never be a score.** *Added 2026-08-04.* The only debug affordance, and it exists because the tail of the difficulty curve has to be felt rather than argued about. Two independent things stop it counting, because one guard on a cheat path is not a guard: the run carries `startLevel` and `isScoreSubmittable()` is false for its whole life (Phase 7's leaderboard must gate on it, client and server), and a trace recorded from level 7 fails server-side replay from level 1 anyway. It is also visible — the HUD shows a `DEBUG · from N` chip and the game-over card says the score is not a score.
 - `prefers-reduced-motion`: strip screen shake, maze flash and cutscenes; **gameplay stays playable**. *Amended 2026-08-04 with what "strip" means here: the maze-clear phase still runs for exactly the same number of ticks but the strobe is not drawn, and the interstitial is dismissed before its first frame. Both are presentation-only, so a reduced-motion run and a normal run are tick-for-tick identical — the preference changes what is painted and never what is simulated.*
-- **High-contrast toggle (Phase 6).** Plain wall fill, no background image, for anyone who finds the textured board hard to read. Persisted alongside the mute setting, and reachable without starting a game. *Added 2026-08-03 with the paddy wall texture: a decorative background that some players cannot read is a decorative background with an off switch, not a reason to skip the decoration.*
+- **High-contrast toggle.** Plain wall fill, no background image, for anyone who finds the textured board hard to read. Persisted alongside the mute setting, and reachable without starting a game. *Added 2026-08-03 with the paddy wall texture: a decorative background that some players cannot read is a decorative background with an off switch, not a reason to skip the decoration.* **Built in Phase 5, 2026-08-04** — this line said "(Phase 6)" and the work landed a phase early, alongside the rest of the accessibility pass. What it does, measured rather than described: ordinary walls are porcelain `#2a4d8f` on black, about **2.6:1**, which is decorative and genuinely hard to read; high contrast drops the wall fill to plain black and promotes the keyline that was decoration into the whole wall, bone `#f4efe2` at double thickness, about **18.3:1**. Grains go bone too, because khaki grains against a bone keyline is the one pair this change would otherwise make worse. **Nothing else is re-tinted** — the player's hat outline, the four pest silhouettes and the six bonus shapes were all built to read in monochrome already, and re-colouring them here would undo that work rather than add to it. It is a re-bake of the static layers and touches no gameplay.
+  - The three switches — sound, contrast, d-pad — all sit in the screen's control bar, which is on screen *beside* the attract overlay rather than under it. Reachable without starting a game is the spec's ask about contrast and is the right rule for all three: someone who needs the high-contrast board needs it to read the attract screen's maze too.
 
 ### The board (Phase 4 and later)
 
@@ -207,6 +270,7 @@ Each is built from one unmistakable outline property, so the six read apart in m
 - Submission payload: name, score, level reached, duration, grains eaten, pests eaten, bonuses collected, and a compressed input trace.
 - Validation, server-side, trusting nothing from the client: rate limit per `grain_vid` and per IP; reject scores above a plausible ceiling for the reported level and duration; reject impossibly short runs; verify score is arithmetically consistent with the reported event counts. Store the input trace unverified so replay validation can be added later as a server-side change only. Document in comments what this does not catch.
 - Views: global top 100, per-country top 100, personal best in `localStorage`.
+- **The local board landed early, in Phase 5** (`src/components/chomp/scores.ts`): the top five runs on this device, shown on the attract screen and used by the game-over card to say where a run placed. It is not a preview of the leaderboard and does not become one — the arcade convention is a local board and a world board side by side, and the local one is the only board a first-time player is ever on. A debug run (`?level=N`) is never filed to it, which is the third independent thing keeping such a run from counting.
 
 ### Pattern-ability, and what it means for the board
 
@@ -242,7 +306,8 @@ determinism is what replay verification is built on.
 
 - 60fps on a mid-range phone; no GC stutter — pool objects, no per-frame allocations in the hot loop.
 - Deterministic: identical inputs produce an identical run regardless of frame rate.
-- Zero third-party network requests, verified in the network tab. Self-hosted images under `public/chomp/` are within budget (500 KB total, 300 KB per file).
+- Zero third-party network requests, verified in the network tab. Self-hosted images under `public/chomp/` are within budget (500 KB total, 300 KB per file). Sound is within the same rule and is `public/sfx/chomp-*.wav`, 184 KB, synthesized in-repo.
+  - ⚠️ **This criterion is currently VIOLATED, and not by anything RICE CHOMP fetches.** *Recorded 2026-08-04, Phase 5.* `src/app/layout.tsx:58` mounts `TranslateProvider` on every page, which loads `https://translate.google.com/translate_a/element.js`. Measured on the built page: it is the only external host in `/chomp`'s HTML, it is in the Phase 4 build too, and nothing in the game asks for it. The decision is not this spec's to make — Translate is a site feature, and scoping it off `/chomp` removes translation from the game page — so it is written down rather than quietly fixed or quietly dropped. Everything the game itself loads is local.
 - Zero new npm dependencies.
 - Fully playable keyboard-only and touch-only.
 - No hardcoded path prefixes anywhere, TS or CSS.

@@ -36,7 +36,17 @@ type Name =
   | "m40"
   | "m50"
   | "m100"
-  | "m250";
+  | "m250"
+  // RICE CHOMP. Synthesized by scripts/gen-sfx.mjs like pour/clack — see the CHOMP
+  // section there for why the chomp is built the way it is.
+  | "chompA"
+  | "chompB"
+  | "chompGolden"
+  | "chompPest"
+  | "chompDeath"
+  | "chompBonus"
+  | "chompExtra"
+  | "chompClear";
 
 /**
  * Milestone clips keep the exact filenames they were delivered under, so the
@@ -55,6 +65,14 @@ const SRC: Record<Name, string> = {
   m50: "/sfx/kids-cheering.mp3",
   m100: "/sfx/error-soundss.mp3",
   m250: "/sfx/ced71b4a-4f58-4ae3-95fb-34dcc5935631.mp3",
+  chompA: "/sfx/chomp-a.wav",
+  chompB: "/sfx/chomp-b.wav",
+  chompGolden: "/sfx/chomp-golden.wav",
+  chompPest: "/sfx/chomp-pest.wav",
+  chompDeath: "/sfx/chomp-death.wav",
+  chompBonus: "/sfx/chomp-bonus.wav",
+  chompExtra: "/sfx/chomp-extra.wav",
+  chompClear: "/sfx/chomp-clear.wav",
 };
 // Pour (the rice-drop sound) is boosted 100% over its original 0.4 — it is the
 // core feedback of the clicker and was too quiet on phone speakers. Milestones
@@ -70,6 +88,17 @@ const VOLUME: Record<Name, number> = {
   m50: 0.8,
   m100: 0.8,
   m250: 0.8,
+  // The chomp sits well under everything else on purpose. It is the only sound
+  // in the app that fires continuously, and the mix has to leave room for the
+  // cues that actually carry information.
+  chompA: 0.3,
+  chompB: 0.3,
+  chompGolden: 0.55,
+  chompPest: 0.6,
+  chompDeath: 0.65,
+  chompBonus: 0.55,
+  chompExtra: 0.65,
+  chompClear: 0.6,
 };
 
 /**
@@ -266,7 +295,7 @@ export function subscribeSound(cb: () => void): () => void {
 const POOL_SIZE = 4;
 const pools = new Map<Name, HTMLAudioElement[]>();
 
-function playPooled(name: Name): void {
+function playPooled(name: Name, rate = 1): void {
   if (typeof window === "undefined") return;
   let pool = pools.get(name);
   if (!pool) {
@@ -281,6 +310,7 @@ function playPooled(name: Name): void {
   const el = pool.find((a) => a.paused || a.ended) ?? pool[0];
   try {
     el.currentTime = 0;
+    el.playbackRate = rate;
     const owns = MILESTONE_NAMES.has(name);
     if (owns) {
       // Same ownership rule as the Web Audio path. `duration` is NaN until
@@ -347,7 +377,12 @@ function holdMilestone(seconds: number): void {
 
 const MILESTONE_NAMES: ReadonlySet<Name> = new Set(MILESTONES.map((m) => m.name));
 
-function play(name: Name): void {
+/**
+ * `rate` transposes the clip. Used only by the RICE CHOMP pest chain, so the
+ * four links of one power window rise in pitch off a single sample instead of
+ * four near-identical files.
+ */
+function play(name: Name, rate = 1): void {
   // Deliberately NOT gated on prefers-reduced-motion. It used to be, which meant
   // anyone with "reduce motion" enabled (a common desktop OS setting) got NO
   // SOUND AT ALL and had no idea why — the toggle said "on" and nothing played.
@@ -359,7 +394,7 @@ function play(name: Name): void {
 
   const c = getCtx();
   if (!c) {
-    playPooled(name);
+    playPooled(name, rate);
     return;
   }
 
@@ -372,13 +407,14 @@ function play(name: Name): void {
     // Still decoding (or decode failed) — kick off the load and cover this tap
     // with the element pool so it isn't silently dropped.
     void preload(name);
-    playPooled(name);
+    playPooled(name, rate);
     return;
   }
 
   try {
     const source = c.createBufferSource();
     source.buffer = buffer;
+    if (rate !== 1) source.playbackRate.value = rate;
     const gain = c.createGain();
     gain.gain.value = VOLUME[name];
     source.connect(gain).connect(c.destination);
@@ -390,7 +426,7 @@ function play(name: Name): void {
     }
     source.start();
   } catch {
-    playPooled(name);
+    playPooled(name, rate);
   }
 }
 
@@ -414,4 +450,86 @@ export function playMilestone(total: number): boolean {
   if (!name) return false;
   play(name);
   return true;
+}
+
+// --- RICE CHOMP -------------------------------------------------------------
+/**
+ * The maze game's cues. Everything here is FIRE-AND-FORGET by contract: no call
+ * blocks, none of them can throw into the caller, and none of them is awaited.
+ * The game loop calls these from inside its fixed-timestep tick loop, so an
+ * audio stall that reached the caller would stall the SIMULATION — and the
+ * simulation is replayed server-side, so a stall is not merely a hitch, it is a
+ * divergence. Decode is async and pre-warmed by preloadChomp(); a clip that is
+ * not ready yet falls through to the element pool or is simply not heard.
+ *
+ * Nothing here plays before the player's first gesture, and that is enforced by
+ * the browser rather than by us: the AudioContext is created suspended and only
+ * armUnlock() (above) resumes it, on the first pointerdown/touchstart/keydown
+ * anywhere on the page. Since the game cannot start without one of those, the
+ * attract screen is silent by construction.
+ */
+
+/**
+ * Decode all eight clips ahead of time. Safe outside a gesture — a suspended
+ * AudioContext decodes fine — and worth doing on mount: the first chomp lands
+ * within a second of the player's first input and there is no second chance.
+ */
+export function preloadChomp(): void {
+  for (const n of CHOMP_NAMES) void preload(n);
+}
+
+const CHOMP_NAMES: readonly Name[] = [
+  "chompA",
+  "chompB",
+  "chompGolden",
+  "chompPest",
+  "chompDeath",
+  "chompBonus",
+  "chompExtra",
+  "chompClear",
+];
+
+/**
+ * The chomp ALTERNATES between two clips a fourth apart. This is the single
+ * most important thing about it: at eight grains a second, one repeated sample
+ * is a smoke alarm and two alternating pitches are a rhythm. See the CHOMP
+ * section of scripts/gen-sfx.mjs for the other three rules it rests on.
+ */
+let chompFlip = false;
+export function playChomp(): void {
+  chompFlip = !chompFlip;
+  play(chompFlip ? "chompA" : "chompB");
+}
+
+/** Start every run on the same foot, so the first chomp is always the low one. */
+export function resetChompVoice(): void {
+  chompFlip = false;
+}
+
+export function playChompGolden(): void {
+  play("chompGolden");
+}
+
+/**
+ * `chain` is how many pests have been eaten in this power window, 1-based. Each
+ * link is transposed up two semitones off the same sample, so the 200/400/800/
+ * 1600 ladder is audible without four files — and the fourth one is the sound a
+ * player is chasing.
+ */
+export function playChompPest(chain = 1): void {
+  const step = Math.max(0, Math.min(3, Math.round(chain) - 1));
+  play("chompPest", Math.pow(2, (step * 2) / 12));
+}
+
+export function playChompDeath(): void {
+  play("chompDeath");
+}
+export function playChompBonus(): void {
+  play("chompBonus");
+}
+export function playChompExtraLife(): void {
+  play("chompExtra");
+}
+export function playChompLevelClear(): void {
+  play("chompClear");
 }
