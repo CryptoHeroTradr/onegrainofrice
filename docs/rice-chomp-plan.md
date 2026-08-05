@@ -1638,8 +1638,8 @@ Played by the difficulty suite's clearing bot, submitted over HTTP exactly as th
 does, against the running build. A level-1 clear: **score 3720, 4102 ticks, 282 grains, 4
 golden, 2 pests, 1 bonus, and a 315-byte trace.**
 
-> **This log is the TWO-BOARD build, and it has not been re-run since.** *Marked
-> 2026-08-05, with the removal.* Two of its lines describe a board that no longer
+> **This log is the TWO-BOARD build, and it is not re-run.** *Marked 2026-08-05, with the
+> removal; see §10.6 for why, and for the one measurement that WAS re-run.* Two of its lines describe a board that no longer
 > exists — `countryRank:1` and "the country is on the countries board" — and the table
 > and index lists below name `chomp_countries`. Every other line still describes the
 > shipped path unchanged: the removal deleted a second table's upsert from the submit
@@ -1715,6 +1715,36 @@ time in isolation and on an unloaded box (338/338). Left alone deliberately: rai
 timeout in another phase's suite is not this phase's call, but a suite that is red for
 reasons unrelated to the change under test is how a real regression gets waved through, so
 it is written down here rather than shrugged off.
+
+### 10.6 The one-board build, re-measured — 2026-08-05
+
+The removal (`b5d6dd2`) re-ran ONE of §10's measurements and deliberately not the other.
+
+**Re-run: the third-party request count**, because it guards a spec acceptance criterion
+(`/chomp` makes zero third-party requests) and it costs one headless browser. Preview
+build `b5d6dd2` on :3099, Chrome over CDP, cache disabled, `CHOMP_DB_PATH` pointed at a
+scratch file so the preview could not become a second writer of the live one — §10.4's
+trap, respected rather than re-discovered.
+
+| viewport | form | requests on load | with the board open | third-party |
+|---|---|---:|---:|---|
+| 1920×1080 | docked | 49 | **50** | **0** |
+| 390×844 | overlay | 48 | **49** | **0** |
+
+Every request in all four columns went to `127.0.0.1:3099` and nothing else. **Opening the
+board costs exactly one request** — the single `/api/chomp/leaderboard` GET — at both
+viewports, which is the standing proof that the in-flight share still holds: both forms of
+the panel mount, only one fetch leaves. The same probe found **0 elements with
+`role="tab"`** and one button captioned **"Board"**, so the removal is confirmed in a real
+production build and not only in the source. The comparable two-board figure was 49–50
+with both boards opened; the shape is unchanged and the page is a request lighter.
+
+**Not re-run: §10.3's end-to-end submission smoke.** Lito's call, and the right one. It was
+a hand-run log that nobody re-runs, and what it covered is now covered twice over by
+things that run on every commit — `test/chomp-db.test.ts` for the write path against a
+real SQLite file, and `test/chomp-score.test.ts`'s 29 cases for the submission path. The
+log stays in §10.3 marked as a two-board measurement rather than reworded into a claim
+nobody made.
 
 ---
 
