@@ -2,27 +2,33 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, X } from "lucide-react";
-import { flagEmoji, friendlyCountryName } from "@/lib/grains/flag";
+import { flagEmoji } from "@/lib/grains/flag";
 import type { LeaderboardResponse } from "@/lib/chomp/wire";
-import { fetchBoards } from "./leaderboard";
+import { fetchBoard } from "./leaderboard";
 import { bestScore } from "./scores";
 
 /**
- * RICE CHOMP's two boards: TOP PLAYERS and TOP COUNTRIES.
+ * RICE CHOMP's board. ONE board: the top 50 players, ranked by best single run.
+ *
+ * There were two — top players and top countries, mirroring the grains game — until
+ * 2026-08-05. The country board is gone and the flag is a COLUMN of this one, beside
+ * the name, drawn from the GeoIP attributed to the run when it was submitted. A
+ * player's country is a fact about them worth showing; it was not worth a second
+ * board, a second query and a tab to hunt through.
  *
  * ── WHAT IS REUSED, AND WHAT IS DELIBERATELY NOT ────────────────────────────────
- * The grains game already has these two boards, and the brief is to reuse its
+ * The grains game already has boards like this, and the brief is to reuse its
  * components and patterns rather than build parallel ones — but not its data. What
  * that came to in practice:
  *
- *  - REUSED VERBATIM: `flagEmoji`, `friendlyCountryName` and `isUnknownCountry` from
- *    `@/lib/grains/flag`. The third of those was a private function inside
- *    `CountryLeaderboard.tsx` until this phase and now lives beside the other two,
- *    with the grains board importing it from its new home. One definition of "what
- *    counts as a country", used by both games and by the route handler.
- *  - REUSED AS A PATTERN: the row shape (rank · flag · name · number), the pinned
- *    "you" row when you are off the visible board, the empty state that tells a first
- *    player what to do, and the ranking-after-filtering rule.
+ *  - REUSED VERBATIM: `flagEmoji` from `@/lib/grains/flag`, which is the whole of the
+ *    flag treatment on both games — same helper, same ISO-2 → regional-indicator
+ *    mapping, same globe for a code it does not recognise. A player whose GeoIP missed
+ *    gets the globe and keeps their rank: the score is the real thing here, and unlike
+ *    the country board this replaced, an unknown code is not a reason to leave a row
+ *    out. The flag is `aria-hidden` — a decoration beside a name, not a label of it.
+ *  - REUSED AS A PATTERN: the row shape (rank · flag · name · number), the "you"
+ *    highlight, and the empty state that tells a first player what to do.
  *  - NOT REUSED: the components themselves, and `AnimatedNumber`. The grains boards
  *    are cream panels (`bg-bone`, `text-olive-deep`) built for a light page; this one
  *    sits on a black arcade cabinet, and rendering one inside the other would look
@@ -43,19 +49,12 @@ import { bestScore } from "./scores";
  * cannot observe either.
  */
 
-export type BoardTab = "players" | "countries";
-
 /**
  * `docked` is the desktop panel beside the board; `overlay` covers the board on a
  * tablet or a phone. Which one is used is decided by CSS, not by this component —
  * see ChompScreen, where both are rendered and the breakpoint picks one.
  */
 export type BoardVariant = "docked" | "overlay";
-
-const TABS: ReadonlyArray<{ id: BoardTab; label: string }> = [
-  { id: "players", label: "Players" },
-  { id: "countries", label: "Countries" },
-];
 
 const ROW = "flex items-center gap-2 px-2 py-1.5 font-mono text-chomp-body tabular-nums";
 const YOU_ROW = "bg-khaki/15 ring-1 ring-khaki/40";
@@ -69,13 +68,9 @@ function Rank({ n }: { n: number }) {
 }
 
 export function ChompLeaderboard({
-  tab,
-  onTab,
   onClose,
   variant,
 }: {
-  tab: BoardTab;
-  onTab: (t: BoardTab) => void;
   onClose: () => void;
   variant: BoardVariant;
 }) {
@@ -104,7 +99,7 @@ export function ChompLeaderboard({
 
   useEffect(() => {
     const ac = new AbortController();
-    fetchBoards(ac.signal)
+    fetchBoard(ac.signal)
       .then((d) => {
         if (ac.signal.aborted) return;
         setData(d);
@@ -128,11 +123,7 @@ export function ChompLeaderboard({
   }, []);
 
   const you = data?.you ?? null;
-  const rows = data
-    ? tab === "players"
-      ? data.players
-      : data.countries
-    : [];
+  const rows = data?.players ?? [];
 
   const body = (
     <>
@@ -164,26 +155,6 @@ export function ChompLeaderboard({
         </button>
       </div>
 
-      {/* --- tabs --------------------------------------------------------- */}
-      <div role="tablist" aria-label="Leaderboard boards" className="flex gap-px bg-steamed/10">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => onTab(t.id)}
-            className={`flex-1 py-2 font-mono text-chomp-chip tracking-[0.15em] uppercase transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-khaki ${
-              tab === t.id
-                ? "bg-khaki/15 text-khaki"
-                : "bg-nori text-steamed/45 hover:text-steamed/80"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {/* --- rows --------------------------------------------------------- */}
       <div translate="no" className="notranslate min-h-0 flex-1 overflow-y-auto">
         {error ? (
@@ -204,13 +175,13 @@ export function ChompLeaderboard({
         ) : rows.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <p className="font-mono text-chomp-body text-steamed/50">
-              {tab === "players" ? "Nobody has cleared a paddy yet." : "No country on the board yet."}
+              Nobody has cleared a paddy yet.
             </p>
             <p className="mt-1 font-mono text-chomp-note text-steamed/30">Go first.</p>
           </div>
-        ) : tab === "players" ? (
+        ) : (
           <ol>
-            {data!.players.map((p) => {
+            {rows.map((p) => {
               // Matched on RANK rather than on name: names are not unique, and the
               // server is the only thing that knows which row is this player's.
               const isYou = !!you && you.rank > 0 && you.rank === p.rank;
@@ -230,31 +201,6 @@ export function ChompLeaderboard({
                     L{p.level}
                   </span>
                   <span className="shrink-0 text-khaki">{p.score.toLocaleString()}</span>
-                </li>
-              );
-            })}
-          </ol>
-        ) : (
-          <ol>
-            {data!.countries.map((c) => {
-              const isYou = !!data!.yourCode && data!.yourCode === c.code;
-              const name = friendlyCountryName(c.code, c.name);
-              return (
-                <li key={c.code} className={`${ROW} ${isYou ? YOU_ROW : ""}`}>
-                  <Rank n={c.rank} />
-                  <span className="text-base leading-none" aria-hidden="true">
-                    {flagEmoji(c.code)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-steamed" title={name}>
-                    {name}
-                    {isYou && (
-                      <span className="ml-1.5 text-chomp-note text-khaki uppercase">you</span>
-                    )}
-                    {c.best && (
-                      <span className="ml-1.5 text-chomp-note text-steamed/30">· {c.best}</span>
-                    )}
-                  </span>
-                  <span className="shrink-0 text-khaki">{c.score.toLocaleString()}</span>
                 </li>
               );
             })}

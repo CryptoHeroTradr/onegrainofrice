@@ -42,15 +42,6 @@ export interface ChompPlayerRow {
   country_code: string | null;
 }
 
-/** One row of the Top Countries board. */
-export interface ChompCountryRow {
-  code: string;
-  name: string | null;
-  best_score: number;
-  best_name: string | null;
-  games: number;
-}
-
 /** What a submit did, from the writer's point of view. */
 export interface SubmitResult {
   /** The row id of the stored run. */
@@ -61,8 +52,6 @@ export interface SubmitResult {
   improved: boolean;
   /** 1-based rank on the global board, or 0 if outside it. */
   rank: number;
-  /** 1-based rank of the player's country, or 0. */
-  countryRank: number;
   /** True when an identical run was already stored and this call changed nothing. */
   duplicate: boolean;
 }
@@ -142,7 +131,9 @@ function migrate(handle: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chomp_runs_dedupe ON chomp_runs (vid, trace_hash);
 
     -- Best-per-player, denormalised so the board is ONE indexed read — the same
-    -- reason getTopVisitors() reads visitors.total instead of aggregating.
+    -- reason getTopVisitors() reads visitors.total instead of aggregating. This is
+    -- THE board: one row per player, their best run, and country_code is the flag
+    -- beside their name rather than a key into a board of its own.
     CREATE TABLE IF NOT EXISTS chomp_players (
       vid           TEXT PRIMARY KEY,
       display_name  TEXT,
@@ -156,43 +147,19 @@ function migrate(handle: Database.Database): void {
       last_seen     INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_chomp_players_best ON chomp_players (best_score DESC);
-
-    -- Per-country board. RANKED BY THE COUNTRY'S BEST RUN, not by a sum of every run
-    -- it ever posted: this is a score-attack game, and a sum ranks whoever played
-    -- most rather than whoever played best — which is also the one thing a script can
-    -- inflate without ever needing a good run. total_score is kept because it is free
-    -- and answers a different question, but nothing ranks on it.
-    CREATE TABLE IF NOT EXISTS chomp_countries (
-      code        TEXT PRIMARY KEY,
-      name        TEXT,
-      best_score  INTEGER NOT NULL DEFAULT 0,
-      best_vid    TEXT,
-      best_name   TEXT,
-      total_score INTEGER NOT NULL DEFAULT 0,
-      games       INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_chomp_countries_best ON chomp_countries (best_score DESC);
   `);
 
   // --- additive migrations (safe to re-run) --------------------------------
-  // `best_name` is in the CREATE TABLE above, so on a fresh database this is a
-  // no-op. It is here because a column added AFTER the table has shipped cannot be,
-  // and this is the pattern for it (`display_name` on grains.visitors is the live
-  // example): check the real column list, never assume. Keeping one live call means
-  // the next additive column is a copied line rather than a decision.
-  addColumnIfMissing(handle, "chomp_countries", "best_name", "TEXT");
-}
-
-function addColumnIfMissing(
-  handle: Database.Database,
-  table: string,
-  column: string,
-  decl: string,
-): void {
-  const cols = handle.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-  if (!cols.some((c) => c.name === column)) {
-    handle.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
-  }
+  // There are none, and this is where the next one goes. The pattern is the live
+  // `display_name` migration in `src/lib/grains/db.ts`: read `PRAGMA table_info`,
+  // check the real column list, `ALTER TABLE ... ADD COLUMN` only if it is missing.
+  // A column added AFTER the table has shipped cannot ride in the CREATE above.
+  //
+  // THERE IS NO `chomp_countries` TABLE. There was one until 2026-08-05, when the
+  // second board was removed and the flag became a column of this one. Nothing
+  // creates it now, and production never had it — `data/chomp.db` was still unborn
+  // when it went. A DEV database made before that date keeps its copy, inert: no
+  // read, no write, no migration touches it. Drop it by hand or delete the file.
 }
 
 // ---------------------------------------------------------------------------
@@ -282,9 +249,13 @@ export interface StoredRun {
 }
 
 /**
- * Store a validated run and update both boards, in ONE transaction — the same shape
- * as `addGrains()`, and for the same reason: three tables that disagree about a
- * player's best score are worse than no board at all.
+ * Store a validated run and update the board, in ONE transaction — the same shape as
+ * `addGrains()`, and for the same reason: two tables that disagree about a player's
+ * best score are worse than no board at all.
+ *
+ * The run's country is written to BOTH tables and neither is a country board:
+ * `chomp_runs.country_code` is the audit trail, `chomp_players.country_code` is the
+ * flag the board draws beside the name.
  */
 export function submitRun(run: StoredRun): SubmitResult {
   const handle = getChompDb();
@@ -352,31 +323,6 @@ export function submitRun(run: StoredRun): SubmitResult {
              last_seen    = @now`,
         )
         .run({ ...run, runId, now });
-
-      if (run.countryCode) {
-        handle
-          .prepare(
-            `INSERT INTO chomp_countries
-               (code, name, best_score, best_vid, best_name, total_score, games)
-             VALUES (@code, @cname, @score, @vid, @name, @score, 1)
-             ON CONFLICT(code) DO UPDATE SET
-               name        = COALESCE(excluded.name, chomp_countries.name),
-               best_score  = MAX(chomp_countries.best_score, @score),
-               best_vid    = CASE WHEN @score > chomp_countries.best_score
-                                  THEN @vid ELSE chomp_countries.best_vid END,
-               best_name   = CASE WHEN @score > chomp_countries.best_score
-                                  THEN @name ELSE chomp_countries.best_name END,
-               total_score = chomp_countries.total_score + @score,
-               games       = chomp_countries.games + 1`,
-          )
-          .run({
-            code: run.countryCode,
-            cname: run.countryName,
-            score: run.score,
-            vid: run.vid,
-            name: run.name,
-          });
-      }
     }
 
     const best = Math.max(previousBest, duplicate ? previousBest : run.score);
@@ -385,7 +331,6 @@ export function submitRun(run: StoredRun): SubmitResult {
       best,
       improved,
       rank: playerRank(handle, run.vid),
-      countryRank: run.countryCode ? countryRank(handle, run.countryCode) : 0,
       duplicate,
     };
   });
@@ -412,17 +357,12 @@ function playerRank(handle: Database.Database, vid: string): number {
   return me ? (row?.n ?? 0) + 1 : 0;
 }
 
-function countryRank(handle: Database.Database, code: string): number {
-  const row = handle
-    .prepare(
-      `SELECT COUNT(*) AS n FROM chomp_countries
-        WHERE best_score > (SELECT best_score FROM chomp_countries WHERE code = ?)`,
-    )
-    .get(code) as { n: number } | undefined;
-  const me = handle.prepare(`SELECT 1 FROM chomp_countries WHERE code = ?`).get(code);
-  return me ? (row?.n ?? 0) + 1 : 0;
-}
-
+/**
+ * THE board query, and the only one. `n` is the whole of the row count: one indexed
+ * read down `idx_chomp_players_best`, no filter, no post-processing — so the board's
+ * size is the caller's LIMIT and nothing else. (It was 100 with a second board beside
+ * it; it is 50 now. That change was this argument.)
+ */
 export function getTopPlayers(n: number): ChompPlayerRow[] {
   const limit = Math.max(0, Math.floor(n));
   return getChompDb()
@@ -436,27 +376,12 @@ export function getTopPlayers(n: number): ChompPlayerRow[] {
     .all(limit) as ChompPlayerRow[];
 }
 
-export function getTopCountries(n: number): ChompCountryRow[] {
-  const limit = Math.max(0, Math.floor(n));
-  return getChompDb()
-    .prepare(
-      `SELECT code, name, best_score, best_name, games
-         FROM chomp_countries
-        WHERE best_score > 0
-        ORDER BY best_score DESC, code ASC
-        LIMIT ?`,
-    )
-    .all(limit) as ChompCountryRow[];
-}
-
 export interface YouRow {
   name: string | null;
   best: number;
   bestLevel: number;
   games: number;
   rank: number;
-  countryCode: string | null;
-  countryRank: number;
 }
 
 /** This player's own row, whether or not they are on the visible board. */
@@ -464,7 +389,7 @@ export function getYou(vid: string): YouRow | null {
   const handle = getChompDb();
   const row = handle
     .prepare(
-      `SELECT display_name, best_score, best_level, games, country_code
+      `SELECT display_name, best_score, best_level, games
          FROM chomp_players WHERE vid = ?`,
     )
     .get(vid) as
@@ -473,7 +398,6 @@ export function getYou(vid: string): YouRow | null {
         best_score: number;
         best_level: number;
         games: number;
-        country_code: string | null;
       }
     | undefined;
   if (!row) return null;
@@ -483,7 +407,5 @@ export function getYou(vid: string): YouRow | null {
     bestLevel: row.best_level,
     games: row.games,
     rank: playerRank(handle, vid),
-    countryCode: row.country_code,
-    countryRank: row.country_code ? countryRank(handle, row.country_code) : 0,
   };
 }

@@ -10,25 +10,14 @@
  * this in must not drag `better-sqlite3` behind it.
  */
 
-/** One row of the Top Players board. */
+/** One row of the board — and there is one board. */
 export interface WirePlayer {
   rank: number;
   name: string;
   score: number;
   level: number;
-  /** ISO-2 country code for the flag, or null. */
+  /** ISO-2 country code for the flag beside the name, or null. */
   code: string | null;
-}
-
-/** One row of the Top Countries board. */
-export interface WireCountry {
-  rank: number;
-  code: string;
-  name: string | null;
-  /** The country's BEST run, not the sum of its runs. See lib/chomp/db.ts. */
-  score: number;
-  /** Who set it. */
-  best: string | null;
 }
 
 /** The submitting player's own standing, whether or not they are on the board. */
@@ -39,8 +28,6 @@ export interface WireYou {
   games: number;
   /** 1-based global rank, or 0 if they have never submitted. */
   rank: number;
-  countryCode: string | null;
-  countryRank: number;
   /**
    * What to prefill the name box with: their RICE CHOMP name if they have one, else
    * the name they chose on the grains board, else null. See lib/chomp/grainsName.ts.
@@ -50,10 +37,7 @@ export interface WireYou {
 
 export interface LeaderboardResponse {
   players: WirePlayer[];
-  countries: WireCountry[];
   you: WireYou | null;
-  /** The country nginx attributes to THIS request, for the "you" highlight. */
-  yourCode: string | null;
 }
 
 /** What POST /api/chomp/score answers with on success. */
@@ -63,7 +47,6 @@ export interface SubmitResponse {
   best: number;
   improved: boolean;
   rank: number;
-  countryRank: number;
   /** True when this exact run was already stored; the call changed nothing. */
   duplicate: boolean;
 }

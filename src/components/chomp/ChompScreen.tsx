@@ -10,7 +10,7 @@ import type { Dir } from "./engine/types";
 import { BonusIcons } from "./BonusIcons";
 import { ChompAttract } from "./ChompAttract";
 import { ChompGameOver } from "./ChompGameOver";
-import { ChompLeaderboard, type BoardTab } from "./ChompLeaderboard";
+import { ChompLeaderboard } from "./ChompLeaderboard";
 import { ChompPause } from "./ChompPause";
 import { ChompSettings } from "./ChompSettings";
 import { LivesRow } from "./LivesRow";
@@ -33,6 +33,10 @@ import { bestScore, recordScore } from "./scores";
  * landscape viewport and the header link everywhere else. NONE of it touches the
  * canvas's tile or letterbox maths — the board is still sized from the play row it
  * is given, and it is still given exactly one 1fr row.
+ *
+ * PHASE 6 — the leaderboard: ONE HUD button, one panel, in two CSS-chosen forms. It
+ * shipped as two boards with two buttons and a tab strip, and was cut to one the same
+ * day (2026-08-05). The only part of it that is not cosmetic is the pause rule below.
  *
  * NONE OF IT REACHES THE SIMULATION. The menus run while the engine is not being
  * ticked at all, the toggles change what is painted and what is heard, and the
@@ -65,12 +69,6 @@ const HUD_VALUE =
  */
 const PADDY_HREF = "/home";
 const PADDY_LABEL = "← Back to the rice paddy";
-
-/** The two boards, as two HUD buttons. Order matches the panel's tab order. */
-const BOARD_BUTTONS: ReadonlyArray<{ tab: BoardTab; label: string }> = [
-  { tab: "players", label: "Players" },
-  { tab: "countries", label: "Countries" },
-];
 
 function Stat({ label, value, tone = "text-steamed" }: { label: string; value: string; tone?: string }) {
   return (
@@ -159,31 +157,26 @@ export function ChompScreen() {
   // rather than a query: a `display:none` element has no `offsetParent`. That reads
   // the real answer, from the real CSS, at the real moment.
   const [boardOpen, setBoardOpen] = useState(false);
-  const [boardTab, setBoardTab] = useState<BoardTab>("players");
   const dockRef = useRef<HTMLDivElement>(null);
   /** True only when WE paused the run to open the overlay, so we resume only then. */
   const autoPausedRef = useRef(false);
 
-  const openBoard = useCallback(
-    (tab: BoardTab) => {
-      setBoardTab(tab);
-      setBoardOpen(true);
-      // AN OVERLAY YOU CANNOT SEE THROUGH, OVER A RUNNING GAME, IS A DEATH SENTENCE.
-      // On a phone or a tablet the board covers the maze completely, so opening it
-      // mid-run pauses the run. On a desktop it does not: the panel is beside the
-      // board, the maze is fully visible, and pausing a game the player can still
-      // see and steer would be the surprising thing.
-      //
-      // Only if we did the pausing do we undo it — a player who had already paused
-      // and then opened the board comes back to a paused game, which is what they
-      // asked for.
-      const docked = dockRef.current?.offsetParent != null;
-      if (!docked && !stats.attract && !gameOver && !stats.paused) {
-        autoPausedRef.current = gameRef.current?.togglePause() ?? false;
-      }
-    },
-    [stats.attract, stats.paused, gameOver],
-  );
+  const openBoard = useCallback(() => {
+    setBoardOpen(true);
+    // AN OVERLAY YOU CANNOT SEE THROUGH, OVER A RUNNING GAME, IS A DEATH SENTENCE.
+    // On a phone or a tablet the board covers the maze completely, so opening it
+    // mid-run pauses the run. On a desktop it does not: the panel is beside the
+    // board, the maze is fully visible, and pausing a game the player can still
+    // see and steer would be the surprising thing.
+    //
+    // Only if we did the pausing do we undo it — a player who had already paused
+    // and then opened the board comes back to a paused game, which is what they
+    // asked for.
+    const docked = dockRef.current?.offsetParent != null;
+    if (!docked && !stats.attract && !gameOver && !stats.paused) {
+      autoPausedRef.current = gameRef.current?.togglePause() ?? false;
+    }
+  }, [stats.attract, stats.paused, gameOver]);
 
   const closeBoard = useCallback(() => {
     setBoardOpen(false);
@@ -284,26 +277,24 @@ export function ChompScreen() {
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
-            {/* THE TWO BOARDS ARE TWO BUTTONS, not one button and a tab hunt. They
-                sit in the HUD bar beside score, lives, level and pests because that
-                is where a player already looks for a number about their run. Each
-                opens the same panel on its own board; the panel's tabs then switch
-                between them without closing anything. */}
-            {BOARD_BUTTONS.map((b) => (
-              <button
-                key={b.tab}
-                type="button"
-                onClick={() => (boardOpen && boardTab === b.tab ? closeBoard() : openBoard(b.tab))}
-                aria-pressed={boardOpen && boardTab === b.tab}
-                className={`min-h-9 border px-2.5 font-mono text-chomp-chip tracking-[0.15em] uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki ${
-                  boardOpen && boardTab === b.tab
-                    ? "border-khaki text-khaki"
-                    : "border-steamed/25 text-steamed/70 hover:border-khaki hover:text-khaki"
-                }`}
-              >
-                {b.label}
-              </button>
-            ))}
+            {/* ONE BOARD, ONE BUTTON — and no tabs behind it. It sits in the HUD bar
+                beside score, lives, level and pests because that is where a player
+                already looks for a number about their run. Its caption does NOT
+                toggle, unlike Pause beside it, so it needs no width floor: the same
+                five characters at every state, and one fewer control than the row
+                carried before, on a row that was measured 11px from wrapping. */}
+            <button
+              type="button"
+              onClick={() => (boardOpen ? closeBoard() : openBoard())}
+              aria-pressed={boardOpen}
+              className={`min-h-9 border px-2.5 font-mono text-chomp-chip tracking-[0.15em] uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki ${
+                boardOpen
+                  ? "border-khaki text-khaki"
+                  : "border-steamed/25 text-steamed/70 hover:border-khaki hover:text-khaki"
+              }`}
+            >
+              Board
+            </button>
             <button
               type="button"
               onClick={() => gameRef.current?.togglePause()}
@@ -389,14 +380,7 @@ export function ChompScreen() {
             ref={dockRef}
             className="hidden min-h-0 lg:landscape:col-start-1 lg:landscape:row-start-1 lg:landscape:block"
           >
-            {boardOpen && (
-              <ChompLeaderboard
-                variant="docked"
-                tab={boardTab}
-                onTab={setBoardTab}
-                onClose={closeBoard}
-              />
-            )}
+            {boardOpen && <ChompLeaderboard variant="docked" onClose={closeBoard} />}
           </div>
 
           {/* The board-edge half of the back link. The canvas is centred in its own
@@ -439,12 +423,7 @@ export function ChompScreen() {
               the sizes where the docked panel appears, so there is never two of it. */}
           {boardOpen && (
             <div className="absolute inset-0 z-10 lg:landscape:hidden">
-              <ChompLeaderboard
-                variant="overlay"
-                tab={boardTab}
-                onTab={setBoardTab}
-                onClose={closeBoard}
-              />
+              <ChompLeaderboard variant="overlay" onClose={closeBoard} />
             </div>
           )}
 
@@ -456,7 +435,7 @@ export function ChompScreen() {
               best={best}
               debugFrom={debugRun ? stats.startLevel : 0}
               run={finished}
-              onOpenBoard={() => openBoard("players")}
+              onOpenBoard={openBoard}
               onPlayAgain={() => gameRef.current?.reset()}
               onQuit={() => gameRef.current?.toAttract()}
             />

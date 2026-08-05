@@ -100,8 +100,8 @@ export async function ensureSession(): Promise<void> {
  */
 let inFlight: Promise<LeaderboardResponse> | null = null;
 
-/** Both boards plus this player's own row. Throws on anything but a 200. */
-export function fetchBoards(signal?: AbortSignal): Promise<LeaderboardResponse> {
+/** The board plus this player's own row. Throws on anything but a 200. */
+export function fetchBoard(signal?: AbortSignal): Promise<LeaderboardResponse> {
   void signal; // the caller's, for deciding whether to apply the result — see above
   if (inFlight) return inFlight;
   const req = (async () => {

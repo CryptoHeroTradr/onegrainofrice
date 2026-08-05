@@ -1,19 +1,30 @@
 # RICE CHOMP — recon & build plan
 
 **Status (2026-08-05): PHASE 6 IS IN, AND THE GAME IS FEATURE-COMPLETE against the spec.**
-The leaderboard — two boards, top players and top countries, with entirely separate scores
-from the grains game — is built on `data/chomp.db` behind `/api/chomp/*`, with the Next
-process as its sole writer and the grains WS single-writer contract untouched. New files:
+The leaderboard — **ONE board: the top 50 players by best single run, with the player's
+country flag as a column** — is built on `data/chomp.db` behind `/api/chomp/*`, with the
+Next process as its sole writer and the grains WS single-writer contract untouched. New files:
 `src/lib/chomp/{env,db,score,trace,wire,grainsName}.ts`,
 `src/app/api/chomp/{leaderboard,score}/route.ts`,
 `src/components/chomp/{ChompLeaderboard,ChompSubmit}.tsx` and
-`src/components/chomp/leaderboard.ts`, plus `test/chomp-score.test.ts`. One line went into
-the engine (`bonusesEaten`, a run-total counter nothing in the simulation reads) and one
-private function moved out of the grains board into `@/lib/grains/flag` so both games
-share it. Measurements — what the panel costs the board at eight viewports, the two bugs
-the measuring found, and the end-to-end submission smoke — are in §10. **338 tests pass,
-typecheck and lint are clean, `/chomp` still prerenders static, and the page still makes
-zero third-party requests.**
+`src/components/chomp/leaderboard.ts`, plus `test/chomp-score.test.ts` and
+`test/chomp-db.test.ts`. One line went into the engine (`bonusesEaten`, a run-total
+counter nothing in the simulation reads) and one private function moved out of the grains
+board into `@/lib/grains/flag`, where it stays. Measurements — what the panel costs the
+board at eight viewports, the two bugs the measuring found, and the end-to-end submission
+smoke — are in §10. **339 tests pass, typecheck and lint are clean, `/chomp` still
+prerenders static, and the page still makes zero third-party requests.**
+
+**Amendment, 2026-08-05, same day: THE SECOND BOARD IS GONE.** Phase 6 shipped two boards
+— top players and top countries — and Lito cut it to one within hours: top 50 players,
+country flag as a column beside the name. Removed, not disabled: `getTopCountries()`, the
+`chomp_countries` table and its index, `countryRank()`, `WireCountry`, the response's
+`countries` and `yourCode`, the panel's tab strip, and one of the two HUD buttons. GeoIP
+capture on submission STAYS — it is what feeds the flag. Ranking was already best-run-per-
+player and remains so. Nothing about the panel changed: same docked/overlay forms, same
+pause rule, same gutter sizing, same validation. §6's schema and §10's measurements below
+are marked where the removal overtook them; the spec's Leaderboard section is amended to
+match.
 
 **Status (2026-08-04):** Phase 5 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
 `ChompCanvas.tsx`, `BonusIcons.tsx`, `PestPortrait.tsx`, `TouchControls.tsx`,
@@ -667,7 +678,7 @@ src/components/chomp/ChompCanvas.tsx         "use client" — canvas host. rAF l
                                              ResizeObserver, imperative handle.
                                              MIRRORS RiceBowlCanvas.tsx almost 1:1
 src/components/chomp/TouchControls.tsx       "use client" — swipe surface + optional d-pad
-src/components/chomp/ChompLeaderboard.tsx    "use client" — BOTH boards, in two forms
+src/components/chomp/ChompLeaderboard.tsx    "use client" — THE board (one), in two forms
                                              (docked panel / overlay). reuses @/lib/grains/flag;
                                              see its header for what it reuses and what it
                                              deliberately does not
@@ -699,6 +710,9 @@ test/chomp-maze.test.ts                      28x31, symmetry, full connectivity,
                                              pellet count, tunnel wrap
 test/chomp-pests.test.ts                     targeting math (pure fns) per personality
 test/chomp-score.test.ts                     score validator accepts/rejects the right runs
+test/chomp-db.test.ts                        [2026-08-05] the write path against a throwaway
+                                             SQLite file: two tables, best-run-per-player,
+                                             dedupe no-op, flag column
 ```
 
 **Reused, not rewritten:**
@@ -777,12 +791,27 @@ EXISTS` block, additive columns guarded by `PRAGMA table_info`.
 > - **`UNIQUE INDEX idx_chomp_runs_dedupe ON (vid, trace_hash)`** makes submit-once a
 >   database property rather than a check somebody can forget to run. A double-click or a
 >   retry after a dropped response is a no-op that reports the truth.
-> - **`chomp_countries` gained `best_name`** so the board can say who set a country's
->   score, and it **ranks on `best_score`, never on `total_score`**. A sum ranks whoever
->   played most rather than whoever played best, and it is the one number a script can
->   inflate without ever needing a good run.
+> - ~~**`chomp_countries` gained `best_name`**~~ — **and then `chomp_countries` went.**
+>   *Amended again 2026-08-05, hours later: the country board was removed and the table
+>   with it.* The sketch below still shows it; treat that block as struck. **Nothing
+>   creates it, nothing reads it, nothing writes it, and production never had it** —
+>   `data/chomp.db` did not exist yet when it was cut, so there is no migration to
+>   write and nothing to drop. A dev database made in that window keeps an orphan copy,
+>   inert; delete the file or drop the table by hand. The rule the table carried — rank
+>   on a BEST run, never on a sum, because a sum ranks whoever played most and is the
+>   one number a script can inflate without ever needing a good run — was never only
+>   about countries and still governs `chomp_players`.
 > - `idx_chomp_runs_vid` is `(vid, created_at DESC)` rather than `(vid, score DESC)`,
 >   because what actually reads it is the rate limiter.
+> - **`chomp_players.country_code` outlived the country board and is now the flag
+>   column.** It is written from nginx's GeoIP headers on submission and read straight
+>   back out by `getTopPlayers()`; no join, no second table, no extra query.
+>
+> **Nothing in the schema or the dedupe index ever assumed two boards.** `chomp_runs` is
+> the append-only audit trail and `idx_chomp_runs_dedupe (vid, trace_hash)` is about one
+> player re-posting one run — neither has any notion of how many boards read them.
+> `chomp_players` is the board and always was. The country board was a third table
+> derived from the same writes, and removing it removed exactly itself.
 
 ```sql
 -- Every completed run. Append-only; the audit trail and the source of truth.
@@ -822,6 +851,9 @@ CREATE TABLE IF NOT EXISTS chomp_players (
 );
 CREATE INDEX IF NOT EXISTS idx_chomp_players_best ON chomp_players (best_score DESC);
 
+-- ── STRUCK 2026-08-05: THIS TABLE DOES NOT EXIST. ────────────────────────────
+-- The country board was removed the day it shipped and the table went with it.
+-- Kept here only so the sketch reads as it was written; see the amendment above.
 -- Per-country board. GeoIP is free on this vhost, and the grains game already
 -- trains visitors to expect a country race.
 CREATE TABLE IF NOT EXISTS chomp_countries (
@@ -835,8 +867,9 @@ CREATE TABLE IF NOT EXISTS chomp_countries (
 CREATE INDEX IF NOT EXISTS idx_chomp_countries_best ON chomp_countries (best_score DESC);
 ```
 
-One `handle.transaction(...)` per submit writes all three tables, exactly like
-`addGrains()`.
+One `handle.transaction(...)` per submit writes all the tables at once, exactly like
+`addGrains()`. *That was three tables as shipped and is two since the country board was
+removed; the transaction is the point, not the count.*
 
 **On `display_name`:** `grains.db` already stores a chosen name per vid
 (`visitors.display_name`), and the *same* `grain_vid` cookie identifies the player here.
@@ -1605,6 +1638,20 @@ Played by the difficulty suite's clearing bot, submitted over HTTP exactly as th
 does, against the running build. A level-1 clear: **score 3720, 4102 ticks, 282 grains, 4
 golden, 2 pests, 1 bonus, and a 315-byte trace.**
 
+> **This log is the TWO-BOARD build, and it has not been re-run since.** *Marked
+> 2026-08-05, with the removal.* Two of its lines describe a board that no longer
+> exists — `countryRank:1` and "the country is on the countries board" — and the table
+> and index lists below name `chomp_countries`. Every other line still describes the
+> shipped path unchanged: the removal deleted a second table's upsert from the submit
+> transaction and touched nothing else on the way in.
+>
+> What replaced it as a STANDING check is `test/chomp-db.test.ts`, added with the
+> removal and run by `npm test`: against a real throwaway SQLite file it asserts exactly
+> two `chomp_*` tables, one row per player at their best score, the dedupe no-op, and
+> `country_code` reaching the board as the flag column with a GeoIP miss surviving as a
+> ranked row. A hand-run smoke that nobody re-runs is worth less than a cheap one that
+> runs on every commit.
+
 ```
 ok  session route mints a signed cookie
 ok  a real run is accepted            {rank:1, countryRank:1, improved:true}
@@ -1725,12 +1772,17 @@ it is written down here rather than shrugged off.
      **I'd recommend (b) now with the engine written deterministically so (c) stays
      open.** Your call.
 
-6. ~~**Per-country leaderboard as well as global?**~~ **Answered — yes, and it is one of
-   the phase's two boards.** Top players and top countries, mirroring the grains game,
-   with entirely separate scores. One extra table, as predicted, and no nginx change: the
-   GeoIP headers were already on the `location /` block. The country board ranks by a
-   country's BEST run rather than by a sum of its runs — see the spec for why a sum is the
-   one number a script can inflate without ever playing well.
+6. ~~**Per-country leaderboard as well as global?**~~ ~~**Answered — yes, and it is one
+   of the phase's two boards.**~~ **Answered again, 2026-08-05, and the answer is NO.**
+   It was built — top players and top countries, mirroring the grains game — and removed
+   the same day, on Lito's call: one board, the top 50 players, with the country as a
+   FLAG COLUMN beside the name rather than a board of its own. The extra table went with
+   it. What the country board was for survives in the cheaper form: GeoIP was free on
+   this vhost, it is captured on submission exactly as before, and a player's country is
+   still visible on the board — it just does not compete. The ranking rule the country
+   board established (a BEST run, never a sum, because a sum ranks whoever played most
+   and is the one number a script can inflate without ever playing well) was never only
+   about countries and still governs the one board there is.
 
 7. ~~**`prefers-reduced-motion` policy.**~~ **Answered — (b), and built in Phase 5.**
    `GrainCatch` disables gameplay outright under reduced motion; RICE CHOMP does not

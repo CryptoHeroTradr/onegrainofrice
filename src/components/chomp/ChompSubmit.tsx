@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { NAME_MAX_LEN, checkName } from "@/lib/chomp/score";
-import { fetchBoards, submitScore, type RunSummary } from "./leaderboard";
+import { fetchBoard, submitScore, type RunSummary } from "./leaderboard";
 
 /**
  * Name entry and submission, on the game-over card.
@@ -75,7 +75,7 @@ export function ChompSubmit({ run, onOpenBoard }: { run: RunSummary; onOpenBoard
     // The server's suggestion is a nice-to-have on a screen that is already useful,
     // so it is fetched without blocking anything and dropped on any failure.
     const ac = new AbortController();
-    fetchBoards(ac.signal)
+    fetchBoard(ac.signal)
       .then((d) => {
         const suggested = d.you?.suggestedName;
         if (!ac.signal.aborted && suggested && !touchedRef.current && !hadStored) {
