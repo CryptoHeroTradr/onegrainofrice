@@ -83,10 +83,10 @@ export function ChompAttract({
       }}
     >
       <div>
-        <h2 className="font-display-round text-4xl font-semibold tracking-tight text-khaki sm:text-5xl">
+        <h2 className="font-display-round text-4xl font-semibold tracking-tight text-khaki sm:text-chomp-hero">
           RICE CHOMP
         </h2>
-        <p className="mt-1 font-mono text-[0.65rem] tracking-[0.22em] text-steamed/45 uppercase">
+        <p className="mt-1 font-mono text-chomp-chip tracking-[0.22em] text-steamed/45 uppercase">
           Clear the paddy · mind the pests
         </p>
       </div>
@@ -103,27 +103,27 @@ export function ChompAttract({
           >
             <PestPortrait kind={p.kind} />
             <div className="min-w-0">
-              <p className="font-display-round text-base leading-tight font-semibold text-steamed">
+              <p className="font-display-round text-chomp-name leading-tight font-semibold text-steamed">
                 {p.name}
               </p>
-              <p className="font-mono text-[0.7rem] leading-snug text-steamed/50">{p.blurb}</p>
+              <p className="font-mono text-chomp-note leading-snug text-steamed/50">{p.blurb}</p>
             </div>
           </li>
         ))}
       </ul>
 
       <div translate="no" className="notranslate w-full max-w-md">
-        <p className="font-mono text-[0.6rem] tracking-[0.18em] text-steamed/40 uppercase">
+        <p className="font-mono text-chomp-micro tracking-[0.18em] text-steamed/40 uppercase">
           Best on this device
         </p>
         {scores.length === 0 ? (
-          <p className="mt-1 font-mono text-xs text-steamed/35">Nothing yet. Go first.</p>
+          <p className="mt-1 font-mono text-chomp-body text-steamed/35">Nothing yet. Go first.</p>
         ) : (
           <ol className="mt-1.5 flex flex-col gap-0.5">
             {scores.map((s, i) => (
               <li
                 key={`${s.at}-${i}`}
-                className="flex items-baseline justify-between gap-4 font-mono text-xs tabular-nums"
+                className="flex items-baseline justify-between gap-4 font-mono text-chomp-body tabular-nums"
               >
                 <span className="text-steamed/35">{i + 1}</span>
                 <span className="flex-1 border-b border-dotted border-steamed/15" />
@@ -139,11 +139,11 @@ export function ChompAttract({
         type="button"
         autoFocus
         onClick={onStart}
-        className="min-h-12 border-2 border-khaki px-8 font-mono text-sm tracking-[0.2em] text-khaki uppercase transition-colors hover:bg-khaki hover:text-nori focus-visible:bg-khaki focus-visible:text-nori focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steamed"
+        className="min-h-12 border-2 border-khaki px-8 font-mono text-chomp-lead tracking-[0.2em] text-khaki uppercase transition-colors hover:bg-khaki hover:text-nori focus-visible:bg-khaki focus-visible:text-nori focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-steamed"
       >
         Start
       </button>
-      <p className="font-mono text-[0.7rem] text-steamed/40">or press any key · tap anywhere</p>
+      <p className="font-mono text-chomp-note text-steamed/40">or press any key · tap anywhere</p>
     </div>
   );
 }

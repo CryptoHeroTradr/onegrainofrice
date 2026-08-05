@@ -217,7 +217,11 @@ export function RiceProvider({ children }: { children: ReactNode }) {
   // --- public API ------------------------------------------------------------
   const pour = useCallback<RiceApi["pour"]>(
     ({ x, y, count = 22 }) => {
-      if (reducedRef.current) return;
+      // Nothing is painted on a play surface (the canvas is display:none there), so
+      // spawning here would start a rAF loop drawing into a hidden element while the
+      // game beside it is trying to hold 60fps. Added Phase 5.6, when the site nav —
+      // whose Buy button pours — was mounted on /chomp.
+      if (playSurfaceRef.current || reducedRef.current) return;
       const n = Math.min(count, maxParticles.current);
       for (let i = 0; i < n; i++) {
         const size = 1.4 + Math.random() * 2;

@@ -41,7 +41,7 @@ function Toggle({
       onClick={onClick}
       aria-pressed={on}
       title={hint}
-      className={`min-h-9 border px-3 font-mono text-[0.65rem] tracking-[0.15em] uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki ${
+      className={`min-h-9 border px-3 font-mono text-chomp-chip tracking-[0.15em] uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki ${
         on
           ? "border-khaki text-khaki"
           : "border-steamed/25 text-steamed/45 hover:border-steamed/50 hover:text-steamed/70"

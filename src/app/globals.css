@@ -32,6 +32,48 @@
   --font-mono: var(--font-mono-next), "Courier Prime", "Courier New", monospace;
 
   --shadow-sticker: 0 10px 24px -8px rgba(23, 21, 15, 0.55);
+
+  /* ---------------------------------------------------------------------
+     FLUID TYPE FOR THE GAME ROUTE (/chomp) — added Phase 5.6.
+
+     The game page is exactly one viewport tall and never scrolls, so its text
+     was authored in fixed px against a phone and simply stayed that size on a
+     27" monitor. These grow it instead. One token per size the game already
+     used, so the mapping is 1:1 and auditable rather than a re-design.
+
+     Two properties are deliberate:
+
+     - **The floor is EXACTLY the size it replaces**, and the ramp starts at
+       390px. So a 390px portrait phone renders identically to before and
+       nothing below it can shrink. Growth is one-directional.
+     - **vmin, not vw.** The board is letterboxed into whatever the smaller
+       axis leaves, so the smaller axis is what the chrome is competing with.
+       vw would blow the HUD up on a 844x390 landscape phone — the viewport
+       with the LEAST room — which is exactly backwards.
+
+     Ramp: base at 390 vmin -> 1.7x base at 1600 vmin, then capped. A 1080p
+     desktop lands about 40% up, 1440p about 60%, 4K at the cap.
+
+     These are NOT a site-wide type scale and the `chomp-` prefix says so; the
+     rest of the site still steps at breakpoints. See docs/rice-chomp-plan.md
+     §9 for why that was left alone rather than swept along with this.
+  --------------------------------------------------------------------- */
+  --text-chomp-label: clamp(0.55rem, 0.426rem + 0.51vmin, 0.94rem);
+  --text-chomp-micro: clamp(0.6rem, 0.465rem + 0.56vmin, 1.02rem);
+  --text-chomp-chip: clamp(0.65rem, 0.503rem + 0.6vmin, 1.11rem);
+  --text-chomp-note: clamp(0.7rem, 0.542rem + 0.65vmin, 1.19rem);
+  --text-chomp-body: clamp(0.75rem, 0.581rem + 0.69vmin, 1.28rem);
+  --text-chomp-body--line-height: 1.35;
+  --text-chomp-lead: clamp(0.875rem, 0.677rem + 0.81vmin, 1.49rem);
+  --text-chomp-lead--line-height: 1.43;
+  --text-chomp-name: clamp(1rem, 0.774rem + 0.93vmin, 1.7rem);
+  --text-chomp-name--line-height: 1.5;
+  --text-chomp-num: clamp(1.5rem, 1.162rem + 1.39vmin, 2.55rem);
+  --text-chomp-num--line-height: 1.33;
+  --text-chomp-head: clamp(1.875rem, 1.452rem + 1.74vmin, 3.19rem);
+  --text-chomp-head--line-height: 1.2;
+  --text-chomp-hero: clamp(3rem, 2.323rem + 2.78vmin, 5.1rem);
+  --text-chomp-hero--line-height: 1;
 }
 
 html {

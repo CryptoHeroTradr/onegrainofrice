@@ -23,6 +23,16 @@ and holds the game's only two static assets, 316 KB of a 500 KB budget. New file
 `src/components/chomp/LivesRow.tsx`. Measurements in §8; the board treatment itself is
 described in the spec's *The board*, which is no longer a brief.
 
+**Phase 5.6 (the page around the board) is in, 2026-08-04.** Three changes, no engine
+change: the site's nav bar is mounted on `/chomp` in a play-surface form (in flow, solid,
+56px, no language control, hidden on a landscape phone); the route's text runs off a fluid
+`--text-chomp-*` ramp in `globals.css` so it grows on a large monitor instead of staying
+phone-sized; and "back to the rice paddy" is a button in a gutter beside the board on wide
+landscape viewports, collapsing into the header link everywhere else. Measurements — what
+the chrome costs the board at seven viewports, two bugs the measuring found, and the
+answer to "is the type problem site-wide" (it is) — are in §9. `JourneyNav` is now the
+FIFTH consumer of `src/lib/playSurfaces.ts`.
+
 > **`docs/rice-chomp-spec.md` exists and is authoritative.** The ⚠️ banner that used to sit
 > here said it was missing; that was true only on the day this plan was written. Where the
 > spec and this plan disagree, **the spec wins** — it is the living document and is amended
@@ -1295,7 +1305,148 @@ prerenders `/chomp` static as before.
 
 ---
 
-## 9. Open questions
+## 9. The Phase 5.6 answer — the chrome, measured 2026-08-04
+
+Three changes to the page around the board, no engine change: the site nav is mounted on
+`/chomp`, the route's text is on a fluid ramp, and "back to the rice paddy" became a
+board-edge button on wide landscape viewports. Everything below was measured in headless
+Chrome over CDP at seven viewports, against the shipped build (`0126a80`) as the before.
+
+### 9.1 What the chrome costs the board
+
+`tile` is the whole answer — the maze is 28 tiles wide and the tile size is
+`floor(min(width/28, height/31))`, so it is the one number that says whether the board got
+smaller.
+
+| viewport | tile before | tile after | board before | board after | nav |
+|---|---:|---:|---|---|---|
+| 390×844 portrait phone | 13 | **13** | 364×403 | **364×403** | 57px |
+| 844×390 landscape phone | 5 | **5** | 140×155 | **140×155** | hidden |
+| 1024×1366 tablet portrait | 35 | 34 | 980×1085 | 952×1054 | 57px |
+| 1366×768 laptop | 17 | 15 | 476×527 | 420×465 | 57px |
+| 1920×1080 | 27 | 24 | 756×837 | 672×744 | 57px |
+| 2560×1440 | 39 | 35 | 1092×1209 | 980×1085 | 57px |
+| 3840×2160 | 62 | 58 | 1736×1922 | 1624×1798 | 57px |
+
+**Portrait is free, and that is not luck — it is the maze's aspect.** A 390-wide phone is
+*width*-bound (390/28 beats 844/31 by a mile), so the nav's 57px and the HUD's extra
+leading come out of vertical slack the letterbox was already wasting. The board is
+identical to the tile.
+
+**The landscape phone pays nothing either, because the nav is not there** — hiding it below
+520px of viewport height returns the board to exactly its pre-change size, tile for tile.
+That is the whole point of the rule: it recovers what the nav took and does not pretend to
+fix a viewport that was already bad (see §9.6).
+
+**Every other landscape viewport pays, and the cost is roughly the nav.** At 1080p the play row
+loses 87px: 57 of nav and ~30 of taller HUD and header text, for three tiles. That is the
+trade the changes ARE — a bar and bigger numbers on a page with a fixed height budget can
+only come out of the maze — and it is recorded here so it is a decision rather than a
+discovery.
+
+**The gutter columns cost nothing.** At 1080p the board needs 672px of a 1536px middle
+column; it is height-bound with 864px to spare. That holds at every landscape size
+measured, which is why the columns are gated on `landscape:` — in portrait the same
+gutters would come straight off the maze, so there they do not exist.
+
+### 9.2 Two bugs found by measuring, both invisible by inspection
+
+**1. `Enter` on a focused link did nothing, and had never worked.** The window key handler
+guarded its `preventDefault` with `tagName === "BUTTON"`, so every anchor on the page had
+its activation cancelled. Verified against the *shipped* build before touching anything —
+focus the "back to the paddy" link, press Enter, land on `/chomp`. The nav would have made
+this a page full of dead links. The guard is now `closest("a[href],button,[role='button'])`,
+and after the fix the same test lands on `/home`.
+
+**2. Hiding the nav collapsed the board to nothing.** A `display:none` element is not a
+grid item, so the moment the nav hid itself on a landscape phone, `main` auto-placed into
+row ONE — the `auto` row — and sized to its own content. The play row's `1fr` had nothing
+to be a fraction of, the canvas measured a zero-height box, and the retry loop spent its
+60 frames on a box that was never going to settle. **The board did not render at all**, and
+the failure mode is a canvas sitting at its 300×150 default, which looks exactly like a
+canvas that has not loaded yet. Fixed by naming the row (`row-start-2`) so placement does
+not depend on whether the nav is rendered.
+
+Both are the same shape as the wall-mask bug in §8.3: correct-looking code, no error, no
+warning, and a page that is wrong in a way you have to *measure* to see.
+
+### 9.3 The fluid type ramp
+
+`--text-chomp-*` in `globals.css`, ten tokens, one per size the route already used.
+
+```
+                      390px   1080p   1440p    4K     (vmin-driven)
+HUD label              8.8     12.3    14.2    15.0
+HUD score             20.0     33.6    38.6    40.8
+page h1               20.0     42.0    48.3    51.0
+lives / bonus icons     22       31      35      37
+```
+
+The floor is exactly the size it replaces and the ramp starts at 390px, so **the portrait
+column of that table is unchanged from before, to the decimal** — verified, not intended.
+`vmin` rather than `vw` because the board is letterboxed into the smaller axis; `vw` would
+have grown the HUD most on an 844×390 landscape phone, the viewport with the least room.
+
+No overflow anywhere: `scrollWidth - clientWidth` and `scrollHeight - clientHeight` are
+both 0 at all seven viewports, before and after.
+
+### 9.4 Is the same problem site-wide? Yes. Left alone deliberately.
+
+Measured on the live build at 1080p, 1440p and 4K:
+
+```
+              /home        /memes       /pfp         /
+body           16 16 16     16 16 16     16 16 16     16 16 16
+first heading  16 16 16     44 44 44     56 56 56     11.2 ×3
+first para     16 16 16     11.2 ×3      13.1 ×3      —
+nav logo       18 18 18     18 18 18     18 18 18     16 16 16
+```
+
+**Not one number moves between 1080p and 4K on any page.** The site's largest breakpoint is
+`lg` (1024px), so everything above it renders at the same size a 1024px laptop gets — a
+4K monitor is showing 16px body copy and an 18px logo. `clamp()` appears 31 times in the
+repo but only inside `/charity` and `/memes`' own scoped styles, never in the shared
+components. This is a real problem and it is **not** fixed here: the `chomp-` prefix on the
+tokens says they are a route's scale, not the site's, and a site-wide type scale is a
+change to every page's rhythm that deserves its own pass.
+
+### 9.5 Zero third-party requests — and a better instrument
+
+The old check (`curl | grep -oE 'https?://[a-z0-9.-]+'`) now reports four third-party
+hostnames on `/chomp`: `t.me`, `x.com`, `www.instagram.com`, `jup.ag`. **All four are
+`<a href>` targets in the nav. None is a request.** The criterion is unchanged and still
+passes; the instrument was wrong and is replaced — see the spec's Acceptance criteria for
+what is measured now. Results:
+
+```
+static:   0 external fetching elements (script/link/img/video/source/iframe)
+          0 external preload/preconnect/dns-prefetch   (13 preloads, all /_next/…)
+          0 external URLs in the 14 JS/CSS chunks /chomp loads, other than
+            link targets and the (guarded, and pre-existing) translate string
+runtime:  37-49 requests per load (it varies with what the browser still has
+          cached), every one of them same-origin — 0 third-party, at all
+          seven viewports
+```
+
+The `translate.google.com` string is in a chunk `/chomp` loads and **always was**, in the
+pre-change build too: what Phase 5 removed was the script tag, not the string. Only the
+runtime measurement can tell those two apart, which is the argument for having it.
+
+### 9.6 What was left alone
+
+- **Landscape phone is still a bad place to play**, at six tiles. The chrome on a 390px-tall
+  viewport is ~220px of header, HUD and footer, and above 640px wide the HUD switches to its
+  desktop form and gets *taller*. Hiding the nav there recovers what the nav took and no
+  more. Not in this phase's scope, and the spec's position is that portrait is the case.
+- **Opening the 🌾 Menu mid-run does not pause the game.** The nav has no handle on the
+  engine and the game has no idea the menu exists, which is the separation the whole file
+  layout is built on; wiring them together to pause is a real feature with a real argument
+  and not a side-effect to slip in here. (`Escape` closes the menu *and* toggles pause, since
+  both listen on the document — which happens to be the behaviour you would want anyway.)
+
+---
+
+## 10. Open questions
 
 1. **Where is `docs/rice-chomp-spec.md`?** It is not in the repo or anywhere under
    `/home/deploy`. Should I proceed from the brief in your message, or do you want to

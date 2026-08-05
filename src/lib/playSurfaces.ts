@@ -8,8 +8,13 @@
  * and rewrite the text nodes of a live score. None of them can see where they are, so the
  * route list lives here and each one checks it.
  *
- * One list, four consumers — a provider that needs scoping off a game should be a
- * one-line addition here, not a fifth private copy of the same array.
+ * One list, five consumers — a provider that needs scoping off a game should be a
+ * one-line addition here, not a sixth private copy of the same array.
+ *
+ * The fifth is not a provider: `JourneyNav` is MOUNTED on `/chomp` (Phase 5.6) and reads
+ * this list to know it is on a game — in flow rather than fixed, solid rather than
+ * waiting for a scroll that never comes, and with no language control, because the
+ * translate context on a play surface is inert by design.
  *
  * **CHECK EVERY NEW SITE-WIDE PROVIDER AGAINST THIS LIST.** *Added 2026-08-04.* Four
  * for four so far, and the fourth is the instructive one: translation was scoped off not

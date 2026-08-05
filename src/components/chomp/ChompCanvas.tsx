@@ -709,6 +709,15 @@ export const ChompCanvas = forwardRef<
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       nudgeVideo();
 
+      // Is the focused thing a control that owns Space/Enter itself? Widened from
+      // `tagName === "BUTTON"` in Phase 5.6, when the site nav — a bar of LINKS —
+      // was mounted above the board. A window handler that preventDefaults Enter
+      // cancels an anchor's activation, so the narrow check quietly made every link
+      // on the page keyboard-dead, including the "back to the paddy" one that was
+      // already here. Arrow keys and WASD are deliberately NOT covered by this: a
+      // link with focus must never stop the player steering.
+      const onControl = !!target?.closest("a[href],button,[role='button']");
+
       // M mutes, and it drives the SITE's sound switch rather than a private one —
       // there is one sound toggle on this site and this is it. See prefs.ts.
       if (e.key === "m" || e.key === "M") {
@@ -722,9 +731,10 @@ export const ChompCanvas = forwardRef<
       // rather than having the game begin under them the moment they navigate.
       if (attractRef.current) {
         if (e.key === "Tab" || e.key === "Shift" || e.key === "Control" || e.key === "Alt") return;
-        // Space and Enter on a focused button are the browser's click; let it through
-        // or the run starts twice.
-        if (target?.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+        // Space and Enter on a focused control are the browser's own click; let it
+        // through or the run starts twice — and on a link, it starts instead of
+        // navigating, which is worse.
+        if (onControl && (e.key === " " || e.key === "Enter")) return;
         e.preventDefault();
         restart();
         return;
@@ -752,16 +762,16 @@ export const ChompCanvas = forwardRef<
       // Space and Enter restart from game over. GAMEOVER runs no simulation, so without
       // this the board is inert and every key is dead — a dead end, not a screen.
       //
-      // Skipped when a button has focus: the overlay's own "Play again" is focused on
+      // Skipped when a control has focus: the overlay's own "Play again" is focused on
       // game over, and the browser already turns Space and Enter into a click on it.
-      // Handling both here as well would restart twice.
-      const onButton = target?.tagName === "BUTTON";
+      // Handling both here as well would restart twice — and on a nav link it would
+      // cancel the navigation outright.
       if (e.key === " " || e.key === "Enter") {
         const state = stateRef.current;
         // preventDefault regardless of phase: space scrolls the page, and the page
         // scrolling under a fixed-size board is the bug this stops.
-        if (!onButton) e.preventDefault();
-        if (!onButton && state && state.phase === GAMEOVER) restart();
+        if (!onControl) e.preventDefault();
+        if (!onControl && state && state.phase === GAMEOVER) restart();
         return;
       }
 
