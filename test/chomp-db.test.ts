@@ -82,3 +82,4 @@ it("keeps one board: best run per player, flag column, no country table", () => 
   ).map((t) => t.name);
   expect(tables.filter((n) => n.startsWith("chomp_"))).toEqual(["chomp_players", "chomp_runs"]);
 });
+

@@ -434,7 +434,7 @@ reason rather than just a line, the old one is kept and marked.
 - Separate `data/chomp.db` via HTTP API routes, with the Next process as sole writer. The grains WS process keeps its single-writer contract untouched. *`src/lib/chomp/db.ts` (`chomp_runs`, `chomp_players`), `GET /api/chomp/leaderboard`, `POST /api/chomp/score`. No new pm2 process, no nginx change, no new port, no new dependency.*
   - **The ONE place this feature touches `grains.db` opens it `readonly: true`** — `src/lib/chomp/grainsName.ts`, for the name prefill below. That is a guarantee rather than a promise: `src/lib/grains/db.ts`'s `getDb()` opens read-WRITE and runs `migrate()` on every open, so importing it "just to read one row" would have made the Next process a writer of a file another process owns by contract, silently and invisibly in a diff. `test/chomp-score.test.ts` asserts that no chomp module imports that module and that the read-only opener is the only other place a database is opened at all.
   - **A second copy of the app on the same box must set `CHOMP_DB_PATH`.** The preview server on :3099 defaults to the same `data/chomp.db` the live process owns, which is two writers — the exact thing this design exists to prevent. Documented in `.env.example`; found by running the preview.
-- `better-sqlite3`, WAL, idempotent `CREATE TABLE IF NOT EXISTS` + `PRAGMA table_info` guards, matching the grains pattern. Set `PRAGMA wal_autocheckpoint` explicitly. *Done, and verified on the created file: `wal 1000 pages, synchronous NORMAL, page_size 4096`.*
+- `better-sqlite3`, WAL, idempotent `CREATE TABLE IF NOT EXISTS` + `PRAGMA table_info` guards, matching the grains pattern. Set `PRAGMA wal_autocheckpoint` explicitly. *Done. **The verification originally claimed here was wrong and is corrected 2026-08-05** — it read `wal 1000 pages, synchronous NORMAL, page_size 4096` "on the created file", but `synchronous` and `wal_autocheckpoint` are per-connection and were being read from a different connection than the one that set them. Only `journal_mode` and `page_size` were genuinely verified. What stands now is `test/chomp-db-pragmas.test.ts`, which proves the explicit-not-inherited requirement the only way it can be proved: with a NON-DEFAULT `CHOMP_WAL_AUTOCHECKPOINT` (321), since 1000 is SQLite's own default and asserting it demonstrates nothing. See the plan's §10.3 and the measurement rule in* Acceptance criteria.
 - Country attribution reuses the existing nginx GeoIP headers verbatim — no nginx change. *`X-Country-Code` / `X-Country-Name`, read in the route and never from the payload: a player cannot pick a country.*
   - **Capture is on the WRITE, and only there** (`POST /api/chomp/score`). It survived the removal of the country board because it is what feeds the flag column: the code is stored on the run and on the player row, and the board serves it back. `GET /api/chomp/leaderboard` reads no GeoIP header at all — that header describes whoever is LOOKING at the board, which was only ever needed to highlight your own country on the board that no longer exists.
   - **A GeoIP miss is not a disqualification here.** It was on the country board — "XX"/"Unknown" is not a country and was filtered out before ranking so the numbering had no gaps. A player is a player: a missed lookup shows the globe `flagEmoji` already returns for "XX" and keeps its rank, because the SCORE is the real thing and the flag is decoration beside it.
@@ -532,6 +532,34 @@ determinism is what replay verification is built on.
         - **The runtime pass is the only instrument that can tell a string in a chunk apart from a request**, and the `translate.google.com` string is still in a chunk this route loads, exactly as §9.5 recorded. That is why the static check alone is never the answer here.
         - Running it needs six libraries the box did not have (`libatk1.0-0t64 libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libxcomposite1 libxdamage1` on Ubuntu 24.04). They are installed now, so this measurement is repeatable rather than a one-off.
       - It is **one** request per open, and it was two until it was measured. Both forms of the panel are mounted and CSS hides one, but `display:none` is a rendering decision and not a React one — the hidden component still mounted, still ran its effect and still fetched. `fetchBoards()` now shares an in-flight request.
+- **A READING TAKEN FROM SOMEWHERE OTHER THAN THE THING UNDER TEST MEASURES THE
+  INSTRUMENT.** *Added 2026-08-05, the sixth instrument error on this project and the
+  first one to repeat inside a single fix.* The concrete form: **a pragma read from a
+  different connection than the one that set it measures the reader, not the file.**
+  `synchronous` and `wal_autocheckpoint` are per-connection; a `sqlite3` CLI opening
+  the database reports its own defaults, and `journal_mode` and `page_size` are the
+  only two of the four that are database properties at all.
+
+  **Its corollary is sharper, and is what actually bit:** *a value equal to the
+  default measures nothing, whichever connection you read it from.* The repair for
+  the above — assert the pragmas from inside the app's own handle — passed with the
+  pragma lines **deleted from the source**, because `foreign_keys`, `busy_timeout`
+  and `wal_autocheckpoint` all already sit at their defaults, and `synchronous` moves
+  from `2` to `1` on its own the first time `CREATE TABLE` runs in WAL mode. Five
+  assertions, five values that agreed for reasons unrelated to our code.
+
+  So, before believing any measurement: **ask what result the broken version would
+  produce.** If it is the same one, the check is decoration. The three defences that
+  have actually worked here, all of them cheap:
+  - **Run it against the failure.** The wall-mask test (§8.3), `playSurfaces`, the
+    ownership guard and the surviving pragma test were each reverted on purpose and
+    watched go red. Two of those were rewritten because they did not.
+  - **Use a value the default cannot supply** — 321, not 1000.
+  - **Keep a control in the same run.** The Phase 7 third-party check is only worth
+    something because the same probe still finds four hosts on `/games/grains`.
+
+  This sits with the other rule earned the same way — *a guard that can take down
+  production is worse than the hazard it prevents*, in **Hard constraints**.
 - Zero new npm dependencies.
 - Fully playable keyboard-only and touch-only.
 - No hardcoded path prefixes anywhere, TS or CSS.

@@ -1741,6 +1741,32 @@ ok  the per-vid rate limit bites      3 of 8 refused with 429
 
 The database it created, read back off disk:
 
+> **CORRECTED 2026-08-05, after the Phase 6 promote: THREE OF THESE FOUR VALUES WERE
+> NOT READ OFF DISK, AND ONLY ONE OF THEM IS VERIFIABLE THAT WAY.** The line below
+> was produced by a `sqlite3` CLI opening the file — a DIFFERENT connection from the
+> one the app configured. `synchronous` and `wal_autocheckpoint` are **per-connection**
+> settings, not stored in the database, so the CLI reported its OWN values. The check
+> measured the reader.
+>
+> Re-running it on live after the promote returned `synchronous = 2`, which looked
+> like a regression against "NORMAL" and was not one; `wal_autocheckpoint = 1000`
+> agreed only because 1000 is also SQLite's default. `page_size` and `journal_mode`
+> ARE database properties and were genuinely read.
+>
+> **It is worse than that, and the second instrument was wrong too.** The obvious
+> repair — assert the pragmas from inside the app's own handle — was written, and it
+> passed with the pragma lines DELETED from `db.ts`. Measured against a connection
+> with nothing set: `foreign_keys` is already 1 and `busy_timeout` already 5000
+> (better-sqlite3's defaults), `wal_autocheckpoint` is already 1000 (SQLite's), and
+> **`synchronous` moves from 2 to 1 on its own the first time `CREATE TABLE` runs in
+> WAL mode** — so every value matched for reasons having nothing to do with our code.
+>
+> What survives is `test/chomp-db-pragmas.test.ts`, which asserts the ONE claim that
+> can fail: `CHOMP_WAL_AUTOCHECKPOINT` is read from env and reaches the connection,
+> proved with a NON-DEFAULT value (321). Verified by deleting `db.ts:83` and watching
+> it report `expected 1000 to be 321`. The other four pragmas are recorded in the
+> source at `db.ts:76-83` and the source is the only record there can be.
+
 ```
 journal_mode wal | synchronous NORMAL | wal_autocheckpoint 1000 | page_size 4096
 tables:  chomp_countries, chomp_players, chomp_runs
