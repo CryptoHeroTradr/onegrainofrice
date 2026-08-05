@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { GAME_API } from "@/components/landing/ui";
+import { readJson } from "@/lib/readJson";
 
 /**
  * The single source of truth for the site's impact numbers.
@@ -66,7 +67,7 @@ export function useCharityImpact(): { impact: Impact | null; loading: boolean } 
       try {
         const r = await fetch(`${GAME_API}/api/charity-wallet/impact`);
         if (!r.ok) return;
-        const d = (await r.json()) as Impact;
+        const d = await readJson<Impact>(r);
         if (!cancelled) setImpact(d);
       } catch {
         /* keep last value */

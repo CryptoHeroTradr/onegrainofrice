@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { encodeBase58 } from "@/lib/base58";
 import { linkMessage, type SigningWallet } from "@/lib/dcaDashboard";
+import { readJsonOr } from "@/lib/readJson";
 
 /**
  * A PROVEN WALLET THAT NOBODY HAS CLAIMED — the /linksite affordance, not an empty dashboard.
@@ -54,7 +55,7 @@ export function DashboardLink({
         body: JSON.stringify({ wallet: wallet.address, code: trimmed, signature }),
         cache: "no-store",
       });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const json = await readJsonOr<{ ok?: boolean; error?: string }>(res, {});
       if (!res.ok || json.ok !== true) {
         setError(
           res.status === 400

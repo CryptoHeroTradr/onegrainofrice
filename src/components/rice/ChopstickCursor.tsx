@@ -29,6 +29,24 @@ const TEXT_SELECTOR = 'input, textarea, [contenteditable=""], [contenteditable="
 const TIP_X = 39;
 const TIP_Y = 72;
 
+/**
+ * Where the sticks sit before the pointer has ever been seen.
+ *
+ * The wrapper is `position: fixed; top: 0; left: 0` (globals.css), so with no
+ * transform it occupies the top-left CORNER of the viewport — and the first
+ * pointermove is the only thing that moves it. `opacity: 0` is supposed to make
+ * that invisible, but it makes the corner a place the sticks can be *drawn*, and
+ * on 2026-08-05 a pair of them was seen parked there on /games. That is the only
+ * page whose top-left is cream; on every other page the corner is dark and black
+ * chopsticks on it are simply not noticeable, which is why one page reported a
+ * defect the whole site has.
+ *
+ * Parking off-screen instead of relying on opacity means there is no state in
+ * which the sticks can be painted anywhere the pointer is not. Far enough out
+ * that the 80×80 box clears the edge whatever its rotation.
+ */
+const PARKED = "translate3d(-200px, -200px, 0)";
+
 
 function Stick({ side }: { side: "left" | "right" }) {
   return (
@@ -138,7 +156,13 @@ export function ChopstickCursor() {
   if (!enabled) return null;
 
   return (
-    <div ref={wrapRef} className="chopstick-cursor" data-show="false" aria-hidden="true">
+    <div
+      ref={wrapRef}
+      className="chopstick-cursor"
+      data-show="false"
+      style={{ transform: PARKED }}
+      aria-hidden="true"
+    >
       <div ref={pairRef} className="chopstick-pair" data-pinch="false">
         <Stick side="left" />
         <Stick side="right" />

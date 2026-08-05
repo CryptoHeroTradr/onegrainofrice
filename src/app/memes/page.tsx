@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function MemesPage() {
   return (
     <>
-      <JourneyNav />
+      <JourneyNav overHero />
       <MemesGallery />
       <HomeFooter />
     </>

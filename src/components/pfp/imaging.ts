@@ -61,13 +61,98 @@ export function fileToDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Read a file and re-encode it as a PNG data URL, capped to `maxSize` on its
- * long edge.
+ * The upload ceiling, in bytes of encoded data URL.
  *
- * Required before anything is sent to the image API: the route hands the bytes
- * to OpenAI labelled `image/png`, so a JPEG that merely *arrives* as a data URL
- * is rejected on the far side. Re-drawing through a canvas makes the label true
- * and keeps the upload small enough to post.
+ * WHY A CEILING AT ALL. nginx's `client_max_body_size` defaults to 1 MB, and a
+ * request over it is rejected by the proxy with an HTML error page — the app
+ * never sees it, so no amount of server-side handling can help. This site's own
+ * vhost carried that default, which made every real photo posted to
+ * /api/pfp/generate fail with a 413 from 2026-08-02 until it was found on
+ * 2026-08-05. Raising the limit fixes this host; capping the payload fixes the
+ * generator on ANY host, including whatever it is deployed behind next.
+ *
+ * 900 kB leaves ~10% for the JSON envelope (`{"imageBase64":"…","prompt":…}`),
+ * the headers, and the base64 padding, under a 1 MB floor.
+ */
+export const MAX_UPLOAD_BYTES = 900_000;
+
+/**
+ * Encode a canvas as a data URL guaranteed to fit `maxBytes`, giving up as
+ * little as possible on the way down.
+ *
+ * The ladder, in order of what it costs:
+ *  1. **PNG.** Lossless, keeps alpha. Almost always over the cap for a photo
+ *     (a 1024px photographic PNG is 1.5–2.5 MB) and almost always under it for
+ *     the studio's flat, few-colour compositions — so the cheap case stays cheap.
+ *  2. **JPEG at falling quality.** A 1024px photo lands around 150–250 kB at
+ *     q0.85 with no loss of RESOLUTION, which matters more here than a little
+ *     chroma: the model is being handed a reference, not a master.
+ *  3. **Halve the long edge and start again.** Only reached by something
+ *     genuinely enormous, and better than failing to send anything.
+ *
+ * Alpha is composited onto white before any lossy pass, because JPEG has no
+ * alpha channel and the browser's default is to fill it with black — a
+ * transparent studio canvas would otherwise come back as a black rectangle.
+ */
+export function boundedUploadDataUrl(
+  canvas: HTMLCanvasElement,
+  maxBytes = MAX_UPLOAD_BYTES,
+): string {
+  const png = canvas.toDataURL("image/png");
+  if (png.length <= maxBytes) return png;
+
+  let source = canvas;
+  // Three halvings is 1024 → 128px; nothing survives being sent smaller than
+  // that usefully, so the last attempt is returned whatever its size and the
+  // upload is allowed to fail loudly rather than silently sending a thumbnail.
+  for (let pass = 0; pass < 4; pass++) {
+    const flat = onWhite(source);
+    for (const quality of [0.85, 0.7, 0.55, 0.4]) {
+      const jpeg = flat.toDataURL("image/jpeg", quality);
+      if (jpeg.length <= maxBytes) return jpeg;
+    }
+    const half = scaleCanvas(source, 0.5);
+    if (!half) break;
+    source = half;
+  }
+  return onWhite(source).toDataURL("image/jpeg", 0.4);
+}
+
+/** Composite onto white — JPEG has no alpha and the browser's fill is black. */
+function onWhite(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = canvas.width;
+  c.height = canvas.height;
+  const ctx = c.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(canvas, 0, 0);
+  return c;
+}
+
+function scaleCanvas(canvas: HTMLCanvasElement, factor: number): HTMLCanvasElement | null {
+  const w = Math.max(1, Math.round(canvas.width * factor));
+  const h = Math.max(1, Math.round(canvas.height * factor));
+  if (w === canvas.width && h === canvas.height) return null;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(canvas, 0, 0, w, h);
+  return c;
+}
+
+/**
+ * Read a file and re-encode it for upload, capped to `maxSize` on its long edge
+ * and to `MAX_UPLOAD_BYTES` on the wire.
+ *
+ * Re-drawing through a canvas is required before anything is sent to the image
+ * API: the far side needs a format it accepts and a truthful content type, and
+ * an arbitrary camera file is neither. PNG is preferred and JPEG is the fallback
+ * when PNG will not fit — the server reads the actual type out of the data URL
+ * (`lib/pfp/openai.ts`) rather than assuming, so both arrive correctly labelled.
  */
 export async function fileToPngDataUrl(file: File, maxSize = 1024): Promise<string> {
   const src = await fileToDataUrl(file);
@@ -81,7 +166,7 @@ export async function fileToPngDataUrl(file: File, maxSize = 1024): Promise<stri
   const ctx = c.getContext("2d");
   if (!ctx) return src;
   ctx.drawImage(img, 0, 0, w, h);
-  return c.toDataURL("image/png");
+  return boundedUploadDataUrl(c);
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {

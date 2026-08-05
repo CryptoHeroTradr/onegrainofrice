@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { C, SERIF, GAME_API } from "@/components/landing/ui";
 import { LOOKS, DEFAULT_LOOK, findLook } from "@/lib/pfp/prompts";
+import { readJson, readJsonOr } from "@/lib/readJson";
 import { downloadUrl } from "./imaging";
 
 const SIZES: { key: string; label: string }[] = [
@@ -51,8 +52,10 @@ export function GenerateModal({
 
   useEffect(() => {
     let cancelled = false;
+    // "Is AI configured?" has a sensible answer when the request fails — no —
+    // so this one degrades rather than throwing.
     fetch(`${GAME_API}/api/pfp/status`)
-      .then((r) => (r.ok ? r.json() : { aiEnabled: false }))
+      .then((r) => readJsonOr<{ aiEnabled?: boolean }>(r, { aiEnabled: false }))
       .then((d) => !cancelled && setAiEnabled(!!d.aiEnabled))
       .catch(() => !cancelled && setAiEnabled(false));
     return () => {
@@ -76,7 +79,12 @@ export function GenerateModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: source, look, prompt: prompt.trim(), size }),
       });
-      const data = await res.json();
+      const data = await readJson<{
+        error?: string;
+        image: string;
+        prompt: string;
+        createdAt: string;
+      }>(res);
       if (!res.ok) {
         setError(data.error || "Generation failed.");
       } else {

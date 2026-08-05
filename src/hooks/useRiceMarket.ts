@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BASE_PATH } from "@/lib/basePath";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Live market data for the $RICE trading portal.
@@ -63,7 +64,7 @@ export function useRiceMarket(mint: string, intervalMs = 30_000): RiceMarket {
       try {
         const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await readJson<{ pairs?: DexPair[] }>(r);
         const pairs: DexPair[] = Array.isArray(d?.pairs) ? d.pairs : [];
         if (!pairs.length) {
           if (!cancelled) setMarket((m) => ({ ...m, loading: false }));
@@ -136,7 +137,7 @@ export function useRecentTrades(intervalMs = 45_000): Trade[] {
       try {
         const r = await fetch(`${BASE_PATH}/api/token-trades`);
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await readJson<{ trades?: unknown }>(r);
         if (!cancelled && Array.isArray(d?.trades)) setTrades(d.trades as Trade[]);
       } catch {
         /* keep whatever we already have */

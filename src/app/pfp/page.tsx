@@ -19,7 +19,7 @@ export default function PfpPage() {
   return (
     <>
       <PageStyles />
-      <JourneyNav />
+      <JourneyNav overHero />
 
       <main className="pfp-root">
         {/* ── HEADER ───────────────────────────────────────────────────────── */}

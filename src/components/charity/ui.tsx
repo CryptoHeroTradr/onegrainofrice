@@ -15,6 +15,7 @@ import {
 } from "react";
 import { C, SERIF, GAME_API } from "@/components/landing/ui";
 import { asset } from "@/lib/asset";
+import { readJson } from "@/lib/readJson";
 
 export { C, SERIF };
 
@@ -385,7 +386,7 @@ export function useCharityWallet() {
           fetch(`${GAME_API}/api/charity-wallet/transactions`),
         ]);
         if (balRes.ok) {
-          const data = (await balRes.json()) as WalletBalances;
+          const data = await readJson<WalletBalances>(balRes);
           if (!cancelled) {
             setBalances(data);
             setSecondsAgo(0);
@@ -395,7 +396,7 @@ export function useCharityWallet() {
           setLoading(false);
         }
         if (txRes.ok) {
-          const data = await txRes.json();
+          const data = await readJson<{ transactions?: WalletTx[] }>(txRes);
           if (!cancelled) setTransactions(data.transactions ?? []);
         }
       } catch {

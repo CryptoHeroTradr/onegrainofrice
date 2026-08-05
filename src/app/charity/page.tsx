@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function CharityPage() {
   return (
     <>
-      <JourneyNav />
+      <JourneyNav overHero />
       <CharityContent />
       <HomeFooter />
     </>

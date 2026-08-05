@@ -2004,6 +2004,138 @@ are none.
   affordance at a different destination is a design change, and this page's nav bar
   already carries 🎮 Games.
 
+### 11.7 Two regressions found after the promote, 2026-08-05
+
+Reported by Lito against the live site the evening Phase 7 promoted. His reading of the
+first was right in mechanism and wrong in scope; the second was not Phase 7 at all, and
+establishing which mattered before anything else landed on top of it.
+
+**1. The nav was invisible on /games — and one page, not a class of pages.** Measured in
+a headless browser at 1440×900 against the live build `dc3daa0`:
+
+| route | header bg | header text | background under it | readable |
+|---|---|---|---|---|
+| **/games** | `rgba(0,0,0,0)` | `rgb(244,239,226)` bone | `rgb(251,247,238)` steamed | **no — 1.03:1** |
+| /charity | transparent | bone | `rgb(10,8,5)` | yes |
+| /memes | transparent | bone | `rgb(20,17,13)` | yes |
+| /pfp | transparent | bone | `rgb(10,8,5)` | yes |
+| / | transparent | bone | dark hero | yes |
+
+His diagnosis — "JourneyNav's transparent state only resolves on scroll and /games is too
+short to scroll" — was right about the mechanism and right about the outcome, by a route
+worth recording: **/games IS scrollable.** 1321px of content in a 900px viewport. But the
+solid state needs `scrollY > innerHeight * 0.6` = 540px and the page has 421px of scroll
+range. *Too short to scroll* and *too short to scroll **enough*** fail identically, and the
+second is much easier to ship without noticing.
+
+His conclusion — "every short light-background page has this" — did not survive the
+measurement. Every other page that mounts the nav is DARK behind it, so bone-on-transparent
+is correct there and forcing them solid would have been the regression. /games was the only
+light-topped page on the site.
+
+So the fix is not "detect whether the page can scroll" — that fixes /games by accident and
+leaves a cream-topped 5000px page broken for its first 540px. The question is *is there
+anything dark behind the bar*, only the page knows, and **`overHero` is now opt-in with
+solid as the default**. The failure mode of forgetting to opt in is an ugly solid bar over
+a hero; the failure mode of the old default was an invisible nav. `/`, `/pfp`, `/charity`
+and `/memes` opt in; `/games` does not. `test/nav-legibility.test.ts` pins the default, the
+class ternary, and the per-page answer for every route including the ones that must NOT opt
+in.
+
+**The false comment was deleted rather than corrected.** `games/page.tsx` carried *"this
+page has no hero for it to float over, so the bar is solid from the first pixel"* — written
+in Phase 7, at the moment the bug was introduced, asserting the thing that was not true. It
+documented an assumption that no longer exists.
+
+**The chopsticks in the corner.** Lito also reported "a stray chopsticks graphic at the
+top-left of /games that doesn't appear elsewhere". It is the global `ChopstickCursor`:
+`globals.css` pins it `position: fixed; top: 0; left: 0` and only the first `pointermove`
+gives it a transform, so before that its 80×80 box IS the top-left corner. Confirmed by
+revealing it in place — a pair of black sticks on cream. It is on every page; /games is
+simply the only one whose corner is pale enough to see them against, which is how one page
+reported a defect the whole site had. It now parks at `translate3d(-200px, -200px, 0)`
+instead of relying on `opacity: 0`, so there is no state in which it can be painted
+anywhere the pointer is not. **What makes it paint at opacity 0 was NOT established** — in
+an instrumented browser it stays hidden until the first move — and Lito's call was that the
+parking is a defect either way and a separate finding if something else turns out to reveal
+it.
+
+**2. The PFP generator: nginx, and three days older than Phase 7.** Symptom was
+`JSON.parse: unexpected character at line 1 column 1`. The actual response body, POSTing to
+`https://1grainofrice.com/api/pfp/generate`:
+
+```
+HTTP/1.1 413 Request Entity Too Large
+Server: nginx/1.24.0 (Ubuntu)
+Content-Type: text/html
+Content-Length: 192
+```
+
+**The request never reached the app.** Boundary measured against the live vhost: a
+1,000,010-byte body returns 405 (reached Next), 1,100,010 returns 413 (nginx). The
+`1grainofrice` vhost sets no `client_max_body_size`, so it carried nginx's **1 MB default**
+— while the two sibling vhosts on the same box, `game.1grainofrice.com` and `ip-rice`, both
+set `20m`. That is why the RiceDAO PFP generator worked and this one did not.
+
+Every real photo exceeds it. The client caps the long edge at 1024px and PNG-encodes; a
+1024px photographic PNG is 1.5–2.5 MB, and base64 adds ~37%. The site's own *smallest* hero
+PNG is 1,026,583 bytes raw → **1,368,799 as a data URL**.
+
+**Not Phase 7, and the check is on the record because the question was asked first.** No
+redirect is involved: the POST goes straight to :3006 with zero redirects, `/api/pfp/status`
+returns `{"aiEnabled":true}`, and a small POST returns 200 with a generated image — the
+route handler was healthy throughout. Phase 7 touched `src/app/home/page.tsx`,
+`HomeFooter.tsx` and `config/home.ts`; it moved no API path and no PFP file. `SimplePfpGen`
+last changed 2026-08-02, `GAME_API` 2026-08-03, and the vhost never had a limit. **Broken
+for every real photo from 2026-08-02, when the /home generator shipped.**
+
+The one-line nginx fix needs sudo and is Lito's to run. What shipped here is the two halves
+that are the app's own business, and his instruction was that the first matters more
+because it is the class rather than the instance:
+
+- **The upload is capped client-side at 900 kB**, so the generator survives any host with a
+  default limit. `boundedUploadDataUrl()` tries PNG (lossless, keeps alpha, and already
+  under the cap for the studio's flat compositions), falls back to JPEG at descending
+  quality (a 1024px photo lands at 150–250 kB with no loss of *resolution*, which is what
+  matters for a reference image), and only then halves the dimensions. Alpha is composited
+  onto white before any lossy pass, because JPEG has none and the browser fills it black.
+  The server now reads the real type out of the data URL rather than labelling everything
+  `image/png` — that hardcoding was true only because the browser always sent PNG.
+- **No `res.json()` in the app is blind any more.** All 30 call sites read through
+  `lib/readJson.ts`, which parses the text itself and describes what came back: a 413 says
+  *"That upload is too large to send (413). Try a smaller image."* Whether the body PARSES
+  is the test, not its content type — rejecting valid JSON labelled `text/plain` would have
+  been stricter than the `res.json()` it replaces, and the point is to describe failures
+  better rather than to create new ones. That distinction was found by the test suite: the
+  first version was content-type-strict and turned 10 DCA tests red.
+
+**A partial test double hid behind the old call.** `test/dca-client.test.ts` stubbed
+`fetch` with an object implementing `json()` and nothing else — a stand-in for the one
+method the code happened to call, not for a `Response`. It now answers `text()`, `headers`
+and `statusText` too.
+
+### 11.8 What else shipped with the fixes
+
+Three additions from the same brief, all built on the "one list" principle §11.3 argued
+for:
+
+- **A 🎮 Games dropdown in the nav**, listing all three games — the same `SiteMenu`
+  component as 🌾 Menu with three different props. The brief said "identical in behaviour
+  and styling", and one implementation is the only way to keep that true; a copied
+  component is the SiteMenu-vs-inline-links duplication Phase 7 deleted.
+- **A Games section on the home page**, directly above the PFP section. It renders the same
+  `GameCards` component the `/games` index renders, so the three descriptions exist once.
+  The heading, the lede and the route metadata moved into `src/config/games.ts` for the same
+  reason — including the word "Three", which is now computed from the list. `/games`'s meta
+  description was a fourth hand-written copy of the game names and was caught by the test
+  written for the other three.
+- **TikTok** (`@1grainproject`) next to the existing socials. This surfaced a drift already
+  in place: `HomeFooter` carried a hand-copied duplicate of `SocialLinks` whose icon switch
+  had no `instagram` case, so Instagram had been rendering as a generic globe in the footer
+  while showing its real mark in the nav. Adding a glyph twice was the prompt to delete the
+  copy instead. `test/socials-one-row.test.ts` keeps the switch exhaustive against
+  `SocialId`.
+
 ---
 
 ## 12. Open questions

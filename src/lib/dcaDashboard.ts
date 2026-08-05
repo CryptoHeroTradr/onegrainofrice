@@ -1,5 +1,6 @@
 import { encodeBase58 } from "@/lib/base58";
 import type { SiteDashboard } from "@/lib/bot-contract";
+import { readJsonOr } from "@/lib/readJson";
 
 /**
  * THE BROWSER'S CLIENT for the bot's dashboard bridge.
@@ -86,7 +87,7 @@ async function postJson(path: string, body: unknown): Promise<{ status: number; 
     body: JSON.stringify(body),
     cache: "no-store",
   });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const json = await readJsonOr<Record<string, unknown>>(res, {});
   return { status: res.status, json };
 }
 
@@ -104,7 +105,7 @@ async function proveOver(wallet: SigningWallet, message: string): Promise<string
  */
 export async function readDashboard(wallet: SigningWallet): Promise<SiteDashboard> {
   const challenge = await fetch("/api/dca/challenge", { cache: "no-store" });
-  const c = (await challenge.json().catch(() => ({}))) as { nonce?: string; message?: string };
+  const c = await readJsonOr<{ nonce?: string; message?: string }>(challenge, {});
   if (!challenge.ok || !c.nonce || !c.message) throw new Error("The bot isn't reachable right now.");
 
   const signature = await proveOver(wallet, c.message);

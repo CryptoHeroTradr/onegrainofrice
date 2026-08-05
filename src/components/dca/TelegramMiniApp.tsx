@@ -6,6 +6,7 @@ import { handOffUrl, WEB_FRAME, type DcaFrame, type HandOffIntent } from "@/comp
 import { isTelegramMiniApp, openExternal, telegramLaunchDetected, telegramWebApp } from "@/lib/telegram";
 import { site } from "@/config/site";
 import { BASE_PATH } from "@/lib/basePath";
+import { readJsonOr } from "@/lib/readJson";
 
 /**
  * THE TELEGRAM MINI APP.
@@ -77,9 +78,10 @@ export function TelegramMiniApp() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ initData: wa.initData }),
         });
-        const data = (await res.json().catch(() => null)) as
+        const data = await readJsonOr<
           | { ok?: boolean; linked?: boolean; wallet?: string | null; mode?: "wallet" | "key"; error?: string }
-          | null;
+          | null
+        >(res, null);
         if (cancelled) return;
         if (!res.ok || !data?.ok) {
           setIdentity({

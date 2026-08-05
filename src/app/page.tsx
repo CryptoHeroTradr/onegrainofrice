@@ -6,6 +6,8 @@ import { SushiBeltSection } from "@/components/memes/SushiBeltSection";
 import { TokenInfo } from "@/components/content/TokenInfo";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 import { SimplePfpGen } from "@/components/home/SimplePfpGen";
+import { GameCards } from "@/components/games/GameCards";
+import { gamesIntro } from "@/config/games";
 
 /**
  * The $RICE home — a scrubbed, non-game/non-charity site: palm/single-grain
@@ -29,7 +31,7 @@ import { SimplePfpGen } from "@/components/home/SimplePfpGen";
 export default function Home() {
   return (
     <>
-      <JourneyNav />
+      <JourneyNav overHero />
       <main>
         {/* Palm / single-grain hero */}
         <Hero />
@@ -38,6 +40,40 @@ export default function Home() {
             dark conveyor leads straight out of the hero with no empty band. */}
         <section id="memes" className="grain-paper bg-nori">
           <SushiBeltSection />
+        </section>
+
+        {/* Games — directly above the PFP section (2026-08-05). Until Phase 7 the
+            landing page WAS a game; after the swap the home page mentioned none of
+            them and the only way in was the nav. The cards are the same component
+            the /games index renders (components/games/GameCards), so the three
+            descriptions exist once, in src/config/games.ts.
+
+            bg-bone against the PFP section's bg-steamed below it — both are pale,
+            and two pale sections with no seam read as one very long one. */}
+        <section id="games" className="section grain-paper bg-bone text-nori">
+          <div className="mx-auto max-w-[1180px] px-6">
+            <div className="flex flex-col items-center text-center">
+              <SectionHeading
+                lead={gamesIntro.headingLead}
+                accent={gamesIntro.headingAccent}
+                tone="dark"
+              />
+              <p className="mt-4 max-w-xl font-mono text-sm text-nori/70 sm:text-base">
+                {gamesIntro.lede}
+              </p>
+            </div>
+
+            <GameCards className="mt-12 sm:mt-16" />
+
+            <div className="mt-8 flex justify-center">
+              <Link
+                href="/games"
+                className="inline-flex min-h-11 items-center gap-2 bg-olive px-7 font-display-round text-base font-bold text-steamed transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bamboo"
+              >
+                🎮 All games →
+              </Link>
+            </div>
+          </div>
         </section>
 
         {/* PFP & Meme generator — the one-shot version (photo + a few words),

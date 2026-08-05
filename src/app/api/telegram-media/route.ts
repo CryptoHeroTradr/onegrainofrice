@@ -12,6 +12,7 @@
 // seconds of a post. Pop Culture is still one chip away on the filter bar.
 
 import { type NextRequest, NextResponse } from "next/server";
+import { readJson } from "@/lib/readJson";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
   }
   if (!res.ok) return NextResponse.json(EMPTY, { status: res.status });
 
-  const data = await res.json();
+  const data = await readJson<{ media?: Media[] }>(res);
   if (Array.isArray(data.media)) data.media = data.media.filter(allowed);
   return NextResponse.json(data);
 }

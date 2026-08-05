@@ -35,12 +35,27 @@ function InstagramLogo({ size = 20 }: { size?: number }) {
   );
 }
 
+/**
+ * TikTok, same story as X and Instagram — no lucide glyph, so the mark is
+ * inline. Filled rather than stroked: the note is a solid shape and a stroked
+ * outline of it reads as a smudge at 20px.
+ */
+function TikTokLogo({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M16.6 5.82A4.28 4.28 0 0 1 15.54 3h-3.09v12.4a2.59 2.59 0 0 1-2.59 2.5 2.59 2.59 0 0 1 0-5.18c.27 0 .53.04.77.12v-3.2a5.9 5.9 0 0 0-.77-.05A5.73 5.73 0 0 0 4.13 15.3a5.73 5.73 0 0 0 5.73 5.7 5.73 5.73 0 0 0 5.73-5.7V9.01a7.35 7.35 0 0 0 4.28 1.37V7.3a4.29 4.29 0 0 1-3.27-1.48z" />
+    </svg>
+  );
+}
+
 export function SocialIcon({ id }: { id: SocialId }) {
   switch (id) {
     case "x":
       return <XLogo />;
     case "instagram":
       return <InstagramLogo />;
+    case "tiktok":
+      return <TikTokLogo />;
     case "telegram":
       return <Send size={20} aria-hidden="true" />;
     case "discord":

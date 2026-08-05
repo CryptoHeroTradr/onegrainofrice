@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Same-origin proxy for the (public, read-only) RiceDAO town leaderboard, shown
@@ -16,7 +17,7 @@ export async function GET() {
   try {
     const res = await fetch(`${API_BASE}/api/town/leaderboard`, { next: { revalidate: 60 } });
     if (!res.ok) throw new Error("upstream not ok");
-    const raw = (await res.json()) as unknown;
+    const raw = await readJson<unknown>(res);
     const list = Array.isArray(raw) ? raw : [];
     const entries: Entry[] = list
       .map((r) => {

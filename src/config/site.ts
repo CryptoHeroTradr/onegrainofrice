@@ -73,7 +73,8 @@ export const site = {
       label: "Follow $RICE on Instagram",
       href: "https://www.instagram.com/1grainproject/",
     },
-    // Add more here — supported ids: "x" | "instagram" | "telegram" | "discord" | "globe"
+    { id: "tiktok", label: "Follow $RICE on TikTok", href: "https://www.tiktok.com/@1grainproject" },
+    // Add more here — supported ids: "x" | "instagram" | "tiktok" | "telegram" | "discord" | "globe"
   ] as { id: SocialId; label: string; href: string }[],
 
   memeWall: {
@@ -302,6 +303,6 @@ export const site = {
 /** Config-gated ambient farm loop behind the hero (needs a local asset). */
 export const HERO_FARM_AMBIENT = process.env.NEXT_PUBLIC_HERO_FARM_AMBIENT === "true";
 
-export type SocialId = "x" | "instagram" | "telegram" | "discord" | "globe";
+export type SocialId = "x" | "instagram" | "tiktok" | "telegram" | "discord" | "globe";
 export type AboutIcon = "users" | "shield" | "droplet" | "heart" | "scan";
 export type StatIcon = "bowl" | "water" | "love";

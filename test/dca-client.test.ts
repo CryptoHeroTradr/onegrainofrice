@@ -39,10 +39,19 @@ function stubFetch(routes: Record<string, { status: number; body: unknown }>): {
     const body = init?.body ? (JSON.parse(init.body) as unknown) : undefined;
     calls.push({ url, body });
     const hit = routes[url] ?? { status: 404, body: { ok: false, error: "not found" } };
+    // `text()` as well as `json()`: the client reads bodies through
+    // `lib/readJson`, which takes the text and parses it so that a non-JSON body
+    // (an nginx 413 page, a gateway error) can be reported as what it is rather
+    // than as a JSON.parse failure. A stub that only answers json() is not a
+    // stand-in for a Response — it is a stand-in for the one method the code
+    // used to call.
     return {
       ok: hit.status >= 200 && hit.status < 300,
       status: hit.status,
+      statusText: "",
+      headers: new Headers({ "content-type": "application/json" }),
       json: async () => hit.body,
+      text: async () => JSON.stringify(hit.body),
     } as unknown as Response;
   });
   return { calls };

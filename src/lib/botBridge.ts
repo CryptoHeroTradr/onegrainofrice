@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readJsonOr } from "@/lib/readJson";
 
 /**
  * SERVER-SIDE ONLY. The one place this website talks to the bot's bridge.
@@ -58,7 +59,7 @@ export async function bridgeCall(
       signal: controller.signal,
       cache: "no-store",
     });
-    const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const json = await readJsonOr<Record<string, unknown> | null>(res, null);
     return { status: res.status, json };
   } catch {
     return { status: 0, json: null }; // unreachable / timed out — distinct from any bot status

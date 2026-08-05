@@ -6,32 +6,62 @@ import { usePathname } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { homeNavLinks } from "@/config/home";
 
+/** One row in a menu panel. Both the site list and the games list are these. */
+export interface MenuLink {
+  label: string;
+  href: string;
+  emoji: string;
+}
+
 /**
- * The site menu: a single "🌾 Menu" button that opens a dark-green dropdown
- * holding every nav link with its emoji. This replaces the row of inline nav
- * links at ALL breakpoints (it is not a mobile-only hamburger), so the bar reads
- * the same on a phone and on a desktop.
+ * A nav dropdown: an emoji-and-label button that opens a dark-green panel of
+ * links. This replaces the row of inline nav links at ALL breakpoints (it is not
+ * a mobile-only hamburger), so the bar reads the same on a phone and on a desktop.
  *
  * Colours are fixed rather than tokenised because the panel is its own surface:
  * dark green ground, white text, light gold (khaki) for the current page and for
  * hover/focus. Those three are the whole spec.
  *
- * Every link comes from `homeNavLinks` and nothing is prepended. *Phase 7,
- * 2026-08-05:* there used to be a `MENU_LINKS` const here that stuck a hardcoded
- * "🍚 Grains Game → /" entry on the front, because the Grains Game was the landing
- * page and so could not sit in the shared nav config like every other route. The
- * games now live under `/games` and the menu has one "🎮 Games" entry pointing at
- * the index, so the special case is deleted rather than repointed — a second list
- * of nav links is a second list to forget.
+ * **This is the ONLY dropdown in the bar, used twice.** *2026-08-05.* The nav now
+ * carries a second one — 🎮 Games — and the brief for it was "identical in
+ * behaviour and styling to 🌾 Menu". The only way to keep that true is for there
+ * to be one implementation: everything that makes the panel what it is (the
+ * outside-click and Escape handling, the active-route rule, the colours, the
+ * focus rings, the mobile footer slot) lives here and is shared, and what differs
+ * between the two is three props. A copy of this file with a different emoji is
+ * exactly the SiteMenu-vs-inline-links duplication that Phase 7 deleted.
+ *
+ * `items` defaults to `homeNavLinks` so the site menu — the original caller and
+ * the one whose list IS the site's nav — reads the same as it always did. *Phase
+ * 7, 2026-08-05:* there used to be a `MENU_LINKS` const here that stuck a
+ * hardcoded "🍚 Grains Game → /" entry on the front, because the Grains Game was
+ * the landing page and so could not sit in the shared nav config like every other
+ * route. The games now live under `/games`, so the special case is deleted rather
+ * than repointed — a second list of nav links is a second list to forget.
  */
 
 export function SiteMenu({
+  /** Panel contents. Defaults to the site nav. */
+  items = homeNavLinks,
+  /** Button glyph. */
+  emoji = "🌾",
+  /** Button text, and the panel's accessible name. */
+  label = "Menu",
+  /**
+   * DOM id for the panel, referenced by the button's aria-controls. Must be
+   * unique on the page — two dropdowns in one bar means two ids.
+   */
+  id = "site-menu",
   /** Rendered inside the open panel, under a divider (socials / Buy on mobile). */
   footer,
   /** Classes for the footer's divider row — e.g. "lg:hidden" to drop it on desktop. */
   footerClassName = "",
   className = "",
 }: {
+  items?: readonly MenuLink[];
+  emoji?: string;
+  label?: string;
+  id?: string;
   footer?: ReactNode;
   footerClassName?: string;
   className?: string;
@@ -67,12 +97,12 @@ export function SiteMenu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-controls="site-menu"
+        aria-controls={id}
         aria-haspopup="menu"
         className="flex min-h-11 items-center gap-2 rounded-md bg-[#254a24] px-3 font-mono text-sm font-bold tracking-widest text-white uppercase shadow-sm transition-colors hover:bg-[#1c3a1b] hover:text-[#f0d17a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f0d17a] sm:px-4"
       >
-        <span aria-hidden="true">🌾</span>
-        Menu
+        <span aria-hidden="true">{emoji}</span>
+        {label}
         <ChevronDown
           size={16}
           aria-hidden="true"
@@ -82,12 +112,12 @@ export function SiteMenu({
 
       {open && (
         <div
-          id="site-menu"
+          id={id}
           role="menu"
-          aria-label="Site"
+          aria-label={label}
           className="absolute top-full left-0 z-50 mt-2 w-[min(17rem,calc(100vw-1.5rem))] overflow-hidden rounded-md border border-[#f0d17a]/25 bg-[#254a24] py-1.5 text-white shadow-xl"
         >
-          {homeNavLinks.map((item) => {
+          {items.map((item) => {
             // Anchored links ("/#tokenomics") never count as the current page —
             // otherwise Home and Token would both light up while you are on "/".
             const active = !item.href.includes("#") && pathname === item.href;

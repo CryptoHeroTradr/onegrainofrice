@@ -6,6 +6,7 @@ import { asset } from "@/lib/asset";
 import { CHARITY_FALLBACK, type CharityDTO } from "@/lib/charity";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 import { CopyAddress } from "@/components/primitives/CopyAddress";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Charity mission + public wallet + LIVE pantry stat chips, wired to the Phase 5
@@ -21,7 +22,7 @@ export function CharitySection() {
       try {
         const res = await fetch(asset("/api/charity"), { cache: "no-store" });
         if (!res.ok) throw new Error("bad status");
-        const data = (await res.json()) as CharityDTO;
+        const data = await readJson<CharityDTO>(res);
         if (alive) setDto(data);
       } catch {
         /* keep last-good */

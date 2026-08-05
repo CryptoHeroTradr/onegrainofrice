@@ -8,6 +8,7 @@ import { useRice } from "@/components/rice/RiceParticles";
 import { asset } from "@/lib/asset";
 import { isSoundOn, subscribeSound } from "@/lib/sound";
 import { plateTint, type Meme, type PlateTint } from "@/config/memes";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Sushi-belt meme reel. Whenever motion is allowed it auto-scrolls as a seamless
@@ -176,7 +177,7 @@ async function fetchTopic(category: string, limit: number, page: number): Promis
   try {
     const r = await fetch(asset(`/api/telegram-media?${q}`));
     if (!r.ok) return [];
-    const d = await r.json();
+    const d = await readJson<{ media?: unknown }>(r);
     return Array.isArray(d.media) ? (d.media as TgMedia[]) : [];
   } catch {
     return [];
@@ -195,7 +196,7 @@ async function fetchTopic(category: string, limit: number, page: number): Promis
 async function loadDiverseMemes(): Promise<BeltMeme[]> {
   const catRes = await fetch(asset(`/api/telegram-media?limit=1`));
   if (!catRes.ok) return [];
-  const catData = await catRes.json();
+  const catData = await readJson<{ categories?: unknown }>(catRes);
   const categories: Array<{ category: string; count: number }> = Array.isArray(catData.categories)
     ? catData.categories
     : [];

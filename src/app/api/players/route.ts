@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PLAYERS_FALLBACK, type PlayersDTO } from "@/lib/charity";
+import { readJson } from "@/lib/readJson";
 
 /** Same-origin proxy for RiceDAO online player count. Revalidated every 60s. */
 export const revalidate = 60;
@@ -10,7 +11,7 @@ export async function GET() {
   try {
     const res = await fetch(`${API_BASE}/api/town/players`, { next: { revalidate: 60 } });
     if (!res.ok) throw new Error("upstream not ok");
-    const data = (await res.json()) as unknown;
+    const data = await readJson<unknown>(res);
     const online = Array.isArray(data) ? data.length : 0;
     const dto: PlayersDTO = { online, fallback: false };
     return NextResponse.json(dto);

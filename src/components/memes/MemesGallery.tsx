@@ -8,6 +8,7 @@
 // photos/videos/GIFs, lightbox with video controls + keyboard nav, pagination.
 
 import { useCallback, useEffect, useState } from "react";
+import { readJson } from "@/lib/readJson";
 
 // Same-origin: the Next rewrite proxies /api/telegram-media/* to the game server.
 const GAME_API = "";
@@ -79,7 +80,7 @@ export function MemesGallery() {
       try {
         const res = await fetch(`${GAME_API}/api/telegram-media?${params}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const data = await readJson<{ media?: unknown; categories?: unknown; totalPages?: number }>(res);
         if (ignore) return;
         setMedia(Array.isArray(data.media) ? data.media : []);
         setCategories(Array.isArray(data.categories) ? data.categories : []);

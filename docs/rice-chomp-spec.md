@@ -131,6 +131,24 @@ to `playSurfaces.ts` — was wrong, and adopting it would have broken two shippe
 The rule for a new route is **"does an ambient decoration fight this page?"**, never
 "is it in `src/config/games.ts`".
 
+**The games are reachable from the bar, not only from the index.** *Amended 2026-08-05,
+after Phase 7 promoted.* The nav carries a second dropdown — **🎮 Games**, listing all
+three — alongside 🌾 Menu, whose single "🎮 Games" row still points at the index. It is
+the SAME `SiteMenu` component with three different props, not a second dropdown: the
+brief asked for one "identical in behaviour and styling", and the only way to keep that
+true is for there to be one implementation. It appears on the RICE CHOMP bar too, which
+is deliberate — switching games is the one navigation a player on a game page actually
+wants — and it is dropped below `sm`, where the 56px bar has no room for it and 🌾 Menu
+still reaches the index.
+
+**`src/config/games.ts` is the single source for every word about a game.** Four surfaces
+render from it — the `/games` index, the home page's Games section, the 🎮 Games dropdown,
+and the `/games` route metadata — and none of them contains a game's title, tagline or
+blurb as a literal. The count in "Three games, no install" is COMPUTED from the list, so a
+fourth game cannot leave three sentences confidently saying three.
+`test/one-games-list.test.ts` asserts the absence of the literals, which is the part that
+matters: two copies that agree today are still two copies.
+
 ### Path handling
 
 `basePath` is `""` in production — the site owns its own domain and assets serve from the root with no prefix. **Never hardcode a path prefix, in TS or in CSS.** Use the same env-driven mechanism the rest of the app uses, or root-relative paths, so a future basePath change is one edit. The `/onegrainofrice/...` cursor URL in `globals.css` is exactly the bug this rule exists to prevent.
@@ -366,7 +384,7 @@ from outside the repo and no third-party request.*
   - **The run is SNAPSHOT at the moment of death, not read at submit time.** `tick()` does nothing in the GAMEOVER phase but the tick counter is still incremented at the end of it, so a run read thirty seconds later claims eighteen hundred ticks it never played — a different duration and a different trace hash every time the player hesitated, which would also have defeated the submit-once dedupe.
 - **The site's nav bar is on the game page, in a play-surface form.** *Added 2026-08-04, Phase 5.6.* The game was the one route on the site with no site chrome and a single text link out of it. *Amended 2026-08-05, Phase 7: it was in `homeNavLinks` directly, as "👾 Rice Chomp"; the menu now carries one "🎮 Games" entry pointing at the `/games` index and the three games are cards on that page. The nav bar on this route is unaffected — it renders because `isPlaySurface()` matches, not because the route is in the menu.* It renders the SAME `JourneyNav` the rest of the site renders rather than a copy — a second bar would drift the first time the real one changed — and four things about it are forced by the game rather than chosen:
   - **It is IN FLOW, not `fixed`.** A game page is exactly one viewport tall and owns every pixel of it. A fixed bar would float over the board's own header while the board went on being sized as though the bar were not there.
-  - **It is solid immediately.** The transparent-over-hero state resolves on scroll, and this page never scrolls, so it would sit in that state forever — a bar with no ground, over a black game.
+  - **It is solid immediately.** The transparent-over-hero state resolves on scroll, and this page never scrolls, so it would sit in that state forever — a bar with no ground, over a black game. *Amended 2026-08-05: this is no longer a special case that this page argues for. Site-wide, **solid is now the default and the transparent state is opt-in** via `overHero`, which a page passes only when it paints something dark behind the bar. The play-surface branch still forces solid regardless of what the page asks for, because a game page floats over nothing — but the reasoning above is now the general rule rather than an exception carved out for this route. See the plan's §11.7 for the /games regression that produced the change.*
   - **It is 56px at every width**, and it is hidden entirely below 520px of viewport height. On a landscape phone the bar is a fifth of what is left for the board and the page's own header link still leaves.
   - **It renders no `<LanguageSwitcher>`**, per the rule in the Acceptance criteria below: translation is scoped off play surfaces, so a language control there is a switch wired to nothing.
 

@@ -6,6 +6,7 @@ import { SectionHeading } from "@/components/primitives/SectionHeading";
 import { CopyAddress } from "@/components/primitives/CopyAddress";
 import { useMealsDonated } from "@/hooks/useCharityImpact";
 import { TradingPortal } from "@/components/token/TradingPortal";
+import { readJson } from "@/lib/readJson";
 
 /**
  * The $RICE token panel — content cloned from the RiceDAO site's "Codex of life"
@@ -39,7 +40,7 @@ function useMarketCap(): string | null {
       try {
         const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${CONTRACT}`);
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await readJson<{ pairs?: unknown }>(r);
         const pairs: Array<{ marketCap?: number; fdv?: number; liquidity?: { usd?: number } }> =
           Array.isArray(d?.pairs) ? d.pairs : [];
         if (!pairs.length) return;

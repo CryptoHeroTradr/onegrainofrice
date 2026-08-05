@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readJsonOr } from "@/lib/readJson";
 
 /**
  * THE MINI APP'S ONLY SERVER CALL — "which wallet is mine?", and nothing else.
@@ -61,7 +62,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       signal: controller.signal,
       cache: "no-store",
     });
-    const data = (await upstream.json().catch(() => null)) as Record<string, unknown> | null;
+    const data = await readJsonOr<Record<string, unknown> | null>(upstream, null);
     if (!upstream.ok || !data) {
       // Pass the bot's status through so a 401 (unverifiable session) reads as a 401 here, but
       // never pass its body verbatim — the bot's own message is written for an operator.

@@ -47,6 +47,32 @@ function stripDataUrl(b64: string): string {
   return i >= 0 ? b64.slice(i + "base64,".length) : b64;
 }
 
+/**
+ * The formats the images API accepts as an edit reference, and the filename
+ * extension each has to arrive with.
+ *
+ * This used to be a hardcoded `image/png`, which was true only because the
+ * browser always sent PNG. It no longer always does: the client falls back to
+ * JPEG when a PNG will not fit under the upload ceiling (see
+ * `components/pfp/imaging.ts`), and mislabelling a JPEG as PNG is rejected on
+ * the far side. Read the type the bytes actually have.
+ */
+const UPLOAD_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+function typeFromDataUrl(dataUrl: string): { mime: string; ext: string } {
+  const match = /^data:([a-z]+\/[a-z0-9.+-]+);base64,/i.exec(dataUrl);
+  const mime = match?.[1]?.toLowerCase() ?? "";
+  const ext = UPLOAD_TYPES[mime];
+  // A bare base64 string with no data-URL prefix is PNG by the old convention,
+  // and an unrecognised type is more likely to be a mislabelled PNG than
+  // something the API can use — either way, the previous behaviour.
+  return ext ? { mime, ext } : { mime: "image/png", ext: "png" };
+}
+
 // Normalize an OpenAI image response to a data URL. gpt-image-1 returns
 // b64_json; dall-e returns a temporary URL which we download and inline so
 // callers always get a persistent data URL.
@@ -73,7 +99,8 @@ export async function editImage(
   const openai = getOpenAI();
   if (!openai) throw new Error("AI is not configured");
   const buffer = Buffer.from(stripDataUrl(imageBase64), "base64");
-  const image = await OpenAI.toFile(buffer, "pfp.png", { type: "image/png" });
+  const { mime, ext } = typeFromDataUrl(imageBase64);
+  const image = await OpenAI.toFile(buffer, `pfp.${ext}`, { type: mime });
   const result = await openai.images.edit({
     model,
     image,

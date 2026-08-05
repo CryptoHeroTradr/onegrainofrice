@@ -45,3 +45,55 @@ export const games = [
 ] as const;
 
 export type Game = (typeof games)[number];
+
+/**
+ * The games as nav rows, for the 🎮 Games dropdown in the bar
+ * (`components/journey/SiteMenu`).
+ *
+ * Derived rather than written out, so a fourth game appears in the dropdown by
+ * being added to `games` above — the same reason the cards are derived. A
+ * hand-kept copy of this list is how the menu ends up advertising two of the
+ * three games, which is the state the site was in before Phase 7.
+ */
+const COUNT_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven"];
+/** "Three" — spelled out, because "3 games" reads like a spec sheet. */
+const count = COUNT_WORDS[games.length] ?? String(games.length);
+const Count = count[0]!.toUpperCase() + count.slice(1);
+/** "Rice Chomp, Grains Game and Catch A Grain". */
+const titleList = games
+  .map((g) => g.title)
+  .join(", ")
+  .replace(/, ([^,]+)$/, " and $1");
+
+/**
+ * The arcade's own heading and one-line lede, shared by the `/games` index and
+ * the home page's Games section — same reason as the cards: two surfaces
+ * introducing the same games in two different sentences is drift that nobody
+ * notices until the numbers disagree.
+ *
+ * The COUNT is computed, not typed. "Three games, no install" was written by
+ * hand on both surfaces and in the route's meta description, and the failure mode
+ * of a fourth game is not a broken page — it is three sentences that confidently
+ * say three while four cards sit underneath them.
+ */
+export const gamesIntro = {
+  headingLead: "the $RICE",
+  headingAccent: "arcade",
+  lede: `${Count} games, no install, no wallet needed. Pick one.`,
+} as const;
+
+/**
+ * `/games` route metadata. Here rather than in the page for the same reason as
+ * everything else in this file: it names every game, and a list of games that
+ * lives next to the games cannot fall behind them.
+ */
+export const gamesMeta = {
+  title: "Games — One Grain of Rice",
+  description: `${Count} $RICE games: ${titleList}. All free, all in the browser, nothing to install.`,
+} as const;
+
+export const gamesNavLinks = games.map((game) => ({
+  label: game.title,
+  href: game.href,
+  emoji: game.emoji,
+}));

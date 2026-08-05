@@ -7,6 +7,7 @@ import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useRice } from "@/components/rice/RiceParticles";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
 import type { DaoProposalDTO } from "@/lib/dao";
+import { readJson } from "@/lib/readJson";
 
 /** Build the initial DTO from config so the first paint is never empty. */
 function exampleDTO(): DaoProposalDTO {
@@ -39,7 +40,7 @@ export function VoteBowls() {
       try {
         const res = await fetch(asset("/api/dao"), { cache: "no-store" });
         if (!res.ok) throw new Error("bad status");
-        const data = (await res.json()) as DaoProposalDTO;
+        const data = await readJson<DaoProposalDTO>(res);
         if (alive) setDto(data);
       } catch {
         /* keep last-good */

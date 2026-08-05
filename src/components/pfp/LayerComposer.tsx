@@ -29,6 +29,7 @@ import {
   type Layer,
 } from "./types";
 import {
+  boundedUploadDataUrl,
   downloadUrl,
   emojiDataUrl,
   fileToDataUrl,
@@ -812,8 +813,11 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
     downloadUrl(flatten().toDataURL("image/png"), "pfp-ricedao.png");
   }, [flatten]);
 
+  // The flattened canvas is about to be POSTed, so it goes through the upload
+  // ceiling — unlike exportPng above, which writes to the user's own disk and
+  // should stay lossless PNG at full size.
   const openGenerate = useCallback(() => {
-    setGenSource(flatten().toDataURL("image/png"));
+    setGenSource(boundedUploadDataUrl(flatten()));
     setGenOpen(true);
   }, [flatten]);
 
@@ -843,7 +847,8 @@ export const LayerComposer = forwardRef<LayerComposerHandle>(function LayerCompo
         void addPhoto(src, name ?? "Image");
       },
       getLayers: () => buildManifest(layers),
-      getFlattened: () => flatten().toDataURL("image/png"),
+      // Named "to use as an AI reference image" above, i.e. it is an upload.
+      getFlattened: () => boundedUploadDataUrl(flatten()),
     }),
     [addPhoto, layers, flatten],
   );

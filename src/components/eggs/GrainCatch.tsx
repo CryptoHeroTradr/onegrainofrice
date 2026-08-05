@@ -5,6 +5,7 @@ import { asset } from "@/lib/asset";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { getHighScore, recordScore } from "@/lib/highscore";
 import { playClack } from "@/lib/sound";
+import { readJsonOr } from "@/lib/readJson";
 
 /**
  * Grain-catch: grains fall; catch them by pinching (pointer-down) over one with
@@ -35,7 +36,7 @@ export function GrainCatch() {
     const loadBoard = async () => {
       try {
         const res = await fetch(asset("/api/leaderboard"), { cache: "no-store" });
-        const d: unknown = res.ok ? await res.json() : [];
+        const d: unknown = res.ok ? await readJsonOr<unknown>(res, []) : [];
         if (alive) setBoard(Array.isArray(d) ? d : []);
       } catch {
         /* leave board empty */

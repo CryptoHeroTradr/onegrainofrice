@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { site } from "@/config/site";
 import type { DaoOption, DaoProposalDTO } from "@/lib/dao";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Same-origin DAO proxy. RiceDAO's proposals feed is wallet-gated (no public
@@ -30,12 +31,12 @@ export async function GET() {
   try {
     const res = await fetch(FEED, { next: { revalidate: 60 } });
     if (!res.ok) throw new Error("upstream not ok");
-    const raw = (await res.json()) as {
+    const raw = await readJson<{
       id?: string;
       question?: string;
       title?: string;
       options?: { label: string; votes?: number; plate?: DaoOption["plate"] }[];
-    };
+    }>(res);
     if (!raw.options?.length) throw new Error("no proposal");
     const palette: DaoOption["plate"][] = ["blue", "green", "red"];
     const options: DaoOption[] = raw.options.map((o, i) => ({

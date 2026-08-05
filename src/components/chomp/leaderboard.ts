@@ -19,6 +19,7 @@ import { encodeTrace } from "@/lib/chomp/trace";
 import type { LeaderboardResponse, SubmitBody, SubmitResponse } from "@/lib/chomp/wire";
 import { BASE_PATH } from "@/lib/basePath";
 import { asset } from "@/lib/asset";
+import { readJson, readJsonOr } from "@/lib/readJson";
 
 /** Everything a submission needs, lifted off a finished run. */
 export interface RunSummary {
@@ -107,7 +108,7 @@ export function fetchBoard(signal?: AbortSignal): Promise<LeaderboardResponse> {
   const req = (async () => {
     const res = await fetch(asset("/api/chomp/leaderboard"), { cache: "no-store" });
     if (!res.ok) throw new Error(`leaderboard ${res.status}`);
-    return (await res.json()) as LeaderboardResponse;
+    return await readJson<LeaderboardResponse>(res);
   })();
   inFlight = req;
   // Cleared on settle either way, so a failed load does not poison the next attempt.
@@ -149,7 +150,7 @@ export async function submitScore(name: string, run: RunSummary): Promise<Submit
       cache: "no-store",
       body: JSON.stringify(body),
     });
-    const json: unknown = await res.json().catch(() => null);
+    const json = await readJsonOr<unknown>(res, null);
     if (!res.ok) {
       const err =
         json && typeof json === "object" && typeof (json as { error?: unknown }).error === "string"

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { site } from "@/config/site";
 import { SOL_MINT } from "@/lib/jupiter";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Recent $RICE pool trades, decoded server-side.
@@ -57,7 +58,7 @@ async function resolvePair(): Promise<string | null> {
       cache: "no-store",
     });
     if (!r.ok) return null;
-    const d = await r.json();
+    const d = await readJson<{ pairs?: unknown }>(r);
     const pairs: Array<{ pairAddress?: string; liquidity?: { usd?: number } }> = Array.isArray(
       d?.pairs,
     )

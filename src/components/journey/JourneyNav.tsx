@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Heart } from "lucide-react";
 import { site } from "@/config/site";
+import { gamesNavLinks } from "@/config/games";
 import { asset } from "@/lib/asset";
 import { isPlaySurface } from "@/lib/playSurfaces";
 import { SiteMenu } from "@/components/journey/SiteMenu";
@@ -22,7 +23,32 @@ const NAV_SOCIAL_CLASS =
   "flex h-9 w-9 items-center justify-center rounded-full border border-olive-deep/30 bg-bone/80 text-olive-deep shadow-sm backdrop-blur transition-colors hover:bg-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive";
 
 /**
- * Sticky nav: transparent over the hero, then a solid paper bar once scrolled.
+ * Sticky nav: a solid paper bar, or — on a page that opts in — transparent over
+ * its dark hero until you scroll past it.
+ *
+ * **SOLID IS THE DEFAULT, AND `overHero` IS OPT-IN.** *2026-08-05, fixing /games.*
+ * This used to be the other way round: every page got the transparent state and
+ * resolved it on scroll. That is only ever correct over something DARK, because
+ * the transparent state paints the bar's text in `bone` (#f4efe2) — and nothing
+ * in the component asked whether there was anything dark behind it. /games has a
+ * `bg-steamed` (#fbf7ee) top, so its logo, wordmark and Charity label rendered at
+ * a measured 1.03:1 against their own background: present, focusable, readable by
+ * a screen reader, and invisible.
+ *
+ * Scroll did not save it, for a reason worth writing down because it is not the
+ * obvious one. /games IS scrollable — 1321px of content in a 900px viewport — but
+ * the solid state needs `scrollY > innerHeight * 0.6` = 540px and the page only
+ * has 421px of scroll range. "Short enough to never scroll" and "short enough to
+ * never scroll ENOUGH" fail identically and the second is much easier to ship.
+ *
+ * So the question the component now asks is the real one — *is there a dark hero
+ * behind me?* — and it asks the page, which is the only thing that knows. The
+ * default is the safe answer: a page that says nothing gets a bar that is legible
+ * on any background. The failure mode of forgetting to opt IN is an ugly solid bar
+ * over a hero; the failure mode of the old default was an invisible nav.
+ *
+ * The four pages that pass `overHero` (`/`, `/pfp`, `/charity`, `/memes`) were all
+ * measured dark behind the bar at the time of the change.
  *
  * Every route link lives in the "🌾 Menu" dropdown (see SiteMenu) at ALL
  * breakpoints — there is no row of inline links any more, and no mobile-only
@@ -62,22 +88,37 @@ const NAV_SOCIAL_CLASS =
  * The scroll listener is skipped there too — not for cost, but because binding a
  * handler that can never fire is how a reader concludes the state means something.
  */
-export function JourneyNav() {
+export function JourneyNav({
+  /**
+   * This page paints something DARK behind the bar (a hero image or a dark
+   * section) for at least the first screenful, so the bar may start transparent
+   * and resolve to solid on scroll. Leave it off unless that is true — see the
+   * note above for what the wrong answer costs in each direction.
+   */
+  overHero = false,
+}: {
+  overHero?: boolean;
+} = {}) {
   const [scrolled, setScrolled] = useState(false);
   const { pour } = useRice();
   // usePathname() is basePath-stripped, so it compares directly against the
   // plain routes in PLAY_SURFACE_ROUTES.
   const onPlaySurface = isPlaySurface(usePathname());
+  // A play surface is solid for its own reasons (see above) and never floats over
+  // a hero, so it wins regardless of what the page asked for.
+  const canBeTransparent = overHero && !onPlaySurface;
 
   useEffect(() => {
-    if (onPlaySurface) return;
+    // Same argument as the play surface: with no transparent state to leave,
+    // there is nothing for a scroll handler to decide.
+    if (!canBeTransparent) return;
     const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, [onPlaySurface]);
+  }, [canBeTransparent]);
 
-  const solid = onPlaySurface || scrolled;
+  const solid = !canBeTransparent || scrolled;
 
   return (
     <header
@@ -88,7 +129,7 @@ export function JourneyNav() {
             // fighting for every row; the page's own header link still leaves.
             "relative border-b border-ink/15 bg-steamed/95 text-ink [@media(max-height:520px)]:hidden"
           : `fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-              scrolled
+              solid
                 ? "translate-y-0 border-b border-ink/15 bg-steamed/95 text-ink backdrop-blur-sm"
                 : "-translate-y-1 border-b border-transparent bg-transparent text-bone"
             }`
@@ -117,6 +158,7 @@ export function JourneyNav() {
           {/* Every nav link lives here, at every breakpoint. The footer slot
               carries the items the bar drops below lg (socials, language, Buy). */}
           <SiteMenu
+            id="site-menu"
             footerClassName="lg:hidden"
             footer={
               <div className="flex flex-col gap-3">
@@ -134,6 +176,25 @@ export function JourneyNav() {
                 </a>
               </div>
             }
+          />
+          {/* A second dropdown, the SAME component with different props (2026-08-05).
+              The 🌾 Menu's one "🎮 Games" row reached the /games index and the three
+              games were a further click in; this puts them in the bar. The index is
+              still one row up in 🌾 Menu, so nothing lost a route.
+
+              It sits next to the menu rather than in the right-hand cluster because
+              that cluster is where the site's non-route controls live (contract,
+              language, mute, Buy) and this is navigation.
+
+              Dropped below `sm`: on a phone the bar is already carrying the logo,
+              🌾 Menu, Charity, the contract chip and the mute toggle, and 🌾 Menu's
+              own Games row still reaches all three from there. */}
+          <SiteMenu
+            id="games-menu"
+            emoji="🎮"
+            label="Games"
+            items={gamesNavLinks}
+            className="hidden sm:block"
           />
         </div>
 

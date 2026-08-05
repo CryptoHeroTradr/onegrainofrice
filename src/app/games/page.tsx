@@ -1,15 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { JourneyNav } from "@/components/journey/JourneyNav";
 import { HomeFooter } from "@/components/journey/HomeFooter";
 import { SectionHeading } from "@/components/primitives/SectionHeading";
-import { games } from "@/config/games";
+import { GameCards } from "@/components/games/GameCards";
+import { gamesIntro, gamesMeta } from "@/config/games";
 
-export const metadata: Metadata = {
-  title: "Games — One Grain of Rice",
-  description:
-    "Three $RICE games: Rice Chomp, the Grains Game and Catch A Grain. All free, all in the browser, nothing to install.",
-};
+export const metadata: Metadata = gamesMeta;
 
 /**
  * /games — the arcade index, added in Phase 7 (2026-08-05).
@@ -26,40 +22,27 @@ export const metadata: Metadata = {
 export default function GamesIndex() {
   return (
     <>
+      {/* No `overHero`: this page is `bg-steamed` from its first pixel, and the
+          transparent bar paints its text in bone. */}
       <JourneyNav />
       <main className="grain-paper min-h-screen bg-steamed text-nori">
-        {/* pt-24 clears the fixed nav (h-16, lg:h-24) — this page has no hero for
-            it to float over, so the bar is solid from the first pixel. */}
+        {/* Top padding clears the fixed nav (h-16, lg:h-24). */}
         <div className="mx-auto max-w-[1180px] px-6 pt-28 pb-20 lg:pt-36">
           <div className="flex flex-col items-center text-center">
-            <SectionHeading as="h1" lead="the $RICE" accent="arcade" tone="dark" />
+            <SectionHeading
+              as="h1"
+              lead={gamesIntro.headingLead}
+              accent={gamesIntro.headingAccent}
+              tone="dark"
+            />
             <p className="mt-5 max-w-xl font-mono text-sm text-nori/70 sm:text-base">
-              Three games, no install, no wallet needed. Pick one.
+              {gamesIntro.lede}
             </p>
           </div>
 
-          <ul className="mt-12 grid gap-6 sm:mt-16 sm:grid-cols-2 lg:grid-cols-3">
-            {games.map((game) => (
-              <li key={game.slug} className="flex">
-                <Link
-                  href={game.href}
-                  className="group flex w-full flex-col gap-3 border-2 border-nori/15 bg-bone p-6 text-left shadow-sticker transition-transform hover:scale-[1.02] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bamboo"
-                >
-                  <span aria-hidden="true" className="text-4xl leading-none">
-                    {game.emoji}
-                  </span>
-                  <h2 className="font-display-round text-2xl font-bold tracking-tight text-nori">
-                    {game.title}
-                  </h2>
-                  <p className="font-display text-base font-bold text-olive">{game.tagline}</p>
-                  <p className="font-mono text-sm leading-relaxed text-nori/70">{game.blurb}</p>
-                  <span className="mt-auto pt-3 font-display-round text-base font-bold text-tuna">
-                    Play {game.title} →
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {/* The cards themselves are shared with the home page's Games section —
+              see components/games/GameCards. Directly under this page's h1. */}
+          <GameCards headingLevel="h2" className="mt-12 sm:mt-16" />
         </div>
       </main>
       <HomeFooter />

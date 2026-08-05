@@ -18,6 +18,7 @@
  * empty pool: all of them render the old memes, none of them render nothing.
  */
 import type { Meme } from "@/config/memes";
+import { readJson } from "@/lib/readJson";
 
 /** Kept in lockstep with the generator (scripts/build-manifest.ts in RiceBuybot). */
 type Tier = "regular" | "big" | "whale" | "massive";
@@ -133,7 +134,7 @@ export async function fetchPoolMemes(signal?: AbortSignal): Promise<Meme[] | nul
     const res = await fetch(MANIFEST_URL, { signal, cache: "no-store" });
     if (!res.ok) return null;
 
-    const raw: unknown = await res.json();
+    const raw = await readJson<unknown>(res);
     if (!isManifest(raw)) return null;
 
     const memes = raw.items

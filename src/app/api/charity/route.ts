@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { CHARITY_FALLBACK, grainsFromKg, type CharityDTO } from "@/lib/charity";
+import { readJson } from "@/lib/readJson";
 
 /**
  * Same-origin server proxy for RiceDAO charity data. The browser only ever
@@ -21,8 +22,8 @@ export async function GET() {
     ]);
     if (!pantryRes.ok || !charityRes.ok) throw new Error("upstream not ok");
 
-    const pantry = (await pantryRes.json()) as Record<string, unknown>;
-    const charity = (await charityRes.json()) as Record<string, unknown>;
+    const pantry = await readJson<Record<string, unknown>>(pantryRes);
+    const charity = await readJson<Record<string, unknown>>(charityRes);
 
     const totalKg = num(pantry.currentRiceKg);
     const nextMilestone = num(charity.nextMilestone, CHARITY_FALLBACK.nextMilestone);

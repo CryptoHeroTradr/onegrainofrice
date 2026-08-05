@@ -1,32 +1,20 @@
 import Link from "next/link";
-import { Globe, MessageCircle, Send } from "lucide-react";
-import { site, type SocialId } from "@/config/site";
-import { asset } from "@/lib/asset";
+import { site } from "@/config/site";
 import { CopyAddress } from "@/components/primitives/CopyAddress";
+import { SocialLinks } from "@/components/primitives/SocialLinks";
 import { SoundToggle } from "@/components/eggs/SoundToggle";
 
-function XLogo({ size = 20 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-    </svg>
-  );
-}
-
-function SocialIcon({ id }: { id: SocialId }) {
-  switch (id) {
-    case "x":
-      return <XLogo />;
-    case "telegram":
-      return <Send size={20} aria-hidden="true" />;
-    case "discord":
-      return <MessageCircle size={20} aria-hidden="true" />;
-    default:
-      return <Globe size={20} aria-hidden="true" />;
-  }
-}
-
-/** New-home footer: wordmark, socials, contract copy, classic link, sound toggle. */
+/**
+ * New-home footer: wordmark, socials, contract copy, classic link, sound toggle.
+ *
+ * *2026-08-05:* the socials row was a hand-copied duplicate of
+ * `primitives/SocialLinks` — its own `<ul>`, its own inline X logo, its own
+ * `SocialIcon` switch — and it had already drifted: the switch had no
+ * `instagram` case, so Instagram had been rendering as a generic globe here
+ * while showing its real mark in the nav. Adding TikTok would have needed the
+ * same glyph written twice, so the copy is deleted instead and this renders the
+ * shared component with the footer's colours passed in.
+ */
 export function HomeFooter() {
   return (
     <footer className="grain border-t border-paper/10 bg-nori py-12 text-steamed">
@@ -38,21 +26,10 @@ export function HomeFooter() {
             {site.nav.logo}
           </Link>
 
-          <ul className="flex items-center gap-3">
-            {site.socials.map((social, i) => (
-              <li key={`${social.id}-${i}`}>
-                <a
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={social.label}
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-full border-2 border-steamed/30 text-steamed/80 transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
-                >
-                  <SocialIcon id={social.id} />
-                </a>
-              </li>
-            ))}
-          </ul>
+          <SocialLinks
+            className="flex items-center gap-3"
+            linkClassName="flex min-h-11 min-w-11 items-center justify-center rounded-full border-2 border-steamed/30 text-steamed/80 transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+          />
 
           <div>
             <p className="mb-2 font-mono text-xs font-bold tracking-widest text-steamed/60 uppercase">

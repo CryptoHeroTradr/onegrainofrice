@@ -14,6 +14,7 @@
 
 import { useRef, useState } from "react";
 import { GAME_API } from "@/components/landing/ui";
+import { readJson } from "@/lib/readJson";
 import { downloadUrl, fileToPngDataUrl } from "@/components/pfp/imaging";
 
 export function SimplePfpGen() {
@@ -46,9 +47,12 @@ export function SimplePfpGen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: photo, prompt: prompt.trim(), mode: "simple" }),
       });
-      const data = await res.json();
+      // readJson, not res.json(): a body that is not JSON came from something in
+      // front of the route (a proxy 413, a gateway 502) and has to say so. See
+      // lib/readJson.ts — this call site is the one that taught us why.
+      const data = await readJson<{ error?: string; image?: string }>(res);
       if (!res.ok) setError(data.error || "Generation failed.");
-      else setResult(data.image);
+      else setResult(data.image ?? null);
     } catch (err) {
       setError((err as Error).message || "Network error.");
     } finally {

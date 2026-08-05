@@ -33,6 +33,7 @@ import {
   useCharityWallet,
   type WalletTx,
 } from "@/components/charity/ui";
+import { readJson } from "@/lib/readJson";
 
 /** SOL transactions below this (dust / rent) are hidden from Recent Activity. */
 const MIN_SOL_TX = 0.01;
@@ -53,7 +54,7 @@ function useSolPrice(): number | null {
           "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
         );
         if (!r.ok) return;
-        const d = await r.json();
+        const d = await readJson<{ solana?: { usd?: number } }>(r);
         const p = d?.solana?.usd;
         if (!cancelled && typeof p === "number" && p > 0) setPrice(p);
       } catch {
