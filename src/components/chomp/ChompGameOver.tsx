@@ -1,6 +1,8 @@
 "use client";
 
 import { BonusIcons } from "./BonusIcons";
+import { ChompSubmit } from "./ChompSubmit";
+import type { RunSummary } from "./leaderboard";
 
 /**
  * The game-over card.
@@ -10,7 +12,12 @@ import { BonusIcons } from "./BonusIcons";
  * REFUSE TO FLATTER A DEBUG RUN. A run started from `?level=N` skipped the levels
  * below it and can never be a score; the spec asks for that to be visible rather
  * than merely enforced, so it is said here in words as well as being kept off the
- * local board and out of Phase 7's submission path.
+ * local board and out of the submission path.
+ *
+ * The order on the card is the spec's flow — score, then where it placed, then name
+ * entry — and the ordering is the design: the number is read before anything asks
+ * the player to type. Submission is `<ChompSubmit />` and appears only for a run
+ * that may actually be submitted.
  */
 export function ChompGameOver({
   score,
@@ -18,6 +25,8 @@ export function ChompGameOver({
   place,
   best,
   debugFrom,
+  run,
+  onOpenBoard,
   onPlayAgain,
   onQuit,
 }: {
@@ -28,6 +37,10 @@ export function ChompGameOver({
   best: number;
   /** The level a debug run started on, or 0 for an ordinary run. */
   debugFrom: number;
+  /** The finished run, for submission. Null if the host could not read one. */
+  run: RunSummary | null;
+  /** Open the world board — offered after a successful submit. */
+  onOpenBoard: () => void;
   onPlayAgain: () => void;
   onQuit: () => void;
 }) {
@@ -66,6 +79,12 @@ export function ChompGameOver({
         <p className="font-mono text-chomp-body text-steamed/50">
           Best on this device is {best.toLocaleString()}
         </p>
+      )}
+
+      {/* Submission. Absent entirely for a debug run and for a scoreless one — an
+          input box offering to file a zero is worse than no box. */}
+      {!debug && run && run.submittable && score > 0 && (
+        <ChompSubmit run={run} onOpenBoard={onOpenBoard} />
       )}
 
       <div className="mt-1 flex flex-wrap items-center justify-center gap-2">

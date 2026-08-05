@@ -1,5 +1,20 @@
 # RICE CHOMP — recon & build plan
 
+**Status (2026-08-05): PHASE 6 IS IN, AND THE GAME IS FEATURE-COMPLETE against the spec.**
+The leaderboard — two boards, top players and top countries, with entirely separate scores
+from the grains game — is built on `data/chomp.db` behind `/api/chomp/*`, with the Next
+process as its sole writer and the grains WS single-writer contract untouched. New files:
+`src/lib/chomp/{env,db,score,trace,wire,grainsName}.ts`,
+`src/app/api/chomp/{leaderboard,score}/route.ts`,
+`src/components/chomp/{ChompLeaderboard,ChompSubmit}.tsx` and
+`src/components/chomp/leaderboard.ts`, plus `test/chomp-score.test.ts`. One line went into
+the engine (`bonusesEaten`, a run-total counter nothing in the simulation reads) and one
+private function moved out of the grains board into `@/lib/grains/flag` so both games
+share it. Measurements — what the panel costs the board at eight viewports, the two bugs
+the measuring found, and the end-to-end submission smoke — are in §10. **338 tests pass,
+typecheck and lint are clean, `/chomp` still prerenders static, and the page still makes
+zero third-party requests.**
+
 **Status (2026-08-04):** Phase 5 is in. `src/components/chomp/` holds `ChompScreen.tsx`,
 `ChompCanvas.tsx`, `BonusIcons.tsx`, `PestPortrait.tsx`, `TouchControls.tsx`,
 `ChompAttract.tsx`, `ChompPause.tsx`, `ChompGameOver.tsx`, `ChompSettings.tsx`,
@@ -64,7 +79,15 @@ files are the durable context; the chat log is not.
 ### The preview server
 
 `http://127.0.0.1:3099` — a **production build**, not `next dev`, started with
-`NEXT_DIST_DIR=builds/<sha> BUILD_ID=<sha>`. It does **not** hot-reload. To show a change
+`NEXT_DIST_DIR=builds/<sha> BUILD_ID=<sha>`.
+
+> **AND `CHOMP_DB_PATH=<somewhere else>`, since Phase 6.** It defaults to
+> `<cwd>/data/chomp.db`, which is the file the live process on :3006 owns — so a preview
+> started without it is a second writer of the leaderboard database, which is exactly what
+> the two-database design exists to prevent. Pointing it at a scratch path also means
+> preview submissions do not land on the real board. See §10.4.
+
+It does **not** hot-reload. To show a change
 there, build a new dist and restart it against the new sha. It is separate from pm2 and
 from live; restarting it never touches production. Live deploy is still
 `deploy/build.sh` then `deploy/promote.sh <sha>` — see the deploy notes in §3.
@@ -414,8 +437,14 @@ What does **not** exist, and matters:
 Summary: the grains anti-cheat is a **throughput clamp, not verification.** That is a
 defensible choice for a "tap a counter" toy where inflation is cosmetic. It is a *worse*
 fit for RICE CHOMP, where a leaderboard rank is the whole point and a naive
-`POST {score: 999999}` would be strictly weaker than what grains has today. See open
-question 5 — this needs a decision before I build the submit path.
+`POST {score: 999999}` would be strictly weaker than what grains has today.
+
+> **Answered in Phase 6** (open question 5): server-side plausibility, with the input
+> trace stored so replay verification stays a later server-only change. `POST {score:
+> 999999}` is refused with a 422 — measured, §10.3. Two of the gaps listed above are
+> inherited rather than fixed, and are named as such in `src/lib/chomp/score.ts`: the
+> session route still mints identities freely, so the per-vid rate limit is a speed bump
+> and the per-IP-hash limit is the real bound.
 
 ---
 
@@ -503,7 +532,11 @@ have**. This is the single strongest argument for the HTTP leaderboard in §5.
    `touch-action: none` — but there is no d-pad, no swipe-direction detection, no
    virtual stick. All new work.
 7. **The WS server is single-instance by contract.** Any realtime leaderboard must not
-   fight `instances: 1`, and must not add a second writer to `grains.db`.
+   fight `instances: 1`, and must not add a second writer to `grains.db`. *Held in Phase
+   6: `chomp.db` is a second file with a second single writer, and the only touch of
+   `grains.db` is a `readonly: true` connection. But note the corollary the phase
+   discovered — the SAME hazard now exists for `chomp.db`, because the preview server
+   defaults to the same path the live process uses. See §10.4.*
 8. **`vitest` is node-env and DOM-free by design.** Only pure logic is testable. Render
    and input behaviour will be manual-QA'd unless jsdom is added (which the config
    argues against on purpose).
@@ -634,8 +667,10 @@ src/components/chomp/ChompCanvas.tsx         "use client" — canvas host. rAF l
                                              ResizeObserver, imperative handle.
                                              MIRRORS RiceBowlCanvas.tsx almost 1:1
 src/components/chomp/TouchControls.tsx       "use client" — swipe surface + optional d-pad
-src/components/chomp/ChompLeaderboard.tsx    "use client" — board. mirrors PlayersLeaderboard.tsx,
-                                             reuses @/lib/grains/flag
+src/components/chomp/ChompLeaderboard.tsx    "use client" — BOTH boards, in two forms
+                                             (docked panel / overlay). reuses @/lib/grains/flag;
+                                             see its header for what it reuses and what it
+                                             deliberately does not
 
 src/components/chomp/engine/maze.ts          MAZE rows, tile enum, warp/wrap, pellet count,
                                              tile<->pixel helpers        (pure, no directive)
@@ -651,6 +686,14 @@ src/lib/chomp/db.ts                          better-sqlite3. own file, own migra
 src/lib/chomp/env.ts                         CHOMP_DB_PATH + tunables.
                                              MIRRORS src/lib/grains/env.ts
 src/lib/chomp/score.ts                       server-side run validation (see open question 5)
+src/lib/chomp/trace.ts                       [Phase 6] the compressed input trace codec.
+                                             isomorphic + pure: browser encodes, route decodes
+src/lib/chomp/wire.ts                        [Phase 6] types only — the shapes that cross
+                                             the wire, imported by both ends
+src/lib/chomp/grainsName.ts                  [Phase 6] the ONE read of grains.db, readonly
+src/components/chomp/leaderboard.ts          [Phase 6] host side: summarizeRun(), the three
+                                             calls, the in-flight request share
+src/components/chomp/ChompSubmit.tsx         [Phase 6] name entry on the game-over card
 
 test/chomp-maze.test.ts                      28x31, symmetry, full connectivity, no dead ends,
                                              pellet count, tunnel wrap
@@ -707,10 +750,39 @@ client polling is the closer fit). If you later want it truly live, adding a `ch
 message type to the existing socket is a purely additive follow-up — this design
 doesn't block it.
 
+> **What shipped: `no-store`, but NO interval polling.** *Amended 2026-08-05, Phase 6.*
+> The board is fetched when the panel opens and when its Refresh button is pressed, and
+> that is all. A timer would poll hardest in exactly the case where the panel is a docked
+> side panel beside a running game at 60fps, to animate a number nobody is watching
+> change. There is a manual Refresh instead, which is honest about what it does. The
+> follow-up to a genuinely live board is unchanged and still purely additive.
+
 ### Proposed schema (`data/chomp.db`, created by `src/lib/chomp/db.ts`)
 
 Same idempotent style as `src/lib/grains/db.ts:109-148`: one `CREATE TABLE IF NOT
 EXISTS` block, additive columns guarded by `PRAGMA table_info`.
+
+> **What shipped, and where it differs from the sketch below.** *Amended 2026-08-05,
+> Phase 6.* The shape is as proposed; five columns were added and one was derived rather
+> than accepted.
+>
+> - **`chomp_runs` gained `name`, `seed`, `ticks`, `trace` and `trace_hash`.** The trace
+>   column is the one the sketch could not do without and did not list — "store the input
+>   trace unverified" has to land somewhere. `seed` travels because replay verification
+>   needs it, even though every run uses `DEFAULT_SEED` today.
+> - **`duration_ms` is DERIVED, not submitted.** The payload carries simulation `ticks`
+>   and the row stores `ticks × 1000 / 60`. A client-supplied wall-clock duration would
+>   have been a second forgeable field saying the same thing as the first, and the tick
+>   count is the authoritative clock.
+> - **`UNIQUE INDEX idx_chomp_runs_dedupe ON (vid, trace_hash)`** makes submit-once a
+>   database property rather than a check somebody can forget to run. A double-click or a
+>   retry after a dropped response is a no-op that reports the truth.
+> - **`chomp_countries` gained `best_name`** so the board can say who set a country's
+>   score, and it **ranks on `best_score`, never on `total_score`**. A sum ranks whoever
+>   played most rather than whoever played best, and it is the one number a script can
+>   inflate without ever needing a good run.
+> - `idx_chomp_runs_vid` is `(vid, created_at DESC)` rather than `(vid, score DESC)`,
+>   because what actually reads it is the rate limiter.
 
 ```sql
 -- Every completed run. Append-only; the audit trail and the source of truth.
@@ -1446,7 +1518,160 @@ runtime measurement can tell those two apart, which is the argument for having i
 
 ---
 
-## 10. Open questions
+## 10. The Phase 6 answer — the leaderboard, measured 2026-08-05
+
+Everything below was measured against a real production build (`phase6e`) served on the
+preview port, in headless Chrome over CDP, at eight viewports — the seven §9 used plus a
+1024×768 tablet landscape, which is where the docked panel is tightest.
+
+### 10.1 What the panel costs the board: nothing, at every viewport
+
+`tile` is still the whole answer. Each row is measured three times: with the board closed,
+with it open, and after closing it again.
+
+| viewport | tile closed | tile OPEN | tile re-closed | form | pauses? | overflow |
+|---|---:|---:|---:|---|---|---|
+| 390×844 portrait phone | 13 | **13** | 13 | overlay | **yes** | 0/0 |
+| 844×390 landscape phone | 5 | **5** | 5 | overlay | **yes** | 0/0 |
+| 1024×1366 tablet portrait | 34 | **34** | 34 | overlay | **yes** | 0/0 |
+| 1024×768 tablet landscape | 15 | **15** | 15 | docked | no | 0/0 |
+| 1366×768 laptop | 15 | **15** | 15 | docked | no | 0/0 |
+| 1920×1080 | 24 | **24** | 24 | docked | no | 0/0 |
+| 2560×1440 | 35 | **35** | 35 | docked | no | 0/0 |
+| 3840×2160 | 58 | **58** | 58 | docked | no | 0/0 |
+
+Every one of those tile sizes is **identical to §9.1's "after" column** — the numbers
+Phase 5.6 shipped. The leaderboard costs the maze nothing anywhere.
+
+**That is not luck, and it is the answer to the one thing worth checking before designing
+the panel.** The play row's left gutter was already 8rem (`lg:`) / 11rem (`xl:`) and
+empty; it grows to 20rem / 24rem while the board is open, and it is cut from margin that
+was already there. At 1080p the middle column has 1536px for a 672px board — the board is
+height-bound in landscape, always, because the maze is 28:31. In portrait, where width
+binds, the columns do not exist at all and the panel is an overlay instead. The play row
+is still `grid-rows-[minmax(0,1fr)]` with exactly one `1fr`, the canvas still owns the one
+`1fr` column, and the degenerate-measurement retry is untouched.
+
+**Both column sets are written out as whole literal class strings** rather than composed
+from parts, because Tailwind reads the source and cannot generate a class assembled at
+runtime.
+
+### 10.2 Two bugs found by measuring, and one design rule that came out of it
+
+**1. Pausing resized the maze, on tablets, mid-run.** With two more buttons in it, the HUD
+row sat within **11 pixels** of its flex-wrap point at 1024×1366. "Resume" measures 89px
+against "Pause"'s 84 — so pressing pause wrapped the row, took 44px of HUD height out of
+the play row, and dropped the board from a 34px tile to a 32px one. It did not reliably
+come back on resume, which made it read as a resize bug rather than as a wrap.
+
+```
+             tile  hudH  cluster  caption
+running        34    81      438  Pause      <- after the fix
+paused         34    81      438  Resume
+board open     34    81      438  Resume
+board closed   34    81      438  Pause
+
+running        34   125      424  Pause      <- before it
+paused         32   125      435  Resume
+resumed        32    81      424  Pause      <- and it stayed at 32
+```
+
+Fixed twice over, because either half alone leaves the failure available: the row gained
+real margin (`sm:gap-x-6`, 32px across four gaps, and `px-2.5` on the four cluster
+buttons) and the pause button gained a width floor so its caption can never resize it.
+**A control whose caption toggles must not change size** — that is the general rule, and
+it is now in the spec.
+
+**2. Opening the board fired the request twice.** Both forms of the panel are mounted and
+CSS hides one — but `display:none` is a rendering decision, not a React one. The hidden
+component mounted, ran its effect, and fetched: two identical no-store GETs and two pairs
+of indexed reads, one of them for a panel nobody could see. `fetchBoards()` now shares an
+in-flight request. Measured after: **one** `/api/chomp/*` request per open.
+
+Both are the same shape as §9.2's and §8.3's: correct-looking code, no error, no warning,
+and a page that is wrong in a way you have to *measure* to see.
+
+**The design rule that came out of it: ask the LAYOUT, not a media query.** The pause rule
+needs to know whether the docked panel or the overlay is on screen, and the obvious way is
+a `matchMedia("(min-width: 64rem) and (orientation: landscape)")` string in the component
+— which then has to stay in step with the `lg:landscape:` Tailwind classes on the elements
+themselves, forever, in two files. Instead the docked container is always mounted and the
+rule reads `offsetParent != null`, which is null exactly when CSS has set `display:none`.
+One source of truth, and it is the real CSS rather than a description of it.
+
+### 10.3 The submission path, end to end
+
+Played by the difficulty suite's clearing bot, submitted over HTTP exactly as the browser
+does, against the running build. A level-1 clear: **score 3720, 4102 ticks, 282 grains, 4
+golden, 2 pests, 1 bonus, and a 315-byte trace.**
+
+```
+ok  session route mints a signed cookie
+ok  a real run is accepted            {rank:1, countryRank:1, improved:true}
+ok  resubmitting the identical run is a no-op   (duplicate:true, games still 1)
+ok  the player is on the players board          Paddy Ace · 3720 · JP
+ok  the country is on the countries board       JP Japan · 3720 · Paddy Ace
+ok  the name is suggested back for next time
+ok  a wild score is refused           422 score does not match what the run says it did
+ok  a debug run is refused            422 debug runs cannot be submitted
+ok  a one-tick run is refused         422 run is too short to be a run
+ok  an empty name is refused          400 Names are 3-12 characters.
+ok  a profane name is refused         400 Pick another name.
+ok  a malformed trace is refused      400 unexpected character in trace at 3
+ok  a submission with no session      401
+ok  the per-vid rate limit bites      3 of 8 refused with 429
+```
+
+The database it created, read back off disk:
+
+```
+journal_mode wal | synchronous NORMAL | wal_autocheckpoint 1000 | page_size 4096
+tables:  chomp_countries, chomp_players, chomp_runs
+indexes: idx_chomp_countries_best, idx_chomp_players_best, idx_chomp_runs_created,
+         idx_chomp_runs_dedupe, idx_chomp_runs_iphash, idx_chomp_runs_score,
+         idx_chomp_runs_vid
+row 1:   score 3720, ticks 4102, duration_ms 68367, seed 1000, trace 315 bytes,
+         country JP, ip_hash present (raw IP never stored)
+```
+
+And the grains prefill, against the LIVE grains database, read-only:
+
+```
+Hero               -> Hero
+DOC                -> DOC
+RICE LORD OF PERU  -> RICE LORD OF PERU
+unknown vid        -> null
+a write on that connection -> throws "attempt to write a readonly database"
+```
+
+### 10.4 The operational trap this turned up
+
+**A second copy of the app on this box will become a second writer of `chomp.db`.** The
+preview server defaults to `<cwd>/data/chomp.db` exactly as the live process does, so
+running both is precisely the thing the two-database design exists to prevent. It is now
+documented in `.env.example` and the preview must be started with `CHOMP_DB_PATH` pointing
+somewhere else. Found the way these things are found: by running the preview and then
+looking at which file it had open.
+
+Related and worth knowing at deploy time: **`data/chomp.db` does not exist yet in
+production** and will be created on the first request after promote. The directory is
+created on boot if missing, so nothing needs preparing — but it does mean the first
+visitor to `/chomp` is the one who pays for the schema.
+
+### 10.5 One flake, pre-existing, not this phase's
+
+`test/chomp-kiting.test.ts` occasionally times out under a fully parallel `vitest run`
+— its heavy simulations sit near the default 5000ms per-test budget and lose the race
+when the box is busy. **It fails the same way on a clean tree** (verified by stashing:
+2 failures there, 1 with this phase's changes, same tests both times) and it passes every
+time in isolation and on an unloaded box (338/338). Left alone deliberately: raising a
+timeout in another phase's suite is not this phase's call, but a suite that is red for
+reasons unrelated to the change under test is how a real regression gets waved through, so
+it is written down here rather than shrugged off.
+
+---
+
+## 11. Open questions
 
 1. **Where is `docs/rice-chomp-spec.md`?** It is not in the repo or anywhere under
    `/home/deploy`. Should I proceed from the brief in your message, or do you want to
@@ -1458,18 +1683,33 @@ runtime measurement can tell those two apart, which is the argument for having i
    should it appear in the site menu (`src/config/home.ts` `homeNavLinks`) or stay a
    hidden easter egg like `/play`?
 
-3. **One database or two?** My plan is a separate `data/chomp.db` so the grains
-   single-writer contract stays clean. The alternative is new tables inside the existing
-   `grains.db`, which lets the leaderboard read `visitors.display_name` directly but
-   makes the Next process a second writer to a file the WS server owns. I recommend
-   two files. Confirm?
+3. ~~**One database or two?**~~ **Answered — TWO, and built that way in Phase 6.**
+   `data/chomp.db` is written only by the Next process; `grains.db` is written only by
+   `oneg-grains-ws`. The one thing two files seemed to cost — reading
+   `visitors.display_name` for the name prefill — cost nothing in the end:
+   `src/lib/chomp/grainsName.ts` opens grains.db `readonly: true, fileMustExist: true`
+   and reads the row. That is a stronger guarantee than an ATTACH would have been, and
+   `test/chomp-score.test.ts` asserts it is the only place this feature names that file.
 
-4. **Player identity and name.** Reuse the existing `grain_vid` cookie + the name the
-   player already chose on the grains leaderboard, or a fresh arcade-style name entry
-   (3 initials) per RICE CHOMP? Reusing the vid is nearly free; sharing the *name*
-   across both games needs question 3 resolved first.
+4. ~~**Player identity and name.**~~ **Answered — the vid is shared, the name is not.**
+   The spec settled it: the same signed `grain_vid` identifies the player (so no new
+   secret, no new session route, no new cookie), and RICE CHOMP stores its OWN name per
+   submission, 3-12 characters, merely PREFILLED from the grains name when there is one.
+   A player is allowed a different name on an arcade board than on a clicker, and the two
+   can drift apart without either being wrong. Not three initials: the grains board
+   already trained visitors to type a name here.
 
-5. **How much anti-cheat do you actually want?** This is the biggest fork in the road:
+5. ~~**How much anti-cheat do you actually want?**~~ **Answered — (b), built in Phase 6,
+   with (c) left one server-side change away.** The engine has been integer-exact and
+   replayable since Phase 2, every run records a tick-stamped input trace, and the trace
+   is now STORED with the run — unverified, deliberately. So the day someone wants (c),
+   nothing ships to a client and every run banked from today is verifiable retroactively.
+   `test/chomp-score.test.ts` holds the bet honest by asserting a stored trace replays to
+   the score it claims. What (b) does and does not catch is listed by name, in five
+   numbered items, at the top of `src/lib/chomp/score.ts` — that list is the honest
+   summary of the position and is the thing to read before adding a check.
+
+   The original three options, for the record:
    - **(a) Parity with grains** — trust the client, clamp the rate. Cheap, ~1 day.
      A leaderboard anyone can fake with `curl`.
    - **(b) Server-side plausibility** — reject runs where score exceeds the theoretical
@@ -1485,8 +1725,12 @@ runtime measurement can tell those two apart, which is the argument for having i
      **I'd recommend (b) now with the engine written deterministically so (c) stays
      open.** Your call.
 
-6. **Per-country leaderboard as well as global?** GeoIP is free on this vhost and the
-   grains game already trains visitors to expect a country race. Costs one extra table.
+6. ~~**Per-country leaderboard as well as global?**~~ **Answered — yes, and it is one of
+   the phase's two boards.** Top players and top countries, mirroring the grains game,
+   with entirely separate scores. One extra table, as predicted, and no nginx change: the
+   GeoIP headers were already on the `location /` block. The country board ranks by a
+   country's BEST run rather than by a sum of its runs — see the spec for why a sum is the
+   one number a script can inflate without ever playing well.
 
 7. ~~**`prefers-reduced-motion` policy.**~~ **Answered — (b), and built in Phase 5.**
    `GrainCatch` disables gameplay outright under reduced motion; RICE CHOMP does not

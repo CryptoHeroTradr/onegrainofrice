@@ -220,6 +220,17 @@ export interface GameState {
   grainsRemaining: number;
   pestsEaten: number;
   /**
+   * Bonus items collected across the WHOLE RUN. `bonus.taken` is the per-level count
+   * and is reset by `freshBonus()` on every new level, so it cannot answer "how many
+   * did this run collect" — which is one of the numbers a submitted run carries.
+   *
+   * It sits with the other run totals and is written in exactly one place. Nothing in
+   * the simulation ever reads it: it is an observation of the run, like grainsEaten,
+   * and removing it would change no tick of any game. That is the only reason a
+   * leaderboard's requirement is allowed to put a line in this file at all.
+   */
+  bonusesEaten: number;
+  /**
    * Every direction change, stamped with the tick it took effect on. This IS the input
    * trace: replaying these against a fresh state reproduces the run exactly. Recorded
    * from day one so server-side replay verification is later a server change only.
@@ -287,6 +298,7 @@ export function createGame(level = 1, seed = DEFAULT_SEED): GameState {
     powerEaten: 0,
     grainsRemaining: totalGrains + totalPower,
     pestsEaten: 0,
+    bonusesEaten: 0,
     inputLog: [],
   };
 }
@@ -471,6 +483,7 @@ function stepBonus(state: GameState): void {
       const { value } = bonusForLevel(state.level);
       b.ticks = 0;
       b.taken++;
+      state.bonusesEaten++;
       b.scoreTicks = BONUS_SCORE_TICKS;
       b.scoreValue = value;
       addScore(state, value);

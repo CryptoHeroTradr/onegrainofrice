@@ -5,6 +5,7 @@ import { COLS, ROWS } from "./engine/maze";
 import {
   CLEARED,
   CUTSCENE,
+  DEFAULT_SEED,
   DYING,
   GAMEOVER,
   READY,
@@ -14,6 +15,7 @@ import {
   tick as stepGame,
   type GameState,
 } from "./engine/game";
+import { summarizeRun, type RunSummary } from "./leaderboard";
 import {
   BONUS_SCORE_TICKS,
   CLEAR_FLASH_TICKS,
@@ -159,6 +161,17 @@ export interface ChompCanvasHandle {
   togglePause: () => boolean;
   /** Queue a direction. The d-pad's only engine call, and the keyboard's too. */
   steer: (dir: Dir) => void;
+  /**
+   * A READ-ONLY snapshot of the current run for the leaderboard: the headline
+   * numbers, the seed, and the encoded input trace. Null before boot.
+   *
+   * It is pulled by the host rather than pushed with the stats, because the trace is
+   * the one thing on the state that is expensive to serialise and it is wanted
+   * exactly once per run — at game over, if the player chooses to submit. Publishing
+   * it in the 10 Hz stats poll would encode a growing array a hundred times a run to
+   * be thrown away ninety-nine times.
+   */
+  getRun: () => RunSummary | null;
 }
 
 /**
@@ -569,6 +582,14 @@ export const ChompCanvas = forwardRef<
         return;
       }
       setWanted(state, dir);
+    },
+    // The seed is passed back in rather than read off the state: the engine consumes
+    // it into `rng` on the first advance, so by game over the original is gone. Every
+    // run uses DEFAULT_SEED today; it travels anyway because replay verification
+    // needs it and the day a run gets its own seed this is already correct.
+    getRun: () => {
+      const state = stateRef.current;
+      return state ? summarizeRun(state, DEFAULT_SEED) : null;
     },
   }));
 

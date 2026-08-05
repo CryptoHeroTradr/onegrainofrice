@@ -29,6 +29,7 @@ import {
   type CueSource,
 } from "@/components/chomp/engine/cues";
 import { DOWN, LEFT, RIGHT, UP } from "@/components/chomp/engine/types";
+import { summarizeRun } from "@/components/chomp/leaderboard";
 
 /**
  * PHASE 5 — DETERMINISM, WHICH OUTRANKS EVERYTHING ELSE IN THE PHASE.
@@ -366,6 +367,79 @@ describe("the engine stays sealed", () => {
       const s = readFileSync(join(ENGINE_DIR, f), "utf8");
       expect(s, `${f} must not import asset()`).not.toMatch(/from\s+["']@\/lib\/asset["']/);
     }
+  });
+
+  it("keeps the leaderboard on the host side of the line", () => {
+    // Phase 6, and the same argument in its fourth costume. A leaderboard is the most
+    // tempting thing yet to wire into the engine, because the numbers it wants —
+    // score, level, grains, pests, the trace — are all sitting right there on the
+    // state. The one-line version is `import { submitScore } from "../leaderboard"`
+    // inside finishDeath(), and it would work in a browser and throw on the server
+    // the first time a replay killed the player.
+    //
+    // So: no engine module may name the leaderboard, its wire module, its database,
+    // its trace codec or fetch. The host READS the state and encodes a trace from it;
+    // nothing points the other way.
+    const files = readdirSync(ENGINE_DIR).filter((f) => f.endsWith(".ts"));
+    for (const f of files) {
+      const src = readFileSync(join(ENGINE_DIR, f), "utf8");
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      expect(code, `${f} must not import the leaderboard`).not.toMatch(
+        /from\s+["'][^"']*(leaderboard|lib\/chomp)[^"']*["']/,
+      );
+      expect(code, `${f} must not fetch anything`).not.toMatch(/\bfetch\(/);
+      expect(code, `${f} must not reach localStorage`).not.toMatch(/localStorage/);
+    }
+  });
+
+  it("costs a run nothing to read it for submission", () => {
+    // summarizeRun() is what the game-over card calls on the live state. It must be a
+    // pure observation — the same proxy trap the audio cues are held to, for the same
+    // reason: the tempting optimisation is to cache the encoded trace ON the state.
+    const trap = <T extends object>(o: T): T =>
+      new Proxy(o, {
+        set(_t, k) {
+          throw new Error(`reading a run for the board wrote to it: ${String(k)}`);
+        },
+        deleteProperty(_t, k) {
+          throw new Error(`reading a run for the board deleted from it: ${String(k)}`);
+        },
+        get(t, k, r) {
+          const v = Reflect.get(t, k, r);
+          return v && typeof v === "object" ? trap(v as object) : v;
+        },
+      });
+
+    const live = beginPlay(createGame(1, 11));
+    for (let t = 0; t < 600; t++) {
+      if (t === 30) setWanted(live, LEFT);
+      if (t === 200) setWanted(live, UP);
+      tick(live);
+    }
+    const summary = summarizeRun(trap(live), 11);
+    expect(summary.score).toBe(live.score);
+    expect(summary.ticks).toBe(live.tick);
+    expect(summary.submittable).toBe(true);
+
+    // And a run that is read, encoded and submitted is tick-for-tick the run that is
+    // not: the reference below never touches the leaderboard at all.
+    const quiet = beginPlay(createGame(1, 11));
+    for (let t = 0; t < 600; t++) {
+      if (t === 30) setWanted(quiet, LEFT);
+      if (t === 200) setWanted(quiet, UP);
+      tick(quiet);
+    }
+    expect(live.tick).toBe(quiet.tick);
+    expect(live.score).toBe(quiet.score);
+    expect(live.inputLog).toEqual(quiet.inputLog);
+    expect(live.player).toEqual(quiet.player);
+  });
+
+  it("refuses to summarize a debug run as submittable", () => {
+    // The client half of the three-way debug gate. The other two are the server's
+    // startLevel check (lib/chomp/score.ts) and replay from level 1.
+    const debug = beginPlay(createGame(7));
+    expect(summarizeRun(debug, 1).submittable).toBe(false);
   });
 
   it("keeps the cue layer to the readonly slice it is given", () => {

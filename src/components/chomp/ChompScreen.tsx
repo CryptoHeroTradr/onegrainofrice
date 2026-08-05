@@ -10,10 +10,12 @@ import type { Dir } from "./engine/types";
 import { BonusIcons } from "./BonusIcons";
 import { ChompAttract } from "./ChompAttract";
 import { ChompGameOver } from "./ChompGameOver";
+import { ChompLeaderboard, type BoardTab } from "./ChompLeaderboard";
 import { ChompPause } from "./ChompPause";
 import { ChompSettings } from "./ChompSettings";
 import { LivesRow } from "./LivesRow";
 import { TouchControls } from "./TouchControls";
+import type { RunSummary } from "./leaderboard";
 import { useContrast, useDpad } from "./prefs";
 import { bestScore, recordScore } from "./scores";
 
@@ -63,6 +65,12 @@ const HUD_VALUE =
  */
 const PADDY_HREF = "/home";
 const PADDY_LABEL = "← Back to the rice paddy";
+
+/** The two boards, as two HUD buttons. Order matches the panel's tab order. */
+const BOARD_BUTTONS: ReadonlyArray<{ tab: BoardTab; label: string }> = [
+  { tab: "players", label: "Players" },
+  { tab: "countries", label: "Countries" },
+];
 
 function Stat({ label, value, tone = "text-steamed" }: { label: string; value: string; tone?: string }) {
   return (
@@ -118,17 +126,73 @@ export function ChompScreen() {
   // up and an effect that watched it would re-file on every stats publish.
   const [place, setPlace] = useState(0);
   const [best, setBest] = useState(0);
+  const [finished, setFinished] = useState<RunSummary | null>(null);
   const filedRef = useRef(0);
   useEffect(() => {
     if (!gameOver || filedRef.current === stats.runId) return;
     filedRef.current = stats.runId;
     // A debug run is not a score. It is kept off the board rather than filed and
-    // hidden, so there is nothing to leak into Phase 7's submission path later.
+    // hidden, so there is nothing to leak into the submission path.
     setPlace(debugRun ? 0 : recordScore(stats.score, stats.level, Date.now()));
     setBest(bestScore());
+    // SNAPSHOT THE RUN HERE, ONCE, RATHER THAN READING IT AT SUBMIT TIME. The engine
+    // still counts ticks while the GAMEOVER phase is up (tick() does nothing in that
+    // phase but the tick counter is incremented at the end of it regardless), so a
+    // run read thirty seconds after the death would claim eighteen hundred ticks it
+    // did not play — a different duration and a different trace hash every time the
+    // player hesitated, which would also defeat the submit-once dedupe.
+    setFinished(gameRef.current?.getRun() ?? null);
   }, [gameOver, stats.runId, stats.score, stats.level, debugRun]);
 
   const steer = useCallback((dir: Dir) => gameRef.current?.steer(dir), []);
+
+  // --- the leaderboard ------------------------------------------------------
+  //
+  // WHICH FORM IS ON SCREEN IS DECIDED BY CSS, NOT BY A SECOND MEDIA QUERY HERE.
+  // Both are rendered — a docked panel in the play row's left column, hidden below
+  // `lg:landscape:`, and an overlay over the board, hidden above it — and exactly one
+  // is ever displayed. The alternative was a `matchMedia` string in this file that
+  // had to stay in step with the Tailwind breakpoint on the elements themselves, and
+  // that pair drifts the first time one of them is touched.
+  //
+  // The pause rule below needs to know which one is live, and it asks the LAYOUT
+  // rather than a query: a `display:none` element has no `offsetParent`. That reads
+  // the real answer, from the real CSS, at the real moment.
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [boardTab, setBoardTab] = useState<BoardTab>("players");
+  const dockRef = useRef<HTMLDivElement>(null);
+  /** True only when WE paused the run to open the overlay, so we resume only then. */
+  const autoPausedRef = useRef(false);
+
+  const openBoard = useCallback(
+    (tab: BoardTab) => {
+      setBoardTab(tab);
+      setBoardOpen(true);
+      // AN OVERLAY YOU CANNOT SEE THROUGH, OVER A RUNNING GAME, IS A DEATH SENTENCE.
+      // On a phone or a tablet the board covers the maze completely, so opening it
+      // mid-run pauses the run. On a desktop it does not: the panel is beside the
+      // board, the maze is fully visible, and pausing a game the player can still
+      // see and steer would be the surprising thing.
+      //
+      // Only if we did the pausing do we undo it — a player who had already paused
+      // and then opened the board comes back to a paused game, which is what they
+      // asked for.
+      const docked = dockRef.current?.offsetParent != null;
+      if (!docked && !stats.attract && !gameOver && !stats.paused) {
+        autoPausedRef.current = gameRef.current?.togglePause() ?? false;
+      }
+    },
+    [stats.attract, stats.paused, gameOver],
+  );
+
+  const closeBoard = useCallback(() => {
+    setBoardOpen(false);
+    // The `stats.paused` guard is not belt-and-braces: Restart and Title screen both
+    // clear the pause underneath an open board, and resuming a run that is no longer
+    // paused would pause the fresh one instead.
+    if (autoPausedRef.current && stats.paused) gameRef.current?.togglePause();
+    autoPausedRef.current = false;
+  }, [stats.paused]);
 
   return (
     // THE OUTER GRID EXISTS TO CARRY THE NAV, and it is a separate grid on purpose.
@@ -177,7 +241,7 @@ export function ChompScreen() {
               RICE CHOMP
             </h1>
             <span className="hidden font-mono text-chomp-micro tracking-[0.18em] text-steamed/35 uppercase sm:inline">
-              Phase 5.6 · the chrome
+              Phase 6 · the leaderboard
             </span>
           </div>
           {/* The narrow-viewport half of the back link — see PADDY_LABEL. It is
@@ -192,7 +256,7 @@ export function ChompScreen() {
 
         <div
           translate="no"
-          className="notranslate flex flex-wrap items-end gap-x-5 gap-y-2 border-y border-steamed/10 px-4 py-2 sm:gap-x-8 sm:px-6 sm:py-3"
+          className="notranslate flex flex-wrap items-end gap-x-5 gap-y-2 border-y border-steamed/10 px-4 py-2 sm:gap-x-6 sm:px-6 sm:py-3"
         >
           <Stat label="Score" value={stats.score.toLocaleString()} tone="text-khaki" />
           <div className="flex flex-col gap-1">
@@ -220,18 +284,49 @@ export function ChompScreen() {
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
+            {/* THE TWO BOARDS ARE TWO BUTTONS, not one button and a tab hunt. They
+                sit in the HUD bar beside score, lives, level and pests because that
+                is where a player already looks for a number about their run. Each
+                opens the same panel on its own board; the panel's tabs then switch
+                between them without closing anything. */}
+            {BOARD_BUTTONS.map((b) => (
+              <button
+                key={b.tab}
+                type="button"
+                onClick={() => (boardOpen && boardTab === b.tab ? closeBoard() : openBoard(b.tab))}
+                aria-pressed={boardOpen && boardTab === b.tab}
+                className={`min-h-9 border px-2.5 font-mono text-chomp-chip tracking-[0.15em] uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki ${
+                  boardOpen && boardTab === b.tab
+                    ? "border-khaki text-khaki"
+                    : "border-steamed/25 text-steamed/70 hover:border-khaki hover:text-khaki"
+                }`}
+              >
+                {b.label}
+              </button>
+            ))}
             <button
               type="button"
               onClick={() => gameRef.current?.togglePause()}
               disabled={stats.attract || gameOver}
-              className="min-h-9 border border-steamed/25 px-3 font-mono text-chomp-chip tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki disabled:opacity-30 disabled:hover:border-steamed/25 disabled:hover:text-steamed/70"
+              // A WIDTH FLOOR, because the label toggles. "Resume" measures 89px
+              // against "Pause"'s 84, and this is a flex-wrap row on a page with a
+              // fixed height budget — so on a viewport sitting near the row's wrap
+              // point, PAUSING wrapped the HUD, took 44px out of the play row and
+              // resized the maze mid-run. Measured at 1024x1366: tile 34 while
+              // running, 32 while paused, and it did not always come back.
+              //
+              // The margin that actually fixed it is the row's `sm:gap-x-6` (32px
+              // of slack across four gaps). This floor is the second half: a control
+              // whose caption changes should not change size, and 5.75rem covers
+              // both captions at every size where the row is anywhere near wrapping.
+              className="min-h-9 min-w-[5.75rem] border border-steamed/25 px-2.5 font-mono text-chomp-chip tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki disabled:opacity-30 disabled:hover:border-steamed/25 disabled:hover:text-steamed/70"
             >
               {stats.paused ? "Resume" : "Pause"}
             </button>
             <button
               type="button"
               onClick={() => gameRef.current?.reset()}
-              className="min-h-9 border border-steamed/25 px-3 font-mono text-chomp-chip tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
+              className="min-h-9 border border-steamed/25 px-2.5 font-mono text-chomp-chip tracking-[0.15em] text-steamed/70 uppercase transition-colors hover:border-khaki hover:text-khaki focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki"
             >
               Restart
             </button>
@@ -254,8 +349,28 @@ export function ChompScreen() {
           tall narrow window, width is the binding axis and the same gutters would come
           straight off the maze; there they do not exist, and the header link carries
           the job instead.
+
+          THE LEFT COLUMN GROWS FOR THE LEADERBOARD, and only while it is open. The
+          gutters exist because the board is height-bound in landscape, and the same
+          slack pays for the panel — measured in the plan's §10, where the tile size
+          at every landscape viewport is identical open and closed. Both column sets
+          are written out as literal class strings rather than composed, because
+          Tailwind reads the source and cannot generate a class that is assembled at
+          runtime.
+
+          STILL EXACTLY ONE 1fr ROW, AND STILL ONE 1fr COLUMN FOR THE BOARD. That is
+          what the canvas's sizing rests on, and it is the thing to check before
+          touching this element: the degenerate-box retry in ChompCanvas exists
+          because a play row that resolves to zero height looks exactly like a canvas
+          that has not loaded yet.
         */}
-        <div className="relative grid min-h-0 grid-rows-[minmax(0,1fr)] p-2 sm:p-4 lg:landscape:grid-cols-[8rem_minmax(0,1fr)_8rem] xl:landscape:grid-cols-[11rem_minmax(0,1fr)_11rem]">
+        <div
+          className={`relative grid min-h-0 grid-rows-[minmax(0,1fr)] p-2 sm:p-4 ${
+            boardOpen
+              ? "lg:landscape:grid-cols-[20rem_minmax(0,1fr)_8rem] xl:landscape:grid-cols-[24rem_minmax(0,1fr)_11rem]"
+              : "lg:landscape:grid-cols-[8rem_minmax(0,1fr)_8rem] xl:landscape:grid-cols-[11rem_minmax(0,1fr)_11rem]"
+          }`}
+        >
           <ChompCanvas
             ref={gameRef}
             onStats={onStats}
@@ -263,6 +378,26 @@ export function ChompScreen() {
             contrast={contrast}
             className="h-full w-full lg:landscape:col-start-2"
           />
+
+          {/* THE DOCKED PANEL, and the probe openBoard() reads.
+              It is ALWAYS mounted — empty when the board is closed — because
+              `offsetParent` is how the pause rule finds out whether this form or the
+              overlay is the one on screen, and a question you can only ask when the
+              answer is already yes is not a question. `hidden` below the breakpoint
+              means display:none, which is exactly what makes that read work. */}
+          <div
+            ref={dockRef}
+            className="hidden min-h-0 lg:landscape:col-start-1 lg:landscape:row-start-1 lg:landscape:block"
+          >
+            {boardOpen && (
+              <ChompLeaderboard
+                variant="docked"
+                tab={boardTab}
+                onTab={setBoardTab}
+                onClose={closeBoard}
+              />
+            )}
+          </div>
 
           {/* The board-edge half of the back link. The canvas is centred in its own
               column, so this column's vertical middle IS the board's: `bottom-1/2`
@@ -285,11 +420,32 @@ export function ChompScreen() {
             />
           )}
 
+          {/* Two overlays that both cover the board must never be on screen at once,
+              and which one wins is decided by CSS for the same reason the panel's own
+              form is: `display:contents` passes the pause screen straight through
+              where the docked panel is in use, and hides it where the board overlay
+              has taken the whole play area. No media query in this file. */}
           {!stats.attract && stats.paused && !gameOver && (
-            <ChompPause
-              onResume={() => gameRef.current?.togglePause()}
-              onQuit={() => gameRef.current?.toAttract()}
-            />
+            <div className={boardOpen ? "hidden lg:landscape:contents" : "contents"}>
+              <ChompPause
+                onResume={() => gameRef.current?.togglePause()}
+                onQuit={() => gameRef.current?.toAttract()}
+              />
+            </div>
+          )}
+
+          {/* THE OVERLAY FORM — tablet and phone. It covers the board, which is why
+              opening it mid-run pauses the run; see openBoard(). Hidden at exactly
+              the sizes where the docked panel appears, so there is never two of it. */}
+          {boardOpen && (
+            <div className="absolute inset-0 z-10 lg:landscape:hidden">
+              <ChompLeaderboard
+                variant="overlay"
+                tab={boardTab}
+                onTab={setBoardTab}
+                onClose={closeBoard}
+              />
+            </div>
           )}
 
           {gameOver && (
@@ -299,6 +455,8 @@ export function ChompScreen() {
               place={place}
               best={best}
               debugFrom={debugRun ? stats.startLevel : 0}
+              run={finished}
+              onOpenBoard={() => openBoard("players")}
               onPlayAgain={() => gameRef.current?.reset()}
               onQuit={() => gameRef.current?.toAttract()}
             />
@@ -310,7 +468,7 @@ export function ChompScreen() {
               corridor the player is trying to read. It is hidden while a menu is up:
               steering into an overlay does nothing, and a live control behind a dialog
               is a trap. */}
-          {dpad && !stats.attract && !stats.paused && !gameOver && (
+          {dpad && !stats.attract && !stats.paused && !gameOver && !boardOpen && (
             <TouchControls onSteer={steer} />
           )}
 

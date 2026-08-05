@@ -17,3 +17,18 @@ export function friendlyCountryName(code: string, name: string | null | undefine
   if ((code || "").toUpperCase() === "XX" || !name || name === "Unknown") return "Unknown region";
   return name;
 }
+
+/**
+ * Every GeoIP miss collapses into one bucket ("XX" / "Unknown"), which is not a
+ * country and must not compete on a country leaderboard — on the grains board it was
+ * ranking #2 before it was filtered out.
+ *
+ * Moved here from `components/grains/CountryLeaderboard.tsx` when RICE CHOMP's board
+ * needed the same rule: two copies of "what counts as a country" is one copy too
+ * many, and this module is already the shared, server-safe home for the other two
+ * country helpers. The grains board's behaviour is unchanged — same predicate, same
+ * caller, one import moved.
+ */
+export function isUnknownCountry(c: { code: string; name?: string | null }): boolean {
+  return c.code === "XX" || !c.code || c.name === "Unknown";
+}

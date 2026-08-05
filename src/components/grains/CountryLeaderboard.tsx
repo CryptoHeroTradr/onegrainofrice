@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import type { CountryTotal } from "@/hooks/useGrainsSocket";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
-import { flagEmoji, friendlyCountryName } from "@/lib/grains/flag";
+import { flagEmoji, friendlyCountryName, isUnknownCountry } from "@/lib/grains/flag";
 import { AnimatedNumber } from "./AnimatedNumber";
 
 // Re-exported so existing imports (`./CountryLeaderboard`) keep working; the
@@ -18,15 +18,6 @@ const COLLAPSED_ROWS = 3;
 export interface LeaderboardRow extends CountryTotal {
   rank: number | null; // null = outside the visible top (pinned "you" row)
   isYou: boolean;
-}
-
-/**
- * Geo lookup failures all collapse into one bucket ("XX" / "Unknown"), which is
- * not a country and shouldn't compete on a country leaderboard — it was ranking
- * #2. Excluded from the board (and from the pinned self-row).
- */
-function isUnknownCountry(c: { code: string; name?: string | null }): boolean {
-  return c.code === "XX" || !c.code || c.name === "Unknown";
 }
 
 /** Pure: derive the ranked rows + a pinned self-row + empty flag from payloads. */
