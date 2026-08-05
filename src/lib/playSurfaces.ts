@@ -11,7 +11,7 @@
  * One list, five consumers — a provider that needs scoping off a game should be a
  * one-line addition here, not a sixth private copy of the same array.
  *
- * The fifth is not a provider: `JourneyNav` is MOUNTED on `/chomp` (Phase 5.6) and reads
+ * The fifth is not a provider: `JourneyNav` is MOUNTED on `/games/chomp` (Phase 5.6) and reads
  * this list to know it is on a game — in flow rather than fixed, solid rather than
  * waiting for a scroll that never comes, and with no language control, because the
  * translate context on a play surface is inert by design.
@@ -19,14 +19,48 @@
  * **CHECK EVERY NEW SITE-WIDE PROVIDER AGAINST THIS LIST.** *Added 2026-08-04.* Four
  * for four so far, and the fourth is the instructive one: translation was scoped off not
  * because it fought the game but because its script was the last thing standing between
- * /chomp and its zero-third-party-request acceptance criterion. Anything mounted in
+ * the maze game and its zero-third-party-request acceptance criterion. Anything mounted in
  * `layout.tsx` is mounted on the games too, and "does this belong on a game?" is a
  * question that has to be asked at the time — nobody finds these later by reading
  * `layout.tsx`, they find them by measuring a built page and being surprised.
  *
  * Compare against `usePathname()`, which is basePath-stripped, so these are plain routes.
+ *
+ * ── THIS LIST IS NOT "THE GAMES". ─────────────────────────────────────────────
+ * *Added 2026-08-05, Phase 7, when the three games moved under `/games` and the
+ * obvious next step — "add every game route to it" — turned out to be wrong.*
+ *
+ * There are three games and exactly ONE of them belongs here. The list means
+ * "turn the ambient decoration OFF on this route", which is a different question
+ * from "is this a game":
+ *
+ *  - **`/games/catch` (Catch A Grain) is NOT here, deliberately.** You catch the
+ *    grains WITH the chopstick cursor. Scoping the decoration off that route
+ *    removes the game's controller. It also has no zero-third-party-request
+ *    criterion, so translation costs it nothing.
+ *  - **`/games/grains` (the Grains Game) is NOT here, deliberately.** Same cursor,
+ *    and `globals.css`'s `.grains-play-area` styles a custom one for it. It is a
+ *    page you tap, not a page you steer, and the rice particles are part of it.
+ *  - **`/games/chomp` IS here**, because arrow keys are its primary control (and
+ *    the Konami listener eats them), because a chopstick following the pointer
+ *    over a maze HUD is wrong, and above all because the translate script was the
+ *    last third-party request standing between that route and its acceptance
+ *    criterion.
+ *
+ * So the rule for a new route is "does an ambient decoration fight this page?",
+ * not "is it in `src/config/games.ts`".
+ *
+ * ── MOVING A ROUTE ON THIS LIST IS A TWO-FILE CHANGE. ─────────────────────────
+ * The match is exact (`includes`), so renaming a route without renaming it here
+ * fails SILENTLY and in the most expensive direction: nothing throws, no test
+ * that isn't looking for it goes red, the page still renders — and the translate
+ * script comes back, re-breaking a spec criterion, while the pointer trail
+ * returns over the board. `/chomp` → `/games/chomp` in Phase 7 was exactly that
+ * hazard, and `test/play-surfaces.test.ts` now exists so the next one cannot be
+ * silent: it asserts every game route's play-surface status by name, and that
+ * every entry here is a route that actually exists on disk.
  */
-export const PLAY_SURFACE_ROUTES: readonly string[] = ["/chomp"];
+export const PLAY_SURFACE_ROUTES: readonly string[] = ["/games/chomp"];
 
 /** True when this route is a game that should be left alone by ambient decoration. */
 export function isPlaySurface(pathname: string | null | undefined): boolean {

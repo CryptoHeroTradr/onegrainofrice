@@ -26,20 +26,31 @@ const SOCIAL_LINK_CLASS =
   "flex min-h-11 min-w-11 items-center justify-center rounded-full border border-olive-deep/30 bg-bone/70 text-olive-deep shadow-sm backdrop-blur transition-colors hover:border-olive hover:text-olive focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive";
 
 /**
- * Small twin of the lower-right landing gate, for the top button row.
+ * The way out, in the top button row.
  *
- * Same destination and wording as the big "Enter the Rice Paddy →" pill, but
- * always visible: that one only appears once three grains are dropped, so a
- * visitor who just wants the site has nothing to click until they play. Only
- * rendered when this screen IS the landing gate (enterWebsiteHref set).
+ * **This used to be half of a gate.** *Phase 7, 2026-08-05.* When this screen was
+ * the site's landing page there were two of these: a big "Enter the Rice Paddy →"
+ * pill fixed in the lower-right corner that appeared ONLY after three grains had
+ * been dropped, and this small always-visible twin, which existed because a
+ * visitor who just wanted the site should not have to play a game to reach it.
+ *
+ * The game now lives at `/games/grains`, one click below an index the visitor came
+ * through, so the threshold has nothing left to gate — you cannot make someone earn
+ * their way into a room they walked out of to get here. The big pill and the
+ * three-grain counter that revealed it are deleted; this one stays, always visible
+ * as it always was, and points back up at `/games` instead of into the site.
+ *
+ * A plain `<a>` rather than a `<Link>`, unchanged: this screen holds a live
+ * WebSocket and a canvas rAF loop, and a full document navigation tears both down
+ * in the browser rather than leaving React to unwind them.
  */
-function EnterPaddyButton({ href, className = "" }: { href: string; className?: string }) {
+function BackToGamesButton({ href, className = "" }: { href: string; className?: string }) {
   return (
     <a
       href={asset(href)}
       className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-olive-deep/30 bg-bone/80 px-3 py-1.5 font-mono text-xs font-semibold whitespace-nowrap text-olive-deep shadow-sm backdrop-blur transition-colors hover:bg-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive ${className}`}
     >
-      🌾 Enter the Rice Paddy →
+      ← All games
     </a>
   );
 }
@@ -125,7 +136,7 @@ function WelcomeBack({ you }: { you: number }) {
   );
 }
 
-export function GrainsScreen({ enterWebsiteHref }: { enterWebsiteHref?: string } = {}) {
+export function GrainsScreen({ backHref }: { backHref?: string } = {}) {
   const {
     global,
     you,
@@ -147,9 +158,6 @@ export function GrainsScreen({ enterWebsiteHref }: { enterWebsiteHref?: string }
   // (they clearly know how to play). Ref counts; state flips the UI once.
   const dropCountRef = useRef(0);
   const [hintDismissed, setHintDismissed] = useState(false);
-  // When used as the landing gate, the "Enter Website" button appears only after
-  // the visitor has dropped 3 grains (see registerDrop).
-  const [enterReady, setEnterReady] = useState(false);
 
   // Leaderboard open state is lifted here so the PARENT controls the layout: on
   // mobile the two boards share one row as narrow columns, but the moment either
@@ -157,13 +165,13 @@ export function GrainsScreen({ enterWebsiteHref }: { enterWebsiteHref?: string }
   // the full width instead of wrapping in a cramped half.
   const [countryOpen, setCountryOpen] = useState(false);
   const [playersOpen, setPlayersOpen] = useState(false);
+  // Three drops dismisses the "tap anywhere" hint — the visitor has evidently got
+  // it. This used to also reveal the landing gate's big pill; that gate went in
+  // Phase 7 (see BackToGamesButton) and the hint behaviour is all that is left.
   const registerDrop = () => {
     if (dropCountRef.current >= 3) return;
     dropCountRef.current += 1;
-    if (dropCountRef.current >= 3) {
-      setHintDismissed(true);
-      setEnterReady(true); // reveal the landing "Enter Website" button
-    }
+    if (dropCountRef.current >= 3) setHintDismissed(true);
   };
 
   // The bowl deliberately starts EMPTY on every load. It used to prefill with the
@@ -315,7 +323,7 @@ export function GrainsScreen({ enterWebsiteHref }: { enterWebsiteHref?: string }
           <SocialLinks className="flex items-center gap-2" linkClassName={SOCIAL_LINK_CLASS} />
           <ContractChip address={site.tokenAddress} label={site.ticker} chain={site.token.chain} />
           <ShareButton you={you} yourCountry={yourCountry} rank={myRank} />
-          {enterWebsiteHref && <EnterPaddyButton href={enterWebsiteHref} />}
+          {backHref && <BackToGamesButton href={backHref} />}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <div className="flex items-start gap-3">
@@ -346,7 +354,7 @@ export function GrainsScreen({ enterWebsiteHref }: { enterWebsiteHref?: string }
           after={
             <>
               <ShareButton you={you} yourCountry={yourCountry} rank={myRank} />
-              {enterWebsiteHref && <EnterPaddyButton href={enterWebsiteHref} />}
+              {backHref && <BackToGamesButton href={backHref} />}
               <SoundToggle className={SOCIAL_LINK_CLASS_SM} />
             </>
           }
@@ -467,19 +475,6 @@ export function GrainsScreen({ enterWebsiteHref }: { enterWebsiteHref?: string }
           fast to announce every frame). */}
       <LiveAnnouncer global={global} you={you} yourCountry={yourCountry} rank={myRank} />
 
-      {/* Landing gate: after 3 grains are dropped, reveal the "Enter the Rice
-          Paddy" button in the lower-right corner (only when this screen is the /
-          landing — enterWebsiteHref is set). Doubled on DESKTOP only (sm+): 2×
-          the text in a 5.5rem-tall pill. It stays compact on phones, where a
-          button that size would swallow the screen. */}
-      {enterWebsiteHref && enterReady && (
-        <a
-          href={asset(enterWebsiteHref)}
-          className="fixed bottom-5 right-5 z-50 inline-flex min-h-11 items-center gap-2 rounded-full border border-bone/30 bg-olive px-6 font-mono text-sm font-bold tracking-widest text-bone shadow-2xl ring-2 ring-bone/20 transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone sm:min-h-[5.5rem] sm:gap-4 sm:border-2 sm:px-12 sm:text-[1.75rem] sm:ring-4"
-        >
-          Enter the Rice Paddy →
-        </a>
-      )}
     </main>
   );
 }

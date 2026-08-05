@@ -67,7 +67,13 @@ const HUD_VALUE =
  * complements (`lg:landscape:hidden` against `hidden lg:landscape:block`), so there
  * is exactly one of it at every size and never two links saying the same thing.
  */
-const PADDY_HREF = "/home";
+// Home. It was "/home" until Phase 7 (2026-08-05) moved the home page to "/" — the
+// destination is the same page, and pointing straight at it rather than at the
+// /home → / redirect saves every player who leaves this way a round trip.
+// Deliberately still HOME rather than the new /games index: the label says paddy,
+// the nav bar on this page already carries 🎮 Games, and repointing a named
+// affordance is a design change rather than a link fix.
+const PADDY_HREF = "/";
 const PADDY_LABEL = "← Back to the rice paddy";
 
 function Stat({ label, value, tone = "text-steamed" }: { label: string; value: string; tone?: string }) {

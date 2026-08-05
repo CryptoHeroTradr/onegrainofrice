@@ -9,20 +9,30 @@
  */
 
 /**
- * Trimmed nav for the new home. The landing page (`/`) is now the Grains Game;
- * the full site lives at `/home`, so "Home" is a real route and the section
- * anchors are written absolute against it (`/home#…`) to work from any page.
- * "Memes" is the /memes gallery route.
+ * The site nav. Home is `/` and the section anchors are written absolute against
+ * it (`/#…`) so they work from any page. "Memes" is the /memes gallery route.
  *
  * `emoji` is rendered by the 🌾 Menu dropdown (see components/journey/SiteMenu).
+ *
+ * **This is the WHOLE menu.** *Phase 7, 2026-08-05.* It used to be most of it:
+ * `SiteMenu` prepended a hardcoded "🍚 Grains Game → /" entry because the Grains
+ * Game was the landing page and therefore could not be a nav link like the
+ * others. That special case is gone with the swap — every route in the menu is
+ * now an entry in this one array, in this order, and there is no second list to
+ * keep in step.
+ *
+ * The three games collapsed into ONE "🎮 Games" entry pointing at the `/games`
+ * index, replacing the single "Rice Chomp" link (the other two games were never
+ * in the menu at all — the Grains Game was the special case above and Catch A
+ * Grain was reachable only by knowing the URL).
  */
 export const homeNavLinks = [
-  { label: "Home", href: "/home", emoji: "🏠" },
-  { label: "Rice Chomp", href: "/chomp", emoji: "👾" },
+  { label: "Home", href: "/", emoji: "🏠" },
   { label: "Memes", href: "/memes", emoji: "😂" },
+  { label: "Games", href: "/games", emoji: "🎮" },
   { label: "PFP & Meme Gen", href: "/pfp", emoji: "🎨" },
   { label: "Charity", href: "/charity", emoji: "❤️" },
-  { label: "Token", href: "/home#tokenomics", emoji: "💰" },
+  { label: "Token", href: "/#tokenomics", emoji: "💰" },
 ] as const;
 
 /**

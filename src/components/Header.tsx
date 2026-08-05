@@ -13,12 +13,28 @@ const NAV = [
   { label: "FAQ", href: "#faq" },
 ];
 
+/**
+ * The Grains Game, from the /classic header.
+ *
+ * **This link was broken, and had been for a long time.** *Fixed Phase 7,
+ * 2026-08-05.* The two GRAINS links here disagreed with each other: the desktop
+ * one pointed at "/" and the mobile one at "/grains", which has never been a page
+ * — `src/app/grains/` holds only `session/route.ts`, the cookie minter. So every
+ * visitor who opened the /classic menu on a phone and tapped GRAINS got the 404.
+ * Verified against the live process before the fix: `/grains` → 404, `/` → 200.
+ *
+ * Both now point at one constant, and the constant is a route that exists. This
+ * phase is what made the correct target exist: the game moved off "/" (which is
+ * the home page now) and onto /games/grains, so leaving the desktop link alone
+ * would have quietly repointed it at the home page instead.
+ */
+const GRAINS_HREF = "/games/grains";
+
 export function Header() {
   const [open, setOpen] = useState(false);
-  // Path without basePath, so the grains page reads as "/grains" (matches the
-  // next/link href — no doubled prefix).
+  // Path without basePath, so it compares directly against GRAINS_HREF.
   const pathname = usePathname();
-  const onGrains = pathname?.startsWith("/grains") ?? false;
+  const onGrains = pathname === GRAINS_HREF;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-ink/15 bg-paper/90 text-ink backdrop-blur-sm">
@@ -42,9 +58,9 @@ export function Header() {
                 {item.label}
               </a>
             ))}
-            {/* Game route (basePath auto-applied by next/link → href "/grains"). */}
+            {/* Game route — basePath auto-applied by next/link. */}
             <Link
-              href="/"
+              href={GRAINS_HREF}
               aria-current={onGrains ? "page" : undefined}
               className={`font-display text-sm font-bold tracking-wide uppercase transition-colors hover:text-olive ${
                 onGrains ? "text-olive" : "text-ink/80"
@@ -94,7 +110,7 @@ export function Header() {
             </a>
           ))}
           <Link
-            href="/grains"
+            href={GRAINS_HREF}
             onClick={() => setOpen(false)}
             aria-current={onGrains ? "page" : undefined}
             className={`block py-3 font-mono text-sm font-bold tracking-widest ${

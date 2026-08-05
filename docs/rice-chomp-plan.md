@@ -1,5 +1,17 @@
 # RICE CHOMP — recon & build plan
 
+**Status (2026-08-05): PHASE 7 IS IN. THE GAME NOW LIVES AT `/games/chomp`.**
+The site's information architecture changed around the finished game: `/` is the home
+page, the three games moved under a new `/games` index, and the menu carries one 🎮 Games
+entry instead of a direct Rice Chomp link. **Nothing about the game itself changed** — no
+engine edit, no component edit beyond one link constant. What did change is the thing this
+phase existed to get right: `src/lib/playSurfaces.ts` moved in the same commit as the
+route, so the translate script did not come back and the ambient decorations did not
+return to the board. `test/play-surfaces.test.ts` is new and makes the next such move
+noisy instead of silent. **348 tests pass, typecheck and lint clean, `/games/chomp` still
+prerenders static.** Details in §11; the spec's new *Route and information architecture*
+section is authoritative on the scheme.
+
 **Status (2026-08-05): PHASE 6 IS IN, AND THE GAME IS FEATURE-COMPLETE against the spec.**
 The leaderboard — **ONE board: the top 50 players by best single run, with the player's
 country flag as a column** — is built on `data/chomp.db` behind `/api/chomp/*`, with the
@@ -112,11 +124,19 @@ from live; restarting it never touches production. Live deploy is still
 `next.config.ts:12`:
 
 ```ts
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "/onegrainofrice";
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";   // <- the fallback is "" TODAY
 ```
 
-The `??` fallback is what you see everywhere in the source, but **it is not what
-production uses.** `.env.local` sets `NEXT_PUBLIC_BASE_PATH=""` ("Serve at the domain
+> **Stale as written, corrected 2026-08-05 (Phase 7).** This section was recorded when
+> the fallback was `"/onegrainofrice"`, and the paragraphs below argue at length that the
+> fallback is not what production uses. That argument is now moot: the default was changed
+> to `""` at some point after Phase 1, so source and production agree. The reasoning is
+> kept because the *conclusion* is unchanged and still load-bearing — **never hardcode
+> either prefix** — but do not go looking for a `/onegrainofrice` default in
+> `next.config.ts`, because it is not there.
+
+The `??` fallback is what you see everywhere in the source, but **it was not what
+production used.** `.env.local` sets `NEXT_PUBLIC_BASE_PATH=""` ("Serve at the domain
 root (dedicated domain 1grainofrice.com). Empty = …"), and `""` is not nullish, so the
 fallback never fires.
 
@@ -154,9 +174,14 @@ The `/onegrainofrice` default is a legacy sub-path mount (the old shared IP gate
 
 **App Router.** `src/app/`, no `pages/` directory anywhere.
 
-Existing routes: `/` (`src/app/page.tsx`), `/home`, `/memes`, `/pfp`, `/charity`,
-`/dca`, `/tma`, `/classic`, `/play`, plus `src/app/grains/session/route.ts` and eleven
-handlers under `src/app/api/`.
+Existing routes *(as of Phase 7, 2026-08-05)*: `/` (the home page,
+`src/app/page.tsx`), `/games`, `/games/chomp`, `/games/grains`, `/games/catch`, `/memes`,
+`/pfp`, `/charity`, `/dca`, `/tma`, `/classic`, plus `src/app/grains/session/route.ts`
+and nineteen handlers under `src/app/api/`. `/home`, `/chomp` and `/play` are 308
+redirects, not pages — see §11.
+
+*Before Phase 7 this read: `/` (the Grains Game), `/home`, `/memes`, `/pfp`, `/charity`,
+`/dca`, `/tma`, `/classic`, `/play`. The three games were at `/`, `/chomp` and `/play`.*
 
 The convention is consistent and worth copying exactly:
 
@@ -194,7 +219,7 @@ one-line entry there.
 
 `src/middleware.ts` runs on every page route (matcher excludes `_next/static`,
 `_next/image`, `api/`, and static file extensions) and stamps a `rice_geo_lang` cookie
-from `x-country-code`. A new `/chomp` page **is** covered by it; that's harmless.
+from `x-country-code`. The `/games/chomp` page **is** covered by it; that's harmless.
 
 ### 1.4 Tailwind v4 — theme tokens
 
@@ -499,7 +524,7 @@ is a superset of the repo file.
 
 **No — it rides along entirely**, provided it uses HTTP:
 
-- A new page at `/chomp` → served by the existing `location /` → :3006. No nginx change.
+- A page at `/games/chomp` (was `/chomp`) → served by the existing `location /` → :3006. No nginx change.
 - New route handlers under `/api/chomp/*` → same. No nginx change. (The `middleware.ts`
   matcher excludes `api/`, so no interference.)
 - New static assets in `public/chomp/` → same, and they pick up the immutable
@@ -639,6 +664,15 @@ have**. This is the single strongest argument for the HTTP leaderboard in §5.
    zero-third-party criterion and adding it to the list would change a shipped game's
    behaviour for no stated requirement. Left alone on purpose; it is a one-line
    addition if it is ever wanted.
+
+   > **Re-affirmed, and upgraded from "left alone" to "must not", 2026-08-05, Phase 7.**
+   > That route is `/games/catch` now, and the phase brief asked for every game route to
+   > go on the list. It must not: **you catch the grains WITH the chopstick cursor**, so
+   > scoping the ambient decoration off that page deletes the game's controller. The same
+   > goes for `/games/grains`, which has a custom cursor of its own in `globals.css`. The
+   > "one-line addition if it is ever wanted" above reads as an invitation and is now
+   > qualified — it was only ever about the *translate widget*, not about the whole list.
+   > See §11.3 and the spec's *Route and information architecture*.
 
 5. **`src/lib/highscore.ts` is a module-level variable on the server.** In a single fork
    process it happens to behave like a global shared across all users; the doc comment
@@ -1748,17 +1782,159 @@ nobody made.
 
 ---
 
-## 11. Open questions
+## 11. The Phase 7 answer — the site's information architecture, 2026-08-05
+
+The game did not change. The site around it did, and this section is here because one
+part of that change could have undone two phases of work without anything going red.
+
+### 11.1 The scheme, and the conflict in the brief
+
+The brief asked for the Grains Game at `/grainsgame` **and** for the games to be
+subpages of `/games`. Those cannot both hold. Settled on **`/games/<slug>` with no
+exceptions** — `chomp`, `grains`, `catch` — for two reasons beyond consistency: `/games`
+is a real index page and therefore a real parent, so a game outside it would make the
+index link outward for one of three entries; and `playSurfaces.ts` is an exact-match
+list, where one prefix is one rule and two prefixes are a list that gets half-updated.
+
+| game | was | is |
+|---|---|---|
+| Rice Chomp | `/chomp` | **`/games/chomp`** |
+| Grains Game | **`/`** (the landing page) | **`/games/grains`** |
+| Catch A Grain | `/play` | **`/games/catch`** |
+
+### 11.2 The route table, measured
+
+Every path that resolved before the change, plus every new one, against a production
+build on :3099. **The rule was no 404 from anything that resolved yesterday**, and the
+brief's own two instructions collided on it: `/chomp` was described as movable with no
+redirect, but it returned 200, so moving it bare would have created exactly the 404 the
+other rule forbids. Lito's call was to carry the redirect — one line in a block that had
+to exist anyway, and a rule with no exceptions is worth more than a rule with one.
+
+```
+/                200      <- now the HOME page (was the Grains Game)
+/games           200      <- new
+/games/chomp     200      /games/grains  200      /games/catch  200
+/home            308 ->   /
+/chomp           308 ->   /games/chomp
+/play            308 ->   /games/catch
+/memes /pfp /charity /dca /tma /classic   200      (untouched)
+/grains          404      (never was a page — see 11.5)
+```
+
+**`/` is deliberately NOT a redirect.** It still returns 200; it just serves a different
+page. That is a change to what a shared link *shows* — and `/` is the most-linked URL on
+the site, including from the buy bot (`ricebuybot-src/src/core/links.ts`) — but it is not
+a broken link, and redirecting it would send every existing bookmark somewhere it did not
+ask to go. Confirmed as intended.
+
+`next.config.ts` had no `redirects()` block before this phase; it has one now. Build-time,
+so no nginx change and no sudo.
+
+### 11.3 The thing that would have broken silently
+
+`src/lib/playSurfaces.ts` matches route paths **exactly**, and five things read it. Moving
+`/chomp` without moving its entry would have: switched the Google Translate script back on
+(re-breaking the spec's zero-third-party-request criterion), and put the chopstick cursor,
+the Konami arrow-key listener and the rice-particle field back over a live board. No
+throw, no warning, no red test, a page that renders perfectly. It was updated in the same
+commit as the route move.
+
+**`test/play-surfaces.test.ts` is the standing guard, and it was checked against the
+failure rather than only against success.** Reverting the list to `["/chomp"]` — the exact
+Phase 7 hazard — turns **4 of its 9 assertions red**, with named messages:
+
+```
+× RICE CHOMP is a play surface, at the route it actually lives at
+× '/games/chomp' play-surface status is true
+× every play-surface route is a route that exists   (/chomp ... has no page.tsx)
+× every play-surface route is one of the games      (/chomp ... not in src/config/games.ts)
+```
+
+**The brief's instruction here was wrong and was corrected before it was implemented.**
+It asked for every game route to be added to the list. That list means "turn the ambient
+decoration OFF here", not "is a game" — and following it literally would have deleted
+Catch A Grain's controller (you catch grains *with* the chopstick cursor) and stripped the
+Grains Game's cursor and particles. One of three games is a play surface. The test asserts
+all three by name, including the two that must NOT be, because this failure runs in both
+directions.
+
+### 11.4 The three verifications, and the one that could not be run
+
+| check | result |
+|---|---|
+| `/games/chomp` makes no third-party request on direct load | **static: PASS** — 0 external fetching elements, no translate script, no widget mount. **Runtime CDP: NOT RUN** |
+| grains WebSocket connects from the new URL | **PASS** — 101 Switching Protocols, `init` frame with the live global total and both boards, ping at 6s, still connected |
+| both leaderboards resolve their API routes | **PASS** — `/api/chomp/leaderboard` 200, `/api/leaderboard` 200 |
+
+**The runtime measurement did not run, and that is a real gap rather than a formality.**
+The only Chrome on this box will not start (`libatk-1.0.so.0` missing) and installing it
+needs sudo. Per §9.5 the runtime pass is the *only* instrument that can tell a
+`translate.google.com` string sitting in a JS chunk apart from an actual request — and
+that string is still in a chunk `/games/chomp` loads, as it always was. So the static pass
+was made worth something by a **control**: the same probe reports the translate element
+still present on `/`, `/games` and `/games/grains`, and absent on `/games/chomp`. A probe
+that says "clean" everywhere is measuring nothing. **Re-run measurement #2 on a machine
+with a working headless Chrome** — it is this phase's one outstanding verification.
+
+The WebSocket check is worth a note: `useGrainsSocket`'s `wsUrl()` is built from
+`window.location.host` + `BASE_PATH` and **never reads the pathname**, so the page move
+could not affect it structurally. It was verified empirically anyway, with a cookie minted
+from the new page's origin (`grain_vid` is `Path=/`, so it covers `/games/grains`). Every
+`fetch()` in all three games is root-absolute through `asset()` or `BASE_PATH` — a
+*relative* fetch would genuinely have broken under the deeper `/games/` path, and there
+are none.
+
+### 11.5 Two pre-existing bugs this phase swept up
+
+1. **`/classic`'s GRAINS link was broken and had been for a long time.** The two links
+   disagreed: the desktop one pointed at `/`, the mobile one at `/grains` — which has
+   never been a page (`src/app/grains/` holds only `session/route.ts`, the cookie minter).
+   Verified 404 against the live process. Both now point at one constant, `/games/grains`.
+   Fixed here because this phase is what made the correct target exist: leaving the
+   desktop link alone would have quietly repointed it at the home page.
+2. ~~**Open question 9 — `globals.css`'s `/onegrainofrice/grains/chopstick-cursor.svg`
+   404.**~~ **Already fixed.** The line now reads `/grains/chopstick-cursor.svg` and
+   returns 200. Recorded so the open question below stops looking open.
+
+### 11.6 What was left alone, and one thing that is still owed
+
+- **No sitemap was created.** Lito's call, and the right one: there is no sitemap and no
+  `robots.txt` on this site at all (`/sitemap.xml` → 404), and publishing one that points
+  at routes that may still move is worse than not having one. A separate task.
+- **The OG preview image is unchanged, and the wording around it is not.** The site-wide
+  link preview described the Grains Game — alt text "tap to drop a grain of rice", OG
+  `url: "/"` — which after the swap described a page that is no longer there. The alt now
+  describes the art. **The FILE stayed**, because it is the only 1200×630 asset in
+  `public/` (the alternatives are 1536×1024 and 1024×1536 at ~2.4 MB) and what it shows is
+  the mascot on a bowl under a paddy sky — the brand, not a game screen: no HUD, no
+  counter, no controls. **A bespoke home preview image is an art task and is still open.**
+- **The Grains Game's landing gate was deleted, not relocated.** It withheld an "Enter the
+  Rice Paddy" button until three grains had been dropped, which made sense when the game
+  stood between a visitor and the site. At `/games/grains` the visitor has already been to
+  the site to get here, so it was a door into a room they were standing in. The always-
+  visible small twin survives as "← All games" pointing at `/games`; the rest of that
+  screen is untouched.
+- **RICE CHOMP's "back to the rice paddy" still goes HOME, not to `/games`.** It was
+  repointed from `/home` to `/` — the same page — and no further. Repointing a named
+  affordance at a different destination is a design change, and this page's nav bar
+  already carries 🎮 Games.
+
+---
+
+## 12. Open questions
 
 1. **Where is `docs/rice-chomp-spec.md`?** It is not in the repo or anywhere under
    `/home/deploy`. Should I proceed from the brief in your message, or do you want to
    drop the spec in first? Pest personalities, the scoring table, the level/speed curve
    and the art direction are all things I've had to guess or defer below.
 
-2. **Route path:** `/chomp`, `/rice-chomp`, or nested under `/play`? I've assumed
-   `/chomp` (matches the flat, short existing routes: `/play`, `/pfp`, `/memes`). And
-   should it appear in the site menu (`src/config/home.ts` `homeNavLinks`) or stay a
-   hidden easter egg like `/play`?
+2. ~~**Route path:** `/chomp`, `/rice-chomp`, or nested under `/play`?~~ **Answered
+   twice.** Phase 2 shipped `/chomp`, in the site menu rather than as a hidden easter
+   egg. **Phase 7 moved it to `/games/chomp`** and took the menu entry with it: the menu
+   now has one 🎮 Games row pointing at a `/games` index, and all three games are cards
+   there. `/chomp` keeps a 308. The scheme and its reasoning are in §11.1 and in the
+   spec's *Route and information architecture*, which is authoritative.
 
 3. ~~**One database or two?**~~ **Answered — TWO, and built that way in Phase 6.**
    `data/chomp.db` is written only by the Next process; `grains.db` is written only by
@@ -1832,10 +2008,10 @@ nobody made.
    `setWanted()`, which is the same call the arrow keys make; that is what keeps touch
    out of the input trace's business and it is asserted in `test/chomp-audio.test.ts`.
 
-9. **May I fix `globals.css:293` while I'm in here?** It's a live 404 —
-   `/onegrainofrice/grains/chopstick-cursor.svg` should be `/grains/…` under the
-   production basePath of `""`. One line, affects the existing grains game, not RICE
-   CHOMP. Separate commit, or leave it alone?
+9. ~~**May I fix `globals.css:293` while I'm in here?** It's a live 404 —
+   `/onegrainofrice/grains/chopstick-cursor.svg` should be `/grains/…`.~~ **Done, at some
+   point before Phase 7.** The line reads `cursor: url("/grains/chopstick-cursor.svg")`
+   and the asset returns 200 (re-verified 2026-08-05 against a production build). Closed.
 
 10. ~~**Art and sound.**~~ **Answered.** Art, by practice: everything — player, four
     pests, six bonus items, both interstitials, the attract portraits — is drawn

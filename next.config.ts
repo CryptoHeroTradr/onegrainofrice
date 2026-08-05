@@ -121,6 +121,33 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Phase 7 (2026-08-05) moved the site's information architecture: `/` became the
+  // home page, the three games moved under `/games`, and the home page gave up
+  // `/home`. Every path below RESOLVED before that change, so every one of them
+  // redirects rather than 404s — the rule is that nothing which worked yesterday
+  // is a dead link today.
+  //
+  // `permanent: true` is a 308, which preserves the method and (in every browser)
+  // the fragment, so `/home#tokenomics` still lands on the tokenomics section.
+  //
+  // NOT redirected, deliberately: `/` itself. It still returns 200; it just serves
+  // the home page instead of the Grains Game. That is a change to what a shared
+  // link SHOWS, not a broken link, and a redirect there would send every existing
+  // bookmark and inbound link somewhere it did not ask to go.
+  async redirects() {
+    return [
+      // Catch A Grain. Public since it shipped — this is the one the brief called out.
+      { source: "/play", destination: "/games/catch", permanent: true },
+      // RICE CHOMP. Never shared and nobody knows the path, but it returned 200,
+      // and "no path that resolved yesterday 404s today" is worth more as a rule
+      // with no exceptions than as a rule with one.
+      { source: "/chomp", destination: "/games/chomp", permanent: true },
+      // The home page moved to `/`. Heavily linked — the nav logo, the footer
+      // wordmark and every `#tokenomics` anchor pointed here — so it redirects
+      // rather than serving a second copy of a page that now lives at the root.
+      { source: "/home", destination: "/", permanent: true },
+    ];
+  },
   // Same-origin proxy for the meme gallery's data + token-hiding media stream.
   // The browser only ever talks to this site; Next forwards to the game server.
   async rewrites() {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Globe, MessageCircle, Send } from "lucide-react";
 import { site, type SocialId } from "@/config/site";
 import { asset } from "@/lib/asset";
@@ -31,9 +32,11 @@ export function HomeFooter() {
     <footer className="grain border-t border-paper/10 bg-nori py-12 text-steamed">
       <div className="mx-auto max-w-[1180px] px-6">
         <div className="flex flex-col items-center gap-6 text-center">
-          <a href={asset("/home")} className="font-display-round text-2xl font-bold tracking-tight">
+          {/* Home is `/` as of Phase 7. A <Link>, not `asset("/home")` — asset()
+              cache-stamps static files and was minting `/home?v=<build>` for a page. */}
+          <Link href="/" className="font-display-round text-2xl font-bold tracking-tight">
             {site.nav.logo}
-          </a>
+          </Link>
 
           <ul className="flex items-center gap-3">
             {site.socials.map((social, i) => (

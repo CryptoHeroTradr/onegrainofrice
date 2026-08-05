@@ -16,15 +16,14 @@ import { homeNavLinks } from "@/config/home";
  * dark green ground, white text, light gold (khaki) for the current page and for
  * hover/focus. Those three are the whole spec.
  *
- * Not rendered on the landing page (`/`) — that page is the Grains Game and has
- * no site chrome.
+ * Every link comes from `homeNavLinks` and nothing is prepended. *Phase 7,
+ * 2026-08-05:* there used to be a `MENU_LINKS` const here that stuck a hardcoded
+ * "🍚 Grains Game → /" entry on the front, because the Grains Game was the landing
+ * page and so could not sit in the shared nav config like every other route. The
+ * games now live under `/games` and the menu has one "🎮 Games" entry pointing at
+ * the index, so the special case is deleted rather than repointed — a second list
+ * of nav links is a second list to forget.
  */
-
-/** The Grains Game sits at "/" and is not part of homeNavLinks, so prepend it. */
-const MENU_LINKS = [
-  { label: "Grains Game", href: "/", emoji: "🍚" },
-  ...homeNavLinks,
-] as const;
 
 export function SiteMenu({
   /** Rendered inside the open panel, under a divider (socials / Buy on mobile). */
@@ -88,9 +87,9 @@ export function SiteMenu({
           aria-label="Site"
           className="absolute top-full left-0 z-50 mt-2 w-[min(17rem,calc(100vw-1.5rem))] overflow-hidden rounded-md border border-[#f0d17a]/25 bg-[#254a24] py-1.5 text-white shadow-xl"
         >
-          {MENU_LINKS.map((item) => {
-            // Anchored links ("/home#tokenomics") never count as the current
-            // page — otherwise /home would light up two rows at once.
+          {homeNavLinks.map((item) => {
+            // Anchored links ("/#tokenomics") never count as the current page —
+            // otherwise Home and Token would both light up while you are on "/".
             const active = !item.href.includes("#") && pathname === item.href;
             return (
               <Link

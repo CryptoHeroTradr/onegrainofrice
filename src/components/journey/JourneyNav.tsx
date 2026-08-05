@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Heart } from "lucide-react";
 import { site } from "@/config/site";
 import { asset } from "@/lib/asset";
 import { isPlaySurface } from "@/lib/playSurfaces";
@@ -27,9 +29,15 @@ const NAV_SOCIAL_CLASS =
  * hamburger. The bar itself is: logo · 🌾 Menu | socials · contract · language ·
  * mute · Buy, with the last four collapsing into the menu's footer on mobile.
  *
- * The menu's "🍚 Grains Game" points at "/" — the landing page IS the clicker
- * game (the main site lives at /home), so it's a route, not a section anchor.
- * That landing page renders no nav, so the menu never appears on it.
+ * The bar carries one route link of its own — ❤️ Charity — because that page is
+ * the site's whole point and a dropdown made it the hardest thing to reach. Every
+ * other route lives in the menu.
+ *
+ * *Phase 7, 2026-08-05:* the note that used to sit here explained that the menu's
+ * "🍚 Grains Game" pointed at "/" because the landing page WAS the clicker game.
+ * It no longer is — "/" is the home page, the games are under `/games`, and the
+ * menu has a single 🎮 Games entry. The Grains Game renders no nav of its own, so
+ * this bar still never appears on it.
  *
  * ON A PLAY SURFACE IT IS A DIFFERENT BAR, and the differences are all forced
  * rather than styled (added Phase 5.6, when /chomp got the nav):
@@ -95,12 +103,17 @@ export function JourneyNav() {
         }`}
       >
         <div className="flex min-w-0 items-center gap-2 sm:gap-4 lg:gap-6">
-          <a
-            href={asset("/home")}
+          {/* The wordmark goes home, and home is now `/`. A <Link> rather than the
+              `asset("/home")` anchor this used to be: asset() exists to prefix and
+              CACHE-STAMP static files, so it was minting `/home?v=<build>` for a
+              page navigation — a fresh URL for the home page on every deploy. Link
+              applies the basePath by itself and stamps nothing. */}
+          <Link
+            href="/"
             className="whitespace-nowrap font-display-round text-sm font-bold tracking-tight sm:text-base lg:text-lg"
           >
             {site.nav.logo}
-          </a>
+          </Link>
           {/* Every nav link lives here, at every breakpoint. The footer slot
               carries the items the bar drops below lg (socials, language, Buy). */}
           <SiteMenu
@@ -125,6 +138,27 @@ export function JourneyNav() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {/* Charity — a real link in the BAR, not only a row in the 🌾 Menu.
+              Added Phase 7 (2026-08-05): the charity page is the one thing on this
+              site that is not a meme or a game, and burying it one click into a
+              dropdown made it the hardest page to reach. The heart is the site's
+              own charity mark (the /classic header uses the same lucide Heart).
+
+              It keeps its label from `sm:` up and collapses to the heart alone on a
+              phone, where the bar is already carrying the logo, the menu, the
+              contract chip and the mute toggle. The label is what makes it a link
+              to a page rather than a mystery glyph, so it is dropped last and only
+              where there is genuinely no room. */}
+          <Link
+            href="/charity"
+            aria-label="Charity"
+            className={`inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap px-2 font-display text-sm font-bold tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive ${
+              solid ? "text-ink/80 hover:text-tuna" : "text-bone/90 hover:text-bone"
+            }`}
+          >
+            <Heart size={16} fill="currentColor" aria-hidden="true" className="text-tuna" />
+            <span className="hidden sm:inline">Charity</span>
+          </Link>
           {/* Socials — desktop only (in the hamburger on mobile). */}
           <SocialLinks className="hidden items-center gap-2 lg:flex" linkClassName={NAV_SOCIAL_CLASS} />
           {/* Contract + copy — shown on every breakpoint. */}
