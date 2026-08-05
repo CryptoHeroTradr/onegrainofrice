@@ -77,6 +77,19 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: "3006",
+        // THIS PROCESS IS THE SOLE WRITER OF data/chomp.db, and this flag is how it
+        // says so. Without it `getChompEnv()` refuses to open the default path at
+        // all (see src/lib/chomp/env.ts).
+        //
+        // It lives HERE and must never move to .env.local. The preview server runs
+        // from the same cwd and reads the same .env.local, so a flag placed there
+        // would be inherited by the second process this exists to stop — the guard
+        // would still be green and would be guarding nothing. pm2's env is the only
+        // thing the two do not share.
+        //
+        // A second app in this file must NOT copy this line. Give it a
+        // CHOMP_DB_PATH of its own instead.
+        CHOMP_DB_OWNER: "1",
         ...grainsEnv,
       },
     },

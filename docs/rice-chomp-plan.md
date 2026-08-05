@@ -101,14 +101,50 @@ files are the durable context; the chat log is not.
 
 ### The preview server
 
-`http://127.0.0.1:3099` — a **production build**, not `next dev`, started with
-`NEXT_DIST_DIR=builds/<sha> BUILD_ID=<sha>`.
+`http://127.0.0.1:3099` — a **production build**, not `next dev`.
+
+> **START IT WITH `deploy/preview.sh <build-id>`, NOT BY HAND.** *Added 2026-08-05,
+> after the second stale preview and the fifth instrument failure on this project.*
+> The script exists because starting it by hand has now silently produced wrong
+> measurements twice, in the same way both times: a `next start` left on :3099 keeps
+> serving a build directory that has since been **deleted**, because Next holds its
+> file descriptors open. The port answers 200, the page looks correct, and every
+> number taken off it describes a build that no longer exists.
+>
+> Two things the script does that hand-starting did not:
+> - **It finds the holder with `ss`, not `lsof`.** `lsof -ti:3099` printed nothing
+>   on both occasions, so the kill was a silent no-op;
+>   `ss -lptn 'sport = :3099'` found the pid immediately.
+> - **It prints the build stamp read back OFF THE RUNNING SERVER** and compares it
+>   to the one requested — `MATCH ✓` or `MISMATCH ✗ DO NOT TRUST ANY MEASUREMENT
+>   FROM THIS PORT`. The extraction is generic (it reads whatever `?v=` stamp the
+>   server is using, via `asset()`), deliberately: grepping for the EXPECTED stamp
+>   would come back empty against a stale build and report "could not read", which
+>   is a much weaker statement than naming the wrong value.
+>
+> Both paths were verified against a real reproduction — a preview started outside
+> the script, its build directory deleted underneath it, then the script run for a
+> different build. It found the stale holder, killed it, started the right build and
+> confirmed the stamp.
+>
+> It also sets `CHOMP_DB_PATH` to a scratch file for you, which is the §10.4 trap
+> below. **If a future session cannot say which build it is measuring, none of its
+> numbers mean anything.**
 
 > **AND `CHOMP_DB_PATH=<somewhere else>`, since Phase 6.** It defaults to
 > `<cwd>/data/chomp.db`, which is the file the live process on :3006 owns — so a preview
 > started without it is a second writer of the leaderboard database, which is exactly what
 > the two-database design exists to prevent. Pointing it at a scratch path also means
 > preview submissions do not land on the real board. See §10.4.
+>
+> > **This is now ENFORCED rather than remembered.** *2026-08-05, after Phase 7.* A
+> > process that does not set `CHOMP_DB_PATH` and has not declared `CHOMP_DB_OWNER=1`
+> > is **refused the default path outright** — `getChompEnv()` throws with a message
+> > naming both fixes, and no file is created. The flag is declared in
+> > `ecosystem.config.js`'s env block for `onegrainofrice` and must never move to
+> > `.env.local`, which the preview shares. `test/chomp-db-ownership.test.ts` pins all
+> > of it, including that the flag appears exactly once in the pm2 config and not at
+> > all in `.env.local`. `deploy/preview.sh` sets a scratch path for you.
 
 It does **not** hot-reload. To show a change
 there, build a new dist and restart it against the new sha. It is separate from pm2 and

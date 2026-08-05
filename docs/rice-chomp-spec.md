@@ -16,6 +16,33 @@ An original arcade maze-chase game for the onegrainofrice site: the player clear
 
 ## Hard constraints
 
+- **A GUARD THAT CAN TAKE DOWN PRODUCTION IS WORSE THAN THE HAZARD IT PREVENTS.**
+  *Added 2026-08-05, after Phase 7, deciding how to enforce `chomp.db`'s single-writer
+  contract — but it is not about that decision and is written here as a general rule.*
+
+  The tempting enforcement is usually the strictest one, and strictness is not the
+  property that matters. What matters is the shape of the failure when the guard
+  itself misfires — because it will, at 3am, for a reason nobody modelled.
+
+  Worked example, since the abstract version persuades nobody. Three ways to stop a
+  second process writing `data/chomp.db`:
+  - *An advisory lockfile.* Strongest-sounding. It does not release on `SIGKILL` or
+    a hard reboot, so a crash leaves the LIVE process refusing to start, and the
+    operator is now debugging the guard during an outage the guard caused. **Rejected.**
+  - *Scanning for another process holding the file.* Linux-only, racy, and it cannot
+    distinguish "held by live" from "held by the thing I am about to become". A false
+    positive is again an outage. **Rejected.**
+  - *A declared ownership flag* (`CHOMP_DB_OWNER=1` in `ecosystem.config.js`). The
+    worst case is a process that refuses to start with a message naming its own fix.
+    **Chosen.**
+
+  The same rule then applied one level up, to the guard's own deploy path: the
+  preflight added to `deploy/promote.sh` **warns and never refuses**, because a
+  refusal there could block a rollback — the one operation you need most when
+  something is already wrong.
+
+  So: prefer a declaration to an inference, prefer a loud message to a hard stop,
+  and never put a hard stop on the path out of an incident.
 - Plain HTML5 Canvas 2D + TypeScript. No game engine.
 - **Zero new npm dependencies** without asking first.
 - **Zero third-party runtime requests.** No CDN, no Google Fonts, no remote scripts, no remote images, no analytics — nothing the page fetches may leave the VPS. Sound is generated at build time by the repo's existing `scripts/gen-sfx.mjs` pipeline and played through `src/lib/sound.ts`.

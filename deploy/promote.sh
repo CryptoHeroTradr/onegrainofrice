@@ -88,11 +88,36 @@ echo "  pm2 restart $PM2_APP   (NOT oneg-grains-ws :3007, NOT RiceDAO)"
 # itself at start. This also guarantees we never inject a stray NEXT_DIST_DIR.
 pm2 restart "$PM2_APP"
 
+# --- one-time env preflight: the chomp single-writer flag ----------------------
+# `pm2 restart <name>` above deliberately does NOT re-read ecosystem.config.js, so
+# an env var ADDED to that file never reaches the running process through a normal
+# promote. CHOMP_DB_OWNER is such a var, and without it every /api/chomp/* request
+# 500s — src/lib/chomp/env.ts refuses to open the default database for a process
+# that has not claimed it.
+#
+# This WARNS and never refuses. A hard failure here would block a rollback, and a
+# guard that can take down production is worse than the hazard it prevents — which
+# is the same rule that made the flag a declaration rather than a lockfile.
+if ! pm2 jlist 2>/dev/null | grep -q "CHOMP_DB_OWNER"; then
+  echo
+  echo "  !! WARNING: the running process has no CHOMP_DB_OWNER."
+  echo "     Builds carrying the RICE CHOMP leaderboard will answer 500 on"
+  echo "     /api/chomp/* until it is injected. This is a ONE-TIME step:"
+  echo
+  echo "         pm2 restart ecosystem.config.js --only onegrainofrice --update-env"
+  echo "         pm2 save"
+  echo
+  echo "     (Re-reads the config file, unlike the plain restart above. After"
+  echo "      pm2 save it persists, so later promotes need nothing.)"
+fi
+
 echo
 echo "=== promoted $ID · repo HEAD $SHA · $DIRTY dirty ==="
 echo "Verify (expect 200 on a hard refresh, no 404 window):"
 echo "    curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3006/"
-echo "    curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3006/home"
+# /home was a 200 page until Phase 7 and is a 308 to / from then on, so it is a bad
+# smoke target either way. The games index is a page on both sides of that change.
+echo "    curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3006/api/chomp/leaderboard"
 if [ -n "$ROLLBACK_ID" ]; then
   echo "Rollback (previous build — kept, never deleted):"
   echo "    deploy/promote.sh $ROLLBACK_ID"
