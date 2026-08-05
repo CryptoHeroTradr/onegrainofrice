@@ -1863,19 +1863,41 @@ directions.
 
 | check | result |
 |---|---|
-| `/games/chomp` makes no third-party request on direct load | **static: PASS** — 0 external fetching elements, no translate script, no widget mount. **Runtime CDP: NOT RUN** |
+| `/games/chomp` makes no third-party request on direct load | **PASS, both instruments** — runtime CDP: 55 requests desktop / 53 phone, **0 third-party**; static: 0 external fetching elements, no translate script, no widget mount |
 | grains WebSocket connects from the new URL | **PASS** — 101 Switching Protocols, `init` frame with the live global total and both boards, ping at 6s, still connected |
 | both leaderboards resolve their API routes | **PASS** — `/api/chomp/leaderboard` 200, `/api/leaderboard` 200 |
 
-**The runtime measurement did not run, and that is a real gap rather than a formality.**
-The only Chrome on this box will not start (`libatk-1.0.so.0` missing) and installing it
-needs sudo. Per §9.5 the runtime pass is the *only* instrument that can tell a
-`translate.google.com` string sitting in a JS chunk apart from an actual request — and
-that string is still in a chunk `/games/chomp` loads, as it always was. So the static pass
-was made worth something by a **control**: the same probe reports the translate element
-still present on `/`, `/games` and `/games/grains`, and absent on `/games/chomp`. A probe
-that says "clean" everywhere is measuring nothing. **Re-run measurement #2 on a machine
-with a working headless Chrome** — it is this phase's one outstanding verification.
+**The runtime measurement was run, and it needed the box changed to do it.** Chrome could
+not start (six missing libraries; `sudo apt-get install libatk1.0-0t64
+libatk-bridge2.0-0t64 libatspi2.0-0t64 libcups2t64 libxcomposite1 libxdamage1` on Ubuntu
+24.04). This was initially reported as a gap and Lito closed it before Phase 7 promoted,
+on the grounds that instrument error has been the recurring failure on this project —
+which §8.3, §9.2 and §9.5 all bear out. He was right to insist: per §9.5 the runtime pass
+is the **only** instrument that can tell a `translate.google.com` string sitting in a JS
+chunk apart from an actual request, and that string is still in a chunk this route loads.
+
+**The control is the half that makes the result mean something**, and it was run in the
+same pass. Pointed at the pages that SHOULD make third-party requests:
+
+```
+/games/chomp    55 / 53 requests    third-party: 0          <- the criterion
+/games/grains   42 requests         4 hosts   translate.google.com, www.gstatic.com,
+/games/catch    31 requests         4 hosts   translate.googleapis.com, fonts.gstatic.com
+/games          64 / 58 requests    4 hosts
+/               102 requests        7 hosts   + fonts.googleapis.com, api.dexscreener.com,
+                                                lite-api.jup.ag
+```
+
+Six distinct third-party hosts detected elsewhere, zero on the game. A probe that reports
+"clean" everywhere is measuring nothing; this one demonstrably is not blind.
+
+**A stale preview nearly poisoned this measurement, which is worth recording.** The first
+attempt returned 200 from :3099 while the `next start` that owned the port had been left
+running against a build directory already deleted from disk — Next keeps its file
+descriptors open, so it happily serves a build that no longer exists. `lsof -ti:3099`
+silently matched nothing and the kill was a no-op; `ss -lptn 'sport = :3099'` found the
+pid. **Confirm what the preview is actually serving before believing a number off it** —
+the build stamp is in the HTML (`grep -o 'phase7b'`), and checking it is one command.
 
 The WebSocket check is worth a note: `useGrainsSocket`'s `wsUrl()` is built from
 `window.location.host` + `BASE_PATH` and **never reads the pathname**, so the page move
