@@ -2136,6 +2136,89 @@ for:
   copy instead. `test/socials-one-row.test.ts` keeps the switch exhaustive against
   `SocialId`.
 
+### 11.9 The narrow-viewport pass, 2026-08-06
+
+Reported against /games/chomp on a real handset the morning after the promote: the
+wordmark clipped off the left edge, "Back to the rice paddy" off the right, the HUD
+cut. **The board rendered correctly**, which is the tell — the game was not broken,
+it was being made too wide by the page around it.
+
+**Every earlier run measured 390×844 and stopped.** Lito's instruction to go to 360
+and 320 is what found this; at 414 the page is clean and at 390 it is 27px over,
+which is the kind of margin that reads as fine in a screenshot.
+
+#### What was forcing the width — two independent causes
+
+**1. A grid item cannot be narrower than its own min-content.** `min-width` defaults
+to `auto` for grid and flex items. The nav's row is six fixed-size controls that
+could neither wrap nor shrink, with a min-content of **417px**. It shares the chomp
+shell's grid with `main`, so both stretched to 417: the game laid its header, its
+back link and the whole HUD out 417px wide inside a 320px screen.
+
+Attribution, one element removed at a time, at a 320px viewport:
+
+| removed | shell width |
+|---|---|
+| nothing (control) | **417** |
+| 🎮 Games dropdown | 417 — *contributes nothing; it was already hidden below `sm`* |
+| ❤️ Charity | 377 |
+| the contract chip | 328 |
+| the wordmark, or 🌾 Menu | 320 |
+| the whole nav | 320 |
+
+No single element was the cause: the floor was the **sum**, and the nav was the only
+grid item with one. At 390 removing any one of the four cleared it, which is why it
+had never been noticed.
+
+**2. A percentage max-width inside a shrink-to-fit ancestor does nothing.** Separately
+— and on every page with a footer rather than on chomp — `CopyAddress` is
+`inline-flex max-w-full` inside a `flex-col items-center` column. `max-width: 100%`
+against a `fit-content` ancestor is a cyclic dependency, which CSS resolves by
+ignoring the percentage while computing intrinsic width, so the chip laid out **389px**
+wide. Its `truncate` was inert for the same family of reason: the span's
+`min-width: auto` floors it at min-content, and `white-space: nowrap` makes that the
+whole 44-character address, so it had no way to shrink and therefore no reason to
+ellipsize. Being centred, it overflowed both edges, widened the document, and the
+**fixed** nav — which lays out against the document — came with it. A nav that looked
+broken at the top of the page was being widened by the contract address at the bottom.
+
+#### The thing that hid it
+
+`documentElement.scrollWidth` read **exactly 320** on chomp while its contents were
+417, because the shell carries `overflow-hidden`. A probe that asks "does the page
+overflow?" reports a clean page. **The honest measurement is the width of the
+CHILDREN.** The overflow rule stays — a game shell must not scroll — but it is no
+longer load-bearing now the column is capped.
+
+#### What shipped
+
+| | fix |
+|---|---|
+| nav row | the wordmark is `min-w-0 truncate` — the row's one elastic element. A RULE, not a breakpoint: the bar fits at any width, and the wordmark takes what is left (all of it at 390+, "🌾 one…" at 320) |
+| nav affordances | 🎮 Games and ❤️ Charity share one `BAR_ONLY` constant and leave together below `sm`. Both are rows of 🌾 Menu, so no route was lost |
+| chomp shell | `grid-cols-[minmax(0,1fr)]` — the horizontal half of the `min-h-0` that was already there |
+| control row | `w-full` below `sm`, `sm:ml-auto` above. The wrap is decided by the breakpoint instead of by the measured width of everything to its left, which is the Phase 6 pause-resize bug's exact shape |
+| `CopyAddress` | `min-w-0` on the span, and `max-w-[calc(100vw-3rem)]` — viewport-relative, so no ancestor can undo it. Four call sites share the component, so the fix is in it |
+| `TradingPortal` | `min-w-0` on `CARD`, the two grid items on the home page. 334px wide in a 272px column; forced to 272 nothing inside overflows — it wraps fine and was simply never asked to |
+
+#### Measured after
+
+`document.scrollWidth === viewport` at 320, 360 and 390 on **/games/chomp, /, /games,
+/memes, /charity, /pfp and /classic** — no route scrolls sideways. The elements still
+reported wide (the meme belt's marquee, the memes category strip, the charity and
+classic carousels) are children of horizontal scrollers and do not widen the document,
+which `scrollWidth === viewport` on those routes is the proof of.
+
+The board is unchanged where it was last recorded: **364×403 at 390×844, 13px tiles**,
+matching §12's figure exactly. Pausing at 360 leaves it at 280×310 — the control row's
+wrap no longer depends on the caption. `test/narrow-viewport.test.ts` pins each rule.
+
+**One thing was NOT established.** The reported screenshot showed the wordmark clipped
+on the LEFT, which needs a horizontal scroll to happen; the chomp shell's
+`overflow-hidden` prevents one in Chrome. The 417px floor explains the right-hand
+clipping and the HUD, and it is gone either way, but whatever let that page pan
+sideways on the handset was not reproduced here.
+
 ---
 
 ## 12. Open questions
@@ -2215,8 +2298,12 @@ for:
 
 8. ~~**Mobile input.**~~ **Answered — both, and portrait letterbox. Built in Phase 5.**
    Swipe is always live and re-anchors after every turn, so one unbroken thumb drag can
-   trace a whole route; the d-pad is an addition, defaulting on for a coarse pointer and
-   toggleable from the control bar. Portrait letterboxes and there is no rotate prompt,
+   trace a whole route; the d-pad is an addition, **defaulting OFF everywhere** and
+   toggleable from the control bar. *Amended 2026-08-06: it used to default on for
+   `(pointer: coarse)` — which is to say on for every phone, the viewport with the least
+   room — and Lito's call was to flip it. Swipe is the primary control, the line under the
+   board already says "Swipe the board to steer", and a player who wants buttons is one
+   tap from them with the choice persisted.* Portrait letterboxes and there is no rotate prompt,
    because the maze is 28:31 and very nearly square — on a 390×844 phone the board takes
    364×403 (13px tiles) with the compacted HUD above it and the d-pad plus control bar,
    about 250px, below. The HUD sheds its secondary numbers under `sm:` for the same

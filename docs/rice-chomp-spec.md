@@ -131,6 +131,22 @@ to `playSurfaces.ts` — was wrong, and adopting it would have broken two shippe
 The rule for a new route is **"does an ambient decoration fight this page?"**, never
 "is it in `src/config/games.ts`".
 
+**THE BAR'S WIDE-VIEWPORT AFFORDANCES LEAVE TOGETHER, BELOW `sm`.** *Added 2026-08-06.*
+🎮 Games and ❤️ Charity are both dropped from the bar below `sm` by one shared constant
+(`BAR_ONLY` in `JourneyNav`), because at 320–360 the row did not have room for them —
+its min-content ran 34–97px past the viewport, and on this route that floor was
+stretching the game underneath it. Both remain rows of the 🌾 Menu at every width, which
+is what makes dropping them a layout decision rather than a lost route. One constant
+rather than two class strings, for the same reason the paddy link and its board-edge
+twin are exact complements: two independently-written breakpoints are two chances for a
+width where both show or neither does.
+
+**A NAV ROW NEEDS ONE ELASTIC ELEMENT.** Every control in the bar is a fixed-size
+affordance except the wordmark, which is `min-w-0 truncate` and absorbs whatever is
+left. That is a rule rather than a breakpoint, and it is the difference between a bar
+that fits at any width and a bar that fits at the widths someone remembered to test.
+See the plan's §11.9.
+
 **The games are reachable from the bar, not only from the index.** *Amended 2026-08-05,
 after Phase 7 promoted.* The nav carries a second dropdown — **🎮 Games**, listing all
 three — alongside 🌾 Menu, whose single "🎮 Games" row still points at the index. It is
@@ -324,6 +340,7 @@ Each is built from one unmistakable outline property, so the six read apart in m
 
 - Keyboard: arrows and WASD. `P` or `Esc` pauses, `M` mutes.
 - Touch: swipe and an optional on-screen d-pad, both available, d-pad toggleable. Portrait letterbox; never force or nag about rotation. Must be genuinely playable one-thumbed in portrait.
+  - **The d-pad defaults OFF, on every pointer type.** *Added 2026-08-06, Lito's call.* It defaulted on for `(pointer: coarse)` — on for every phone, the viewport with the least room — which put a control cluster under a board already fighting for height. Swipe is the primary control, it is always live, and the line under the board says so ("Swipe the board to steer"), so the buttons are an addition a player asks for rather than the thing they meet first. The toggle is unchanged and an explicit choice still overrides the default forever after, in both directions — which is what makes an off default cheap.
 - Gamepad API if it's cheap; skip it if it isn't. *Not built, and not because it was hard: nothing else in the repo speaks to a gamepad, so it would be the only input path with no second user. Reconsider if anyone asks.*
 - **Every input route ends at `setWanted()`.** *Added 2026-08-04, Phase 5.* Arrows, WASD, a swipe and a d-pad key are four ways of calling one function, and that is the property that keeps touch out of the input trace's business — a second entry point into the engine is a second thing server-side replay has to know about. `test/chomp-audio.test.ts` pins it.
 - **The swipe RE-ANCHORS after every turn.** A drag registers a direction at 22 CSS pixels of travel and then resets its origin to where the thumb currently is, so one unbroken drag can trace a whole route — down, right, up — without lifting off. That is what "playable one-thumbed" means in a game whose skill is the corner: a scheme that needs a separate flick per turn cannot corner early, and cornering early is the entire skill ceiling. A lift with no turn in it is a TAP, which means "get on with it" — start the run, skip the interstitial.
@@ -387,6 +404,8 @@ from outside the repo and no third-party request.*
   - **It is solid immediately.** The transparent-over-hero state resolves on scroll, and this page never scrolls, so it would sit in that state forever — a bar with no ground, over a black game. *Amended 2026-08-05: this is no longer a special case that this page argues for. Site-wide, **solid is now the default and the transparent state is opt-in** via `overHero`, which a page passes only when it paints something dark behind the bar. The play-surface branch still forces solid regardless of what the page asks for, because a game page floats over nothing — but the reasoning above is now the general rule rather than an exception carved out for this route. See the plan's §11.7 for the /games regression that produced the change.*
   - **It is 56px at every width**, and it is hidden entirely below 520px of viewport height. On a landscape phone the bar is a fifth of what is left for the board and the page's own header link still leaves.
   - **It renders no `<LanguageSwitcher>`**, per the rule in the Acceptance criteria below: translation is scoped off play surfaces, so a language control there is a switch wired to nothing.
+
+  **The Board / Pause / Restart row wraps by BREAKPOINT, not by content width.** *Added 2026-08-06.* It was an `ml-auto` item in a `flex-wrap` row, so whether it sat beside the HUD or dropped to a line of its own depended on the measured width of everything to its left — the same shape as the pause-resize bug the width floor on Pause exists for. Below `sm` it is `w-full` and therefore always its own row, which nothing upstream can change; from `sm` up `ml-auto` restores the inline behaviour on a row with the slack to hold it.
 
   **It costs board height, and that is the trade rather than a regression to fix.** Measured in the plan's §9: 27px tiles → 24px at 1080p, 39 → 35 at 1440p, 62 → 58 at 4K. **On a 390×844 portrait phone it costs nothing at all** — portrait is width-bound, so the bar comes out of vertical slack the letterbox was already wasting and the board is identical, tile for tile.
 - **The game page's text is FLUID; the rest of the site's is not.** *Added 2026-08-04, Phase 5.6.* The HUD was authored in fixed px against a phone and stayed that size on a 27" monitor — an 8.8px label at 4K. The route's text now runs off `--text-chomp-*` in `globals.css`, one token per size the page already used so the mapping is 1:1 rather than a re-design. Two properties are the whole design and neither is cosmetic:

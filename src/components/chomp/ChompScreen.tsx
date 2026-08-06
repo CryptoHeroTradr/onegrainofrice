@@ -210,7 +210,23 @@ export function ChompScreen() {
     //
     // A <header> is a banner and belongs OUTSIDE <main>, which is the other reason
     // this is not a row of it.
-    <div className="grid h-[100svh] grid-rows-[auto_1fr] overflow-hidden bg-nori text-steamed">
+    //
+    // `grid-cols-[minmax(0,1fr)]` IS THE HORIZONTAL HALF OF `min-h-0`, and it was
+    // missing (added 2026-08-06). A grid item defaults to `min-width: auto`, so it
+    // cannot be laid out narrower than its own min-content — and the nav's row, six
+    // fixed-size controls that could not wrap or shrink, had a min-content of 417px.
+    // At a 320px viewport that did not merely overflow the nav: BOTH grid items
+    // stretched to 417, so `main` laid the game's header, its back link and the whole
+    // HUD out 417px wide inside a 320px screen and the right-hand end of each ran off
+    // the edge. The nav was making the game too wide.
+    //
+    // `overflow-hidden` here (which predates this) then clipped the result, so
+    // `documentElement.scrollWidth` read exactly 320 and any probe that only asked
+    // "does the page overflow?" reported a clean page. It is worth knowing that this
+    // shell can hide the bug: the honest measurement is the width of the CHILDREN.
+    // The overflow rule stays — a game shell must not scroll — but it is no longer
+    // load-bearing, because with the column capped nothing can exceed it.
+    <div className="grid h-[100svh] grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr] overflow-hidden bg-nori text-steamed">
       {/* The site's nav, in its play-surface form: in flow, solid, shorter, and with
           no language control (translation is scoped off this route). See JourneyNav. */}
       <JourneyNav />
@@ -282,7 +298,21 @@ export function ChompScreen() {
               Debug · from {stats.startLevel}
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
+          {/* THE WRAP IS DECIDED BY THE BREAKPOINT, NOT BY THE CONTENT.
+              *2026-08-06.* This was `ml-auto flex items-center gap-2` — an auto-margin
+              item in a `flex-wrap` row, so whether Board/Pause/Restart sat beside the
+              HUD or dropped to a line of their own depended on the total measured
+              width of everything to their left. That is the Phase 6 pause-resize bug's
+              exact shape (see the width floor on Pause below): a row that wraps takes
+              44px out of the play row and re-sizes the maze, and anything that changes
+              a width upstream — the debug chip appearing, a longer score, a translated
+              label — could flip it mid-run.
+
+              Below `sm` it is now `w-full`, so it ALWAYS has its own row and nothing
+              upstream can change that; the buttons spread across the width, which is
+              also the better thumb target. From `sm` up `ml-auto` restores the
+              original inline behaviour, where the row has the slack to hold it. */}
+          <div className="flex w-full items-center justify-between gap-2 sm:ml-auto sm:w-auto sm:justify-start">
             {/* ONE BOARD, ONE BUTTON — and no tabs behind it. It sits in the HUD bar
                 beside score, lives, level and pests because that is where a player
                 already looks for a number about their run. Its caption does NOT

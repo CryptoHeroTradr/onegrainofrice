@@ -44,18 +44,21 @@ function write(key: string, on: boolean): void {
 }
 
 /**
- * The d-pad defaults ON for a coarse pointer and OFF for a fine one, and an
- * explicit choice overrides that forever after. Swipe is always live either way,
- * so the toggle is "do I also want buttons", never "can I play at all".
+ * THE D-PAD DEFAULTS OFF, EVERYWHERE. *Changed 2026-08-06, Lito's call.*
+ *
+ * It used to default ON for a coarse pointer, via
+ * `matchMedia("(pointer: coarse)")` — which is to say it defaulted on for every
+ * phone, the viewport with the least room, and put a control cluster under a
+ * board that was already fighting for height. Swipe is the primary control, it is
+ * always live, and the instruction line under the board says so in as many words
+ * ("Swipe the board to steer"), so the buttons are an addition a player can ask
+ * for rather than the thing they meet first.
+ *
+ * The toggle is unchanged and an explicit choice still overrides this forever
+ * after, in both directions — which is the part that makes an off default cheap:
+ * a player who wants buttons is one tap from them, and that tap persists.
  */
-function dpadDefault(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.matchMedia("(pointer: coarse)").matches;
-  } catch {
-    return false;
-  }
-}
+const DPAD_DEFAULT = false;
 
 let dpadOn = false;
 let contrastOn = false;
@@ -65,7 +68,7 @@ let hydrated = false;
 function hydrate(): void {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
-  dpadOn = read(DPAD_KEY, dpadDefault());
+  dpadOn = read(DPAD_KEY, DPAD_DEFAULT);
   contrastOn = read(CONTRAST_KEY, false);
 }
 

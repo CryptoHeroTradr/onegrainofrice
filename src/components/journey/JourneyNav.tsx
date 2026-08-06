@@ -23,6 +23,20 @@ const NAV_SOCIAL_CLASS =
   "flex h-9 w-9 items-center justify-center rounded-full border border-olive-deep/30 bg-bone/80 text-olive-deep shadow-sm backdrop-blur transition-colors hover:bg-bone focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive";
 
 /**
+ * Wide-viewport-only bar affordances: 🎮 Games and ❤️ Charity.
+ *
+ * ONE constant for both, so they can never disagree about where "mobile" ends.
+ * Both are duplicated as rows of the 🌾 Menu, which is what makes dropping them
+ * safe rather than a lost route — below `sm` the menu is simply the only way in.
+ *
+ * `sm` (640px) is chosen because it is the breakpoint this row already used for
+ * both of them (`hidden sm:block` on the dropdown, `hidden sm:inline` on the
+ * Charity label), not because 640 is a phone. Adding a third number to a row that
+ * already had two is how a bar ends up with a width where half of it is missing.
+ */
+const BAR_ONLY = "hidden sm:inline-flex";
+
+/**
  * Sticky nav: a solid paper bar, or — on a page that opts in — transparent over
  * its dark hero until you scroll past it.
  *
@@ -149,15 +163,28 @@ export function JourneyNav({
               CACHE-STAMP static files, so it was minting `/home?v=<build>` for a
               page navigation — a fresh URL for the home page on every deploy. Link
               applies the basePath by itself and stamps nothing. */}
+          {/* `min-w-0 truncate` IS THE THING THAT MAKES THIS ROW FIT, and it is a
+              rule rather than a breakpoint (2026-08-06). Every other control here is
+              a fixed-size affordance that cannot usefully shrink, so the wordmark is
+              the row's only elastic element — and while it was `whitespace-nowrap`
+              with no `min-w-0`, it had a hard 107px floor and the row had a hard
+              min-content floor with it. Truncating means the bar fits at ANY width
+              instead of at the widths someone remembered to test: the wordmark takes
+              whatever is left over, which is all of it at 390 and up, "🌾 one…" at
+              320. See the play-surface note above for what that floor did to the
+              game underneath it. */}
           <Link
             href="/"
-            className="whitespace-nowrap font-display-round text-sm font-bold tracking-tight sm:text-base lg:text-lg"
+            className="min-w-0 truncate font-display-round text-sm font-bold tracking-tight sm:text-base lg:text-lg"
           >
             {site.nav.logo}
           </Link>
           {/* Every nav link lives here, at every breakpoint. The footer slot
-              carries the items the bar drops below lg (socials, language, Buy). */}
+              carries the items the bar drops below lg (socials, language, Buy).
+              `shrink-0` so the wordmark beside it absorbs the shrinking — a menu
+              button that narrows until its own label wraps is not a saving. */}
           <SiteMenu
+            className="shrink-0"
             id="site-menu"
             footerClassName="lg:hidden"
             footer={
@@ -186,15 +213,19 @@ export function JourneyNav({
               that cluster is where the site's non-route controls live (contract,
               language, mute, Buy) and this is navigation.
 
-              Dropped below `sm`: on a phone the bar is already carrying the logo,
-              🌾 Menu, Charity, the contract chip and the mute toggle, and 🌾 Menu's
-              own Games row still reaches all three from there. */}
+              **`BAR_ONLY` — this and ❤️ Charity share ONE breakpoint** (2026-08-06).
+              Both are wide-viewport affordances and both are already rows of the
+              🌾 Menu, so below `sm` the bar drops them together and the menu is the
+              single way to reach either. One constant rather than two class strings,
+              for the same reason the paddy link and its board-edge twin are exact
+              complements: two independently-written breakpoints are two chances for
+              a width where both show or neither does. */}
           <SiteMenu
             id="games-menu"
             emoji="🎮"
             label="Games"
             items={gamesNavLinks}
-            className="hidden sm:block"
+            className={BAR_ONLY}
           />
         </div>
 
@@ -205,20 +236,28 @@ export function JourneyNav({
               dropdown made it the hardest page to reach. The heart is the site's
               own charity mark (the /classic header uses the same lucide Heart).
 
-              It keeps its label from `sm:` up and collapses to the heart alone on a
-              phone, where the bar is already carrying the logo, the menu, the
-              contract chip and the mute toggle. The label is what makes it a link
-              to a page rather than a mystery glyph, so it is dropped last and only
-              where there is genuinely no room. */}
+              **It is now gone below `sm` entirely, not collapsed to the heart.**
+              *2026-08-06, Lito's call, superseding the Phase 7 note that used to sit
+              here arguing the heart should survive on a phone because charity is the
+              site's point.* At 320–360 the bar did not have room for it: the row's
+              min-content ran 34–97px past the viewport, and on /games/chomp that
+              floor was stretching the game underneath it. A heart with no label was
+              also the weakest thing in the row — a mystery glyph, per the note it
+              replaces — so it is the right thing to drop, and 🌾 Menu carries
+              Charity at every width. */}
           <Link
             href="/charity"
             aria-label="Charity"
-            className={`inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap px-2 font-display text-sm font-bold tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive ${
+            className={`${BAR_ONLY} min-h-11 items-center gap-1.5 whitespace-nowrap px-2 font-display text-sm font-bold tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-olive ${
               solid ? "text-ink/80 hover:text-tuna" : "text-bone/90 hover:text-bone"
             }`}
           >
             <Heart size={16} fill="currentColor" aria-hidden="true" className="text-tuna" />
-            <span className="hidden sm:inline">Charity</span>
+            {/* Always shown now. It used to be `hidden sm:inline` so the link could
+                survive as a bare heart below `sm`; the link itself no longer exists
+                there, so a second breakpoint on the label inside it would only be a
+                second thing to keep in step with BAR_ONLY. */}
+            <span>Charity</span>
           </Link>
           {/* Socials — desktop only (in the hamburger on mobile). */}
           <SocialLinks className="hidden items-center gap-2 lg:flex" linkClassName={NAV_SOCIAL_CLASS} />

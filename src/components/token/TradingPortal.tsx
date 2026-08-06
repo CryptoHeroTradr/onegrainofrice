@@ -26,7 +26,13 @@ const TOKEN_LOGO = asset("/rice-token-logo.png");
 const shortAddr = (a: string) => `${a.slice(0, 4)}…${a.slice(-4)}`;
 
 /** Solid, hard-edged card — high contrast against the bone section background. */
-const CARD = "rounded-2xl border-2 border-nori/35 bg-steamed p-5 shadow-sm";
+// `min-w-0` because both users of this are GRID ITEMS (the `lg:grid-cols-…` row
+// below), and a grid item's `min-width: auto` floors it at its own min-content.
+// Measured 2026-08-06: on a 320px viewport the card laid out 334px wide inside
+// 272px of available column, which was the last thing making the home page scroll
+// sideways. Forced to 272 nothing inside it overflows — it wraps fine and simply
+// was never asked to.
+const CARD = "min-w-0 rounded-2xl border-2 border-nori/35 bg-steamed p-5 shadow-sm";
 
 function fmtUsd(n: number | null, digits = 2): string {
   if (n == null) return "…";
