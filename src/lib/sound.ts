@@ -46,7 +46,14 @@ type Name =
   | "chompDeath"
   | "chompBonus"
   | "chompExtra"
-  | "chompClear";
+  | "chompClear"
+  // GRAINSNAKE. Four clips; the eat blip is pitched by TIER at playback rather
+  // than baked seven times, so one 2 KB file covers the whole speed curve and
+  // cannot drift out of step with the tier table.
+  | "snakeEat"
+  | "snakeGolden"
+  | "snakeTier"
+  | "snakeDeath";
 
 /**
  * Milestone clips keep the exact filenames they were delivered under, so the
@@ -73,6 +80,10 @@ const SRC: Record<Name, string> = {
   chompBonus: "/sfx/chomp-bonus.wav",
   chompExtra: "/sfx/chomp-extra.wav",
   chompClear: "/sfx/chomp-clear.wav",
+  snakeEat: "/sfx/snake-eat.wav",
+  snakeGolden: "/sfx/snake-golden.wav",
+  snakeTier: "/sfx/snake-tier.wav",
+  snakeDeath: "/sfx/snake-death.wav",
 };
 // Pour (the rice-drop sound) is boosted 100% over its original 0.4 — it is the
 // core feedback of the clicker and was too quiet on phone speakers. Milestones
@@ -99,6 +110,12 @@ const VOLUME: Record<Name, number> = {
   chompBonus: 0.55,
   chompExtra: 0.65,
   chompClear: 0.6,
+  // The eat blip sits WELL under the rest, for the same reason chomp's does: it is
+  // the only sound that repeats, and at tier 7 it fires 15 times a second.
+  snakeEat: 0.28,
+  snakeGolden: 0.5,
+  snakeTier: 0.45,
+  snakeDeath: 0.6,
 };
 
 /**
@@ -532,4 +549,62 @@ export function playChompExtraLife(): void {
 }
 export function playChompLevelClear(): void {
   play("chompClear");
+}
+
+// ---------------------------------------------------------------------------
+// GRAINSNAKE
+// ---------------------------------------------------------------------------
+
+const SNAKE_NAMES: Name[] = ["snakeEat", "snakeGolden", "snakeTier", "snakeDeath"];
+
+/**
+ * Decode GRAINSNAKE's clips ahead of time.
+ *
+ * Only this game calls it — every other page would be fetching four clips it will
+ * never play. Worth doing on mount: the first eat lands on one specific tick and
+ * gets no second chance, so an undecoded clip would arrive late or be dropped
+ * outright on iOS. Safe outside a gesture; decoding does not need a running context.
+ */
+export function preloadSnake(): void {
+  for (const n of SNAKE_NAMES) void preload(n);
+}
+
+/**
+ * The eat blip, pitched by tier.
+ *
+ * `playbackRate` shifts pitch AND shortens the clip, which is exactly what is wanted
+ * as the steps get closer together: at tier 7 a step is 67 ms and a 50 ms blip played
+ * 1.3× is 38 ms, so consecutive eats stay separate events rather than smearing.
+ * The ratio is deliberately gentle — a full octave across seven tiers would make the
+ * top of the curve shrill on a phone speaker.
+ */
+export function playSnakeEat(tier: number): void {
+  const t = Math.max(1, Math.min(7, Math.floor(tier)));
+  play("snakeEat", 1 + (t - 1) * 0.05);
+}
+
+export function playSnakeGolden(): void {
+  play("snakeGolden");
+}
+
+export function playSnakeTier(): void {
+  play("snakeTier");
+}
+
+export function playSnakeDeath(): void {
+  play("snakeDeath");
+}
+
+/**
+ * The shared AudioContext, for GRAINSNAKE's procedural music loop.
+ *
+ * Exposed rather than letting that module construct its own: **a page must have
+ * exactly one AudioContext.** iOS caps how many a document may create and only
+ * unlocks the ones touched inside a gesture, so a second context is a second thing
+ * that can be silently suspended forever — with no symptom except silence.
+ *
+ * Returns null where there is no Web Audio at all; the caller simply has no music.
+ */
+export function getAudioContext(): AudioContext | null {
+  return getCtx();
 }

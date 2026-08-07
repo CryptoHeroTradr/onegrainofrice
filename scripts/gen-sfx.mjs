@@ -6,6 +6,7 @@
  * Two families live here:
  *   grains — a soft rice "pour" (filtered noise) and a chopstick "clack".
  *   chomp  — RICE CHOMP's eight cues (see the CHOMP section below).
+ *   snake  — GRAINSNAKE's four cues. The eat blip is pitched by tier at playback.
  *
  *   pnpm gen:sfx          both families
  *   pnpm gen:sfx chomp    only the chomp set, leaving the grains clips untouched
@@ -330,6 +331,90 @@ function levelClear(seed) {
 
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// GRAINSNAKE
+//
+// Four clips, and deliberately only four. The EAT blip is pitched by tier at
+// PLAYBACK time (`playbackRate` on the buffer source) rather than being seven
+// baked files: one 50 ms clip covers the whole speed curve, costs ~2 KB, and
+// cannot drift out of step with the tier table the way seven files could.
+//
+// Everything here is short on purpose — the brief is "no file over a few KB", and
+// the eat blip in particular fires up to 15 times a second at tier 7, so a long
+// tail would smear into a drone.
+// ---------------------------------------------------------------------------
+
+/** The eat blip. Dry, wooden, and SHORT — it is heard more than any other sound. */
+function snakeEat(seed) {
+  const dur = 0.05;
+  const out = buffer(dur);
+  const r = rand(seed);
+  const lp = lowpass(0.5);
+  const f0 = 420;
+  let phase = 0;
+  for (let i = 0; i < out.length; i++) {
+    const t = i / SR;
+    // A falling fundamental reads as a bite closing rather than as a note.
+    const f = f0 * (1 - 0.35 * (t / dur));
+    phase += (2 * Math.PI * f) / SR;
+    const body = voice(phase, 0.22, 0.08);
+    const grit = lp(r()) * 0.18;
+    out[i] = (body + grit) * env(t, 0.004, 70) * 0.7;
+  }
+  return out;
+}
+
+/** The golden grain: a two-note rise, bright against the eat blip's dull thud. */
+function snakeGolden() {
+  const dur = 0.12;
+  const out = buffer(dur);
+  let p1 = 0;
+  let p2 = 0;
+  for (let i = 0; i < out.length; i++) {
+    const t = i / SR;
+    p1 += (2 * Math.PI * 700) / SR;
+    p2 += (2 * Math.PI * 1050) / SR; // a fifth above
+    const a = Math.sin(p1) * env(t, 0.004, 26);
+    // The second note enters late, so it reads as two events rather than a chord.
+    const b = t > 0.045 ? Math.sin(p2) * env(t - 0.045, 0.004, 26) : 0;
+    out[i] = (a * 0.55 + b * 0.6) * 0.75;
+  }
+  return out;
+}
+
+/** Tier up. A short rising sting — the only warning the player gets. */
+function snakeTier() {
+  const dur = 0.14;
+  const out = buffer(dur);
+  let phase = 0;
+  for (let i = 0; i < out.length; i++) {
+    const t = i / SR;
+    const f = 300 + 520 * (t / dur); // rising, because the game just got faster
+    phase += (2 * Math.PI * f) / SR;
+    out[i] = voice(phase, 0.2, 0.05) * env(t, 0.008, 14) * 0.55;
+  }
+  return out;
+}
+
+/** Death. A low wooden thud with a short noise transient — no ringing tail. */
+function snakeDeath(seed) {
+  const dur = 0.16;
+  const out = buffer(dur);
+  const r = rand(seed);
+  const lp = lowpass(0.16);
+  let phase = 0;
+  for (let i = 0; i < out.length; i++) {
+    const t = i / SR;
+    const f = 150 * (1 - 0.45 * (t / dur));
+    phase += (2 * Math.PI * f) / SR;
+    const thud = voice(phase, 0.3, 0.12) * env(t, 0.003, 16);
+    const crack = lp(r()) * env(t, 0.001, 90) * 0.5;
+    out[i] = (thud + crack) * 0.8;
+  }
+  return out;
+}
+
 function emit(name, samples) {
   writeFileSync(join(outDir, name), toWav(samples));
   console.log(`wrote public/sfx/${name}`);
@@ -338,6 +423,13 @@ function emit(name, samples) {
 if (wants("grains")) {
   emit("rice-pour.wav", pour());
   emit("chopstick-clack.wav", clack());
+}
+
+if (wants("snake")) {
+  emit("snake-eat.wav", snakeEat(0x51a3e7));
+  emit("snake-golden.wav", snakeGolden());
+  emit("snake-tier.wav", snakeTier());
+  emit("snake-death.wav", snakeDeath(0x2f9e11b));
 }
 
 if (wants("chomp")) {

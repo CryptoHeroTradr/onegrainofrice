@@ -29,6 +29,7 @@
 import { CELL_COUNT, COLS, GOLDEN_STEPS, ROWS } from "@/lib/grainsnake/rules";
 import { segmentAt, vacatedCell } from "@/lib/grainsnake/engine";
 import type { GameState } from "@/lib/grainsnake/types";
+import { NO_TRAIL_FX, type TrailFx } from "./fx";
 
 // ---------------------------------------------------------------------------
 // Palette — from globals.css's @theme. No new colours.
@@ -189,14 +190,20 @@ function drawSegment(
   px: number,
   angle: number,
   ringPos: number,
+  /**
+   * A transient multiplier for the newest segment growing in. 1 for every other
+   * segment and by default, so `SEG_LONG`, the short axis, the draw order and the
+   * jitter keying are all exactly what the gate validated.
+   */
+  grow = 1,
 ): void {
   const j = jitterFor(ringPos);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle + j.rot);
 
-  const rx = px * (SEG_LONG + j.long);
-  const ry = px * SEG_SHORT;
+  const rx = px * (SEG_LONG + j.long) * grow;
+  const ry = px * SEG_SHORT * grow;
 
   ctx.beginPath();
   ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
@@ -220,13 +227,18 @@ function drawHead(
   y: number,
   px: number,
   angle: number,
+  /** Head pop on eat, 0..1. Scales BOTH axes, so the head swells rather than stretches. */
+  pop = 0,
 ): void {
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle);
 
+  // Small on purpose: the head must stay the same shape a player tracks at 15 cells
+  // a second, and a big pop reads as the head changing size rather than reacting.
+  const swell = 1 + pop * 0.16;
   ctx.beginPath();
-  ctx.ellipse(0, 0, px * HEAD_LONG, px * HEAD_SHORT, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, px * HEAD_LONG * swell, px * HEAD_SHORT * swell, 0, 0, Math.PI * 2);
   ctx.fillStyle = HEAD_FILL;
   ctx.fill();
   ctx.lineWidth = Math.max(1, px * 0.05);
@@ -289,6 +301,12 @@ export function paint(
   state: GameState,
   px: number,
   f: number,
+  /**
+   * Transient scales from the fx layer. DEFAULTS TO A NO-OP — with no argument this
+   * function draws exactly what it drew before feedback existed, which is what keeps
+   * `test/grainsnake-render.test.ts` measuring the gate-validated geometry.
+   */
+  fx: TrailFx = NO_TRAIL_FX,
 ): void {
   const w = COLS * px;
   const h = ROWS * px;
@@ -334,6 +352,9 @@ export function paint(
     const to = segmentAt(state, j);
     const from = originOf(j, to);
     const ringPos = (state.headPos - j + CELL_COUNT) % CELL_COUNT;
+    // Only the NEWEST segment grows in. It is the tail rather than the head, because
+    // eating holds the tail still for a step — so the new grain appears at the back.
+    const grow = j === state.length - 1 ? fx.tailGrow : 1;
     drawSegment(
       ctx,
       cx(from, to, f, px),
@@ -341,6 +362,7 @@ export function paint(
       px,
       angleBetween(from, to, 0),
       ringPos,
+      grow,
     );
   }
 
@@ -355,5 +377,6 @@ export function paint(
     cy(cameFrom, headCell, f, px),
     px,
     angleBetween(cameFrom, headCell, 0),
+    fx.headPop,
   );
 }

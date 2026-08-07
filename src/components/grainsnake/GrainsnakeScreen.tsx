@@ -9,7 +9,8 @@ import type { Dir } from "@/lib/grainsnake/types";
 import { TouchControls } from "./TouchControls";
 import { Leaderboard } from "./Leaderboard";
 import { NAME_MAX_LEN, NAME_MIN_LEN, readName, submitRun, writeName } from "./board";
-import { toggleDpad, useDpad } from "./prefs";
+import { toggleDpad, toggleGameSound, toggleMusic, useDpad, useGameSound, useMusic } from "./prefs";
+import { startMusic, stopMusic } from "./music";
 import {
   GrainsnakeCanvas,
   type GrainsnakeHandle,
@@ -65,6 +66,8 @@ type Panel = "menu" | "how" | "board" | null;
 export function GrainsnakeScreen() {
   const reduced = usePrefersReducedMotion();
   const dpad = useDpad();
+  const sound = useGameSound();
+  const music = useMusic();
   const gameRef = useRef<GrainsnakeHandle>(null);
   const [stats, setStats] = useState<GrainsnakeStats>({
     score: 0,
@@ -116,6 +119,18 @@ export function GrainsnakeScreen() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [stats.paused, panel]);
+
+  /**
+   * Start or stop the loop when the preference changes.
+   *
+   * An effect is right here: this IS synchronising React state with an external
+   * system (the AudioContext), which is what effects are for. Toggling inside the
+   * click handler would miss the case where the pref changes in another tab.
+   */
+  useEffect(() => {
+    if (music) startMusic();
+    else stopMusic();
+  }, [music]);
 
   const play = () => {
     setPanel(null);
@@ -211,6 +226,17 @@ export function GrainsnakeScreen() {
                 </button>
                 <button type="button" className={BTN} onClick={toggleDpad} aria-pressed={dpad}>
                   D-pad: {dpad ? "on" : "off"}
+                </button>
+                <button
+                  type="button"
+                  className={BTN}
+                  onClick={toggleGameSound}
+                  aria-pressed={sound}
+                >
+                  Sound: {sound ? "on" : "off"}
+                </button>
+                <button type="button" className={BTN} onClick={toggleMusic} aria-pressed={music}>
+                  Music: {music ? "on" : "off"}
                 </button>
               </div>
             </Overlay>

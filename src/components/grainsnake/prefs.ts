@@ -1,21 +1,36 @@
 "use client";
 
 /**
- * GRAINSNAKE's persisted display preference, in the same shape as the site's sound
- * toggle and RICE CHOMP's `prefs.ts`: a module-level value, a localStorage mirror, and
- * a subscribe function so React can read it with `useSyncExternalStore`.
+ * GRAINSNAKE's persisted preferences, in the same shape as the site's sound toggle
+ * and RICE CHOMP's `prefs.ts`: a module-level value, a localStorage mirror, and a
+ * subscribe function so React can read it with `useSyncExternalStore`.
  *
- * MUTE IS DELIBERATELY NOT HERE, for the same reason it is not in chomp's: the site
- * has one persisted sound switch and every game answers to it. A game-local mute would
- * mean a player who muted the site still gets chirped at.
+ * None of them touches the simulation. The d-pad is a second way to call `steer()`,
+ * and sound and music are derived from state transitions the host observes.
  *
- * The preference does not touch the simulation. The d-pad is a second way to call
- * `steer()` — the same entry point the keyboard and the swipe surface use.
+ * ── THE MUTE IS GAME-LOCAL, AND THAT SUPERSEDES THE SPEC ────────────────────────
+ * *Changed 2026-08-07, Lito's call. `docs/grainsnake-spec.md` said the opposite and
+ * has been amended in the same commit.*
+ *
+ * The spec's rule was "there is ONE sound switch on this site and every game answers
+ * to it", because a game-local mute means a player who muted the site still gets
+ * chirped at. That failure is real, so the toggle is game-local **and the site switch
+ * is still a master gate**: `grainsnake:sound` can only ever make this game quieter
+ * than the site setting, never louder. A player who muted the site hears nothing here.
+ *
+ * That keeps the property the spec was protecting while giving this game its own
+ * switch — which it needs, because it is the first game with MUSIC, and music is a
+ * thing you turn off without wanting the effects off too.
+ *
+ * MUSIC DEFAULTS OFF. Sound defaults on. A loop that starts itself on a page you
+ * opened to look at is the single most reliable way to make someone close the tab.
  */
 
 import { useSyncExternalStore } from "react";
 
 const DPAD_KEY = "grainsnake:dpad";
+const SOUND_KEY = "grainsnake:sound";
+const MUSIC_KEY = "grainsnake:music";
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -97,4 +112,52 @@ export function useDpad(): boolean {
   // not exist there, and rendering a control cluster on the server that the client
   // then removes is a hydration mismatch rather than a preference.
   return useSyncExternalStore(subscribe, dpadValue, () => false);
+}
+
+// ---------------------------------------------------------------------------
+// Sound and music
+// ---------------------------------------------------------------------------
+
+let snd: boolean | null = null;
+let mus: boolean | null = null;
+
+function soundValue(): boolean {
+  if (snd === null) snd = read(SOUND_KEY, true);
+  return snd;
+}
+function musicValue(): boolean {
+  if (mus === null) mus = read(MUSIC_KEY, false);
+  return mus;
+}
+
+export function setGameSound(on: boolean): void {
+  snd = on;
+  write(SOUND_KEY, on);
+  listeners.forEach((l) => l());
+}
+export function toggleGameSound(): void {
+  setGameSound(!soundValue());
+}
+export function setMusic(on: boolean): void {
+  mus = on;
+  write(MUSIC_KEY, on);
+  listeners.forEach((l) => l());
+}
+export function toggleMusic(): void {
+  setMusic(!musicValue());
+}
+
+/** Read outside React (the audio layer needs it every tick, not every render). */
+export function gameSoundOn(): boolean {
+  return soundValue();
+}
+export function musicOn(): boolean {
+  return musicValue();
+}
+
+export function useGameSound(): boolean {
+  return useSyncExternalStore(subscribe, soundValue, () => true);
+}
+export function useMusic(): boolean {
+  return useSyncExternalStore(subscribe, musicValue, () => false);
 }

@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { COLS, ROWS, tierIndexFor, ticksPerStepFor } from "@/lib/grainsnake/rules";
+import { segmentAt } from "@/lib/grainsnake/engine";
 import {
   MAX_TICKS_PER_DRAIN,
   TICK_MS,
@@ -12,6 +13,20 @@ import {
 import { DOWN, LEFT, RIGHT, UP, type Dir, type GameState, type ReplayLog } from "@/lib/grainsnake/types";
 import { paint } from "./render";
 import { createRecorder, verifyRun } from "./recorder";
+import { createCueWatch, observeCues, playCues, preloadSnake } from "./audio";
+import {
+  burstDeath,
+  burstEat,
+  burstTierUp,
+  createFx,
+  drawFx,
+  resetFx,
+  shakeOffset,
+  stepFx,
+  trailFx,
+} from "./fx";
+import { musicOn } from "./prefs";
+import { startMusic, stopMusic } from "./music";
 import { beginSwipe, endSwipe, feedSwipe, wasTap, type SwipeTracker } from "./swipe";
 import { recordLatency, reportLatency } from "./latency";
 
@@ -153,6 +168,8 @@ export const GrainsnakeCanvas = forwardRef<
   const thawRef = useRef<(withCountdown: boolean) => void>(() => {});
   /** Tick at which the current touch began, for the latency instrument. */
   const touchTickRef = useRef(0);
+  const fxRef = useRef(createFx());
+  const cueRef = useRef<ReturnType<typeof createCueWatch> | null>(null);
 
   /**
    * The interpolation fraction, HELD across a freeze.
@@ -216,7 +233,17 @@ export const GrainsnakeCanvas = forwardRef<
     // Reduced motion snaps to cell positions — no interpolation, and NOT ONE RULE
     // CHANGES. The simulation is identical; only the picture between two cells is.
     const f = reducedRef.current ? 1 : frozen ? frozenFRef.current : liveFraction(s);
-    paint(ctx, s, pxRef.current, f);
+
+    const fx = fxRef.current;
+    // SCREEN SHAKE is a transform on the whole board, applied here rather than inside
+    // paint() — the renderer draws a board, it does not know the board is being shaken.
+    const [sx, sy] = reducedRef.current ? [0, 0] : shakeOffset(fx);
+    if (sx !== 0 || sy !== 0) ctx.translate(sx, sy);
+
+    paint(ctx, s, pxRef.current, f, trailFx(fx));
+    // Husks are painted OVER the finished board, never into the trail. The four
+    // things that made the trail pass its gate live in render.ts and are untouched.
+    drawFx(ctx, fx);
   };
 
   /** How far through the current step we are, in [0, 1]. */
@@ -278,6 +305,33 @@ export const GrainsnakeCanvas = forwardRef<
         }
       }
       if (d.ticks >= MAX_TICKS_PER_DRAIN) accRef.current = 0;
+
+      /**
+       * CUES ARE DERIVED, ONCE, AFTER THE TICKS ARE DRAINED.
+       *
+       * Not inside the tick loop: several ticks can land in one frame, and firing an
+       * eat blip per tick would stack four copies of a 50 ms clip on one frame. The
+       * watcher is read-only over state — a run observed is bit-identical to one that
+       * is not, which `test/grainsnake-audio.test.ts` asserts.
+       */
+      if (cueRef.current) {
+        const cues = observeCues(cueRef.current, s);
+        if (cues.ate || cues.golden || cues.tierUp || cues.died) {
+          playCues(cues, s);
+          const fx = fxRef.current;
+          const reduced = reducedRef.current;
+          if (cues.ate || cues.golden) {
+            burstEat(fx, segmentAt(s, 0), pxRef.current, cues.golden, reduced);
+          }
+          if (cues.tierUp) burstTierUp(fx, pxRef.current, reduced);
+          if (cues.died) {
+            const cells: number[] = [];
+            for (let i = 0; i < s.length; i++) cells.push(segmentAt(s, i));
+            burstDeath(fx, cells, pxRef.current, reduced);
+          }
+        }
+      }
+
       if (s.dead || s.filled) {
         frozenFRef.current = 1;
         verify(s);
@@ -286,6 +340,10 @@ export const GrainsnakeCanvas = forwardRef<
         reportLatency();
       }
     }
+
+    // The fx layer runs on WALL-CLOCK and is clamped, deliberately: it is not the
+    // simulation and must not be. A stalled frame makes husks jump, never the snake.
+    stepFx(fxRef.current, Math.min(Math.max(raw, 0), 100) / 1000, pxRef.current);
 
     draw();
     publish();
@@ -325,6 +383,8 @@ export const GrainsnakeCanvas = forwardRef<
     frozenFRef.current = 0;
     pausedRef.current = false;
     countdownRef.current = 0;
+    resetFx(fxRef.current);
+    cueRef.current = createCueWatch(s);
   };
 
   const restart = () => {
@@ -397,6 +457,11 @@ export const GrainsnakeCanvas = forwardRef<
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
 
+    // Decode the clips on mount. The first eat lands on one specific tick and gets no
+    // second chance; an undecoded clip arrives late or is dropped outright on iOS.
+    preloadSnake();
+    if (musicOn()) startMusic();
+
     lastRef.current = performance.now();
     rafRef.current = requestAnimationFrame(loop);
 
@@ -405,6 +470,7 @@ export const GrainsnakeCanvas = forwardRef<
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       stateRef.current = null;
+      stopMusic();
     };
     // Boot once. The seed is read at mount; `restart()` reseeds explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps

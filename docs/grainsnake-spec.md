@@ -577,9 +577,24 @@ spend it in one frame.
 
 Carried over from chomp, unchanged and for the same reasons:
 
-- Keyboard: arrows and WASD. `P` or `Esc` pauses. `M` drives the **site's** sound switch
-  (`grains:sound`), never a private one — a player who muted the site must not still be
-  getting chirped at.
+- Keyboard: arrows and WASD. `P` or `Esc` pauses.
+  - **AMENDED 2026-08-07: THE MUTE IS GAME-LOCAL, WITH THE SITE SWITCH AS A MASTER
+    GATE.** *Lito's call, in the audio phase. This line previously read "`M` drives the
+    site's sound switch (`grains:sound`), never a private one — a player who muted the
+    site must not still be getting chirped at", and that reasoning is preserved rather
+    than discarded.*
+
+    The preference now persists under `grainsnake:sound`, and the site switch still
+    wins: the game's toggle can only ever make this game **quieter** than the site
+    setting, never louder, so a player who muted the site hears nothing here. The
+    failure the original rule protected against cannot occur — it is prevented by the
+    gate order rather than by there being only one switch.
+
+    What forced the change is MUSIC. This is the first game on the site with a loop,
+    and music is a thing people turn off without wanting the effects off too; a single
+    site-wide switch cannot express that. One switch was the right rule for a game with
+    only effects, and stopped being the right rule the moment there were two kinds of
+    sound. `grainsnake:music` defaults **off**; `grainsnake:sound` defaults **on**.
 - Touch: swipe and an optional on-screen d-pad, both available. **The d-pad defaults OFF
   on every pointer type**; swipe is primary and always live, and the line under the board
   says so. An explicit choice overrides the default forever after, in both directions.
@@ -621,6 +636,24 @@ regeneration and a rebuild is not a diff.
 | `snakeGolden` | The golden grain, taken. |
 | `snakeTier` | Crossing into a new speed tier. The only warning the player gets, and it needs to arrive *with* the change rather than after it. |
 | `snakeDeath` | The run ends. |
+
+**THE EAT BLIP IS PITCHED BY TIER AT PLAYBACK, NOT BAKED SEVEN TIMES.** *Added
+2026-08-07.* One 50 ms clip and a `playbackRate` covers the whole speed curve: it costs
+~2 KB instead of seven files, and it cannot drift out of step with the tier table the
+way seven files could. `playbackRate` also shortens the clip as it raises the pitch,
+which is exactly what is wanted — at tier 7 a step is 67 ms, and a blip that shortened
+with the steps stays a sequence of events rather than smearing into a drone.
+
+**THE MUSIC LOOP IS SYNTHESIZED LIVE, NOT SHIPPED.** *Added 2026-08-07.* It is the one
+asset that cannot meet the size budget — two seconds of mono 16-bit at 22.05 kHz is
+~88 KB before it has said anything, and a loop short enough to be small is a loop short
+enough to be maddening. So it is oscillators scheduled on the shared AudioContext:
+**zero bytes, no request, and nothing that can go missing at runtime**, which is the
+same argument this spec already makes for drawing everything else procedurally.
+- **One AudioContext per page, always.** iOS caps how many a document may create and
+  only unlocks the ones touched inside a gesture, so a second context is a second thing
+  that can be silently suspended forever with no symptom but silence. The music module
+  borrows the context `src/lib/sound.ts` owns rather than making its own.
 
 - **Sound is DERIVED from the simulation, never emitted by it.** The obvious wiring is
   `playEat()` inside the step function, and that is exactly what must not happen: the run
