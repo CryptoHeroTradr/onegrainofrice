@@ -56,3 +56,7 @@ next-env.d.ts
 
 # Claude Code — per-machine local settings (not shared), matching the bot repo.
 .claude/settings.local.json
+
+# Throwaway prototypes and one-question probes. Disposable by definition — a file
+# here exists to answer something with your eyes and is then deleted.
+/scratch/

@@ -42,6 +42,24 @@ pm2, and never touches `oneg-grains-ws` (:3007). Run it as often as you like,
 including while the site is live. It verifies the build (`BUILD_ID`, manifests,
 static chunks) and prints the promote command.
 
+> **NEVER call `pnpm build` directly — always `deploy/build.sh`.** *Added
+> 2026-08-07, after doing exactly that.* `next build` **mutates tracked
+> `tsconfig.json`**: it manages the `include` list for `<distDir>/types`, so a
+> direct call with a `NEXT_DIST_DIR` outside the repo bakes that **absolute path**
+> into `tsconfig.json` and leaves the tree dirty. It also reformats the whole file
+> (every array expanded one-entry-per-line), so the diff is large and the one line
+> that matters is buried in it, and an absolute dist dir additionally leaves a
+> stray `tmp/` tree in the repo root.
+>
+> `build.sh` snapshots `tsconfig.json` before the build and restores it on exit —
+> success **or** failure — so a build leaves the repo byte-identical. That trap is
+> the whole reason the snapshot exists.
+>
+> **This fails silently**, which is why it is written down: nothing errors, the
+> build succeeds, the site is fine, and the damage is a committed `tsconfig.json`
+> pointing at a path that exists on exactly one machine. Recover with
+> `git checkout tsconfig.json && rm -rf tmp/`.
+
 **2. Promote (a separate, deliberate act — you run it, watching):**
 
 ```bash

@@ -57,6 +57,11 @@ const EXPECTED: ReadonlyArray<{ route: string; playSurface: boolean; why: string
     playSurface: false,
     why: "you catch the grains WITH the chopstick cursor — scoping it off removes the controller",
   },
+  {
+    route: "/games/grainsnake",
+    playSurface: true,
+    why: "arrow keys are its controls, and the translate script is a third-party request it may not make",
+  },
 ];
 
 describe("play surfaces", () => {
@@ -83,10 +88,57 @@ describe("play surfaces", () => {
     }
   });
 
-  it("every play-surface route is one of the games", () => {
+  /**
+   * Play surfaces that are LIVE but deliberately not announced in
+   * `src/config/games.ts`.
+   *
+   * *Added 2026-08-07, promoting GRAINSNAKE without its card.* The assertion below
+   * used to read "every play-surface route is one of the games", which was written
+   * when being a play surface and being a listed game were assumed to coincide. A
+   * route can be promoted and reachable while its card is held back — the card is an
+   * announcement (four surfaces plus the computed count word), and shipping the code
+   * and announcing it are separate acts.
+   *
+   * This is an ALLOWLIST rather than a deleted assertion on purpose: an unlisted play
+   * surface has to be named here, so it stays a decision somebody made rather than a
+   * route that quietly fell out of the games list. Emptying this list restores the
+   * original, stricter invariant.
+   *
+   * REMOVE an entry in the same commit that adds its card.
+   */
+  const UNLISTED_PLAY_SURFACES: ReadonlyArray<{ route: string; why: string }> = [
+    {
+      route: "/games/grainsnake",
+      why: "promoted for playtesting; the card waits for the leaderboard, so first-time players' death lengths are not spent on a build that records nothing",
+    },
+  ];
+
+  it("every play-surface route is a game, or is a NAMED unlisted route", () => {
     const gameRoutes = new Set<string>(games.map((g) => g.href));
+    const unlisted = new Set(UNLISTED_PLAY_SURFACES.map((u) => u.route));
     for (const route of PLAY_SURFACE_ROUTES) {
-      expect(gameRoutes.has(route), `${route} is a play surface but not in src/config/games.ts`).toBe(true);
+      expect(
+        gameRoutes.has(route) || unlisted.has(route),
+        `${route} is a play surface but is neither in src/config/games.ts nor named in UNLISTED_PLAY_SURFACES`,
+      ).toBe(true);
+    }
+  });
+
+  it("nothing lingers in the unlisted allowlist once its card ships", () => {
+    // The other direction: an entry left here after the card lands would silently
+    // weaken the invariant for a route that no longer needs the exemption.
+    const gameRoutes = new Set<string>(games.map((g) => g.href));
+    for (const { route } of UNLISTED_PLAY_SURFACES) {
+      expect(
+        gameRoutes.has(route),
+        `${route} now HAS a card — delete it from UNLISTED_PLAY_SURFACES`,
+      ).toBe(false);
+    }
+  });
+
+  it("an unlisted play surface still has a page on disk", () => {
+    for (const { route } of UNLISTED_PLAY_SURFACES) {
+      expect(existsSync(pageFileFor(route)), `${route} has no page.tsx`).toBe(true);
     }
   });
 

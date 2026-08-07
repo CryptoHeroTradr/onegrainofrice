@@ -50,6 +50,23 @@
  * So the rule for a new route is "does an ambient decoration fight this page?",
  * not "is it in `src/config/games.ts`".
  *
+ * ── FOUR GAMES, TWO ON THE LIST. ──────────────────────────────────────────────
+ * *Added 2026-08-07, when GRAINSNAKE shipped.* It IS here, and the answer came
+ * from the rule above rather than from it being a game — three separate
+ * decorations fight it, in descending order of how much they matter:
+ *
+ *  - **The Konami listener eats the arrow keys**, which are its primary control.
+ *    Same argument as `/games/chomp`, and the one that would be noticed first.
+ *  - **Translation would be a third-party request** on a route whose spec claims
+ *    zero of them (`docs/grainsnake-spec.md`, *Acceptance criteria*). It is the
+ *    only thing that would make that claim false.
+ *  - **The chopstick cursor and the particle field are noise on the one channel
+ *    the game communicates through** — the player reads occupied cells off the
+ *    board, and this game has no controller to lose by scoping the cursor off.
+ *
+ * Note the asymmetry with `/games/catch`, which stays off the list for the exact
+ * opposite reason: there, the cursor IS the controller.
+ *
  * ── MOVING A ROUTE ON THIS LIST IS A TWO-FILE CHANGE. ─────────────────────────
  * The match is exact (`includes`), so renaming a route without renaming it here
  * fails SILENTLY and in the most expensive direction: nothing throws, no test
@@ -60,7 +77,7 @@
  * silent: it asserts every game route's play-surface status by name, and that
  * every entry here is a route that actually exists on disk.
  */
-export const PLAY_SURFACE_ROUTES: readonly string[] = ["/games/chomp"];
+export const PLAY_SURFACE_ROUTES: readonly string[] = ["/games/chomp", "/games/grainsnake"];
 
 /** True when this route is a game that should be left alone by ambient decoration. */
 export function isPlaySurface(pathname: string | null | undefined): boolean {
