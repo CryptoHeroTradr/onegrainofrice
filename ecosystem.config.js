@@ -90,6 +90,24 @@ module.exports = {
         // A second app in this file must NOT copy this line. Give it a
         // CHOMP_DB_PATH of its own instead.
         CHOMP_DB_OWNER: "1",
+        // THE SAME DECLARATION, FOR data/grainsnake.db. *Added 2026-08-07.*
+        //
+        // Everything written above applies verbatim: this process is the sole writer,
+        // the flag must never move to .env.local, and a second app in this file must
+        // take a GRAINSNAKE_DB_PATH of its own rather than copying this line.
+        //
+        // TWO SEPARATE FLAGS RATHER THAN ONE SHARED "GAMES_DB_OWNER". They are two
+        // files with two independent lifetimes: one of them can be moved, restored
+        // from a backup or handed to a different process without the other following,
+        // and a shared flag would make that impossible to express. The duplication is
+        // the point.
+        //
+        // BOTH ARE REQUIRED ENV VARS. A plain `pm2 restart onegrainofrice` does NOT
+        // re-read this file, so a newly-added flag never reaches the running process
+        // that way — deploy/promote.sh warns when either is missing, and the fix is:
+        //     pm2 restart ecosystem.config.js --only onegrainofrice --update-env
+        //     pm2 save
+        GRAINSNAKE_DB_OWNER: "1",
         ...grainsEnv,
       },
     },

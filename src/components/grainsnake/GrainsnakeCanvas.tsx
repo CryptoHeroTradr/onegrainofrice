@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { COLS, ROWS, ticksPerStepFor } from "@/lib/grainsnake/rules";
+import { COLS, ROWS, tierIndexFor, ticksPerStepFor } from "@/lib/grainsnake/rules";
 import {
   MAX_TICKS_PER_DRAIN,
   TICK_MS,
@@ -9,7 +9,7 @@ import {
   drainTicks,
   stepMut,
 } from "@/lib/grainsnake/engine";
-import { DOWN, LEFT, RIGHT, UP, type Dir, type GameState } from "@/lib/grainsnake/types";
+import { DOWN, LEFT, RIGHT, UP, type Dir, type GameState, type ReplayLog } from "@/lib/grainsnake/types";
 import { paint } from "./render";
 import { createRecorder, verifyRun } from "./recorder";
 import { beginSwipe, endSwipe, feedSwipe, wasTap, type SwipeTracker } from "./swipe";
@@ -61,6 +61,8 @@ export interface GrainsnakeStats {
   score: number;
   length: number;
   goldens: number;
+  /** 1-based tier, so the HUD can show what the speed curve is doing. */
+  tier: number;
   tick: number;
   dead: boolean;
   filled: boolean;
@@ -75,6 +77,14 @@ export interface GrainsnakeHandle {
   pause(): void;
   resume(): void;
   steer(dir: Dir): void;
+  /**
+   * The recorded log for the finished run, or null while one is in progress.
+   *
+   * `(seed, inputs, ticks, engineVersion)` and nothing else — the submit path sends
+   * exactly this and the server recomputes the score from it. There is no score here
+   * to send, deliberately.
+   */
+  log(): ReplayLog | null;
 }
 
 const KEYS: Record<string, Dir> = {
@@ -164,6 +174,7 @@ export const GrainsnakeCanvas = forwardRef<
       score: s.score,
       length: s.length,
       goldens: s.goldensTaken,
+      tier: tierIndexFor(s.foodEaten) + 1,
       tick: s.tick,
       dead: s.dead,
       filled: s.filled,
@@ -335,6 +346,11 @@ export const GrainsnakeCanvas = forwardRef<
     },
     steer(dir: Dir) {
       pendingRef.current = dir;
+    },
+    log() {
+      const s = stateRef.current;
+      if (!s || (!s.dead && !s.filled)) return null;
+      return recorderRef.current.seal(s);
     },
   }));
 

@@ -107,10 +107,9 @@ describe("play surfaces", () => {
    * REMOVE an entry in the same commit that adds its card.
    */
   const UNLISTED_PLAY_SURFACES: ReadonlyArray<{ route: string; why: string }> = [
-    {
-      route: "/games/grainsnake",
-      why: "promoted for playtesting; the card waits for the leaderboard, so first-time players' death lengths are not spent on a build that records nothing",
-    },
+    // EMPTY, which restores the original stricter invariant: every play surface is a
+    // listed game. GRAINSNAKE's entry was removed 2026-08-07 when its leaderboard
+    // shipped and its card went into src/config/games.ts.
   ];
 
   it("every play-surface route is a game, or is a NAMED unlisted route", () => {

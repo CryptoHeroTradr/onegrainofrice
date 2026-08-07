@@ -42,37 +42,15 @@ export const games = [
     blurb:
       "Falling grains, one pair of chopsticks, and no floor to spare. The site's chopstick cursor is the controller.",
   },
-  /*
-   * GRAINSNAKE IS DELIBERATELY NOT HERE YET. *2026-08-07.*
-   *
-   * The route is live at `/games/grainsnake` and is a play surface; it is simply not
-   * ANNOUNCED. Adding the entry below is the announcement — it is not a card, it is
-   * four surfaces and a computed count word at once ("Three games, no install"
-   * becomes "Four"), so there is no quiet version of it.
-   *
-   * The reason to wait is the tier thresholds. They are placeholders (see
-   * `src/lib/grainsnake/rules.ts`) and what resolves them is the death-length
-   * distribution — where runs actually END. Nothing records a run until the
-   * leaderboard ships, so a public launch today spends the one cohort of genuine
-   * first-time players, whose death lengths are the most informative sample there
-   * will ever be, on a build that stores none of it.
-   *
-   *   {
-   *     slug: "grainsnake",
-   *     href: "/games/grainsnake",
-   *     emoji: "🐍",
-   *     title: "Grainsnake",
-   *     tagline: "One grain becomes many. That is the problem.",
-   *     blurb:
-   *       "Classic snake in the paddy. Every grain you eat joins the trail behind you, " +
-   *       "the board gets faster, and the only thing that can end a run is the route you " +
-   *       "already took.",
-   *   },
-   *
-   * WHEN THE LEADERBOARD LANDS: uncomment the above AND delete the `grainsnake`
-   * entry from `UNLISTED_PLAY_SURFACES` in `test/play-surfaces.test.ts`. Two files,
-   * one commit — the test fails loudly if only one of them is done.
-   */
+  {
+    slug: "grainsnake",
+    href: "/games/grainsnake",
+    emoji: "🐍",
+    title: "Grainsnake",
+    tagline: "One grain becomes many. That is the problem.",
+    blurb:
+      "Classic snake in the paddy. Every grain you eat joins the trail behind you, the board gets faster, and the only thing that can end a run is the route you already took.",
+  },
 ] as const;
 
 export type Game = (typeof games)[number];

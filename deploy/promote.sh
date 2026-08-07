@@ -98,18 +98,28 @@ pm2 restart "$PM2_APP"
 # This WARNS and never refuses. A hard failure here would block a rollback, and a
 # guard that can take down production is worse than the hazard it prevents — which
 # is the same rule that made the flag a declaration rather than a lockfile.
-if ! pm2 jlist 2>/dev/null | grep -q "CHOMP_DB_OWNER"; then
-  echo
-  echo "  !! WARNING: the running process has no CHOMP_DB_OWNER."
-  echo "     Builds carrying the RICE CHOMP leaderboard will answer 500 on"
-  echo "     /api/chomp/* until it is injected. This is a ONE-TIME step:"
-  echo
-  echo "         pm2 restart ecosystem.config.js --only onegrainofrice --update-env"
-  echo "         pm2 save"
-  echo
-  echo "     (Re-reads the config file, unlike the plain restart above. After"
-  echo "      pm2 save it persists, so later promotes need nothing.)"
-fi
+#
+# There are TWO such flags now (chomp and grainsnake), checked in one loop so a third
+# game is one word rather than a third copied paragraph.
+PM2_ENV="$(pm2 jlist 2>/dev/null || true)"
+for flag in CHOMP_DB_OWNER GRAINSNAKE_DB_OWNER; do
+  case "$flag" in
+    CHOMP_DB_OWNER)      api="/api/chomp/*" ;;
+    GRAINSNAKE_DB_OWNER) api="/api/grainsnake/*" ;;
+  esac
+  if ! printf '%s' "$PM2_ENV" | grep -q "$flag"; then
+    echo
+    echo "  !! WARNING: the running process has no $flag."
+    echo "     Builds carrying that leaderboard will answer 500 on"
+    echo "     $api until it is injected. This is a ONE-TIME step:"
+    echo
+    echo "         pm2 restart ecosystem.config.js --only onegrainofrice --update-env"
+    echo "         pm2 save"
+    echo
+    echo "     (Re-reads the config file, unlike the plain restart above. After"
+    echo "      pm2 save it persists, so later promotes need nothing.)"
+  fi
+done
 
 echo
 echo "=== promoted $ID · repo HEAD $SHA · $DIRTY dirty ==="
