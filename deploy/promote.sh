@@ -44,6 +44,14 @@ CURRENT_LINK="$(readlink .next 2>/dev/null || true)"   # empty if .next is a rea
 echo "=== onegrainofrice · promote ==="
 echo "target:   $TARGET   (BUILD_ID $(cat "$TARGET/BUILD_ID"))"
 echo "current:  ${CURRENT_LINK:-<./.next is a real directory — first promote>}"
+# THE ROLLBACK COMMAND, UP FRONT AND READ FROM THE SYMLINK RATHER THAN REMEMBERED.
+# It is also printed at the end, but the end is ~90 lines and a pm2 restart away: if
+# this promote wedges, the operator needs the way back on screen BEFORE the switch, not
+# after it. Reported by hand once and reported wrong once — the value below is the only
+# authority, so quote this line rather than recalling what was live.
+if [ -n "${CURRENT_LINK#builds/}" ] && [ "$CURRENT_LINK" != "$CURRENT_LINK#builds/" ]; then
+  echo "replacing ${CURRENT_LINK} — rollback: deploy/promote.sh ${CURRENT_LINK#builds/}"
+fi
 echo
 
 # What to roll back to after THIS promote (printed at the end).
