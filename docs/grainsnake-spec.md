@@ -328,6 +328,45 @@ Two consequences that are NOT bugs and should not be "fixed":
   above for the HUD and below for the swipe hint and the optional d-pad, which is the
   layout the touch controls were designed around on chomp and works better here.
 
+**15px IS THE FLOOR, NOT THE SIZE — AND THERE ARE THREE LAYOUTS, NOT TWO.** *Added
+2026-08-08, out of a desktop bug report.*
+
+`boardScale()` returns integer multiples of 15 (15, 30, 45) because a non-integer scale
+resamples the grain silhouettes and reintroduces the smudge the size gate ruled out. The
+gate validated 15px as the smallest that READS; it was never the intended desktop size.
+It should return **45 at 1440p, 30 at 1080p and at 1440×900, and 15 on a phone.**
+
+Two separate defects had it pinned at 15 everywhere, and both are worth recording
+because both are invisible in the code that causes them:
+
+1. **A `landscape:` variant is `@media (orientation: landscape)`, which every desktop
+   monitor matches.** The phone-landscape branch — three columns, written for a 390px-tall
+   window — was being applied to a 2560px screen, so the HUD sat against the left edge
+   and the controls were stranded mid-right with 1,700px of paddy between them. The
+   branch is scoped `max-lg:landscape:` now: under 1024px WIDE, which is every phone in
+   landscape and no desktop.
+2. **`min-height` is not a definite height, so `flex-1` had nothing to divide.** With the
+   page on `min-h-screen`, `main` was laid out from its content, the board's `flex-1`
+   received no spare space, and the board container's height came from the canvas —
+   whose size is measured from the container. That loop has a fixed point at the floor
+   and it is silent: the board was the SAME 345px at 1440×900 and at 2560×1440, which is
+   the symptom to look for. The page is `h-[100svh]` now, the same construction RICE
+   CHOMP uses and for the same reason.
+
+**Anything that consumes height consumes board.** The d-pad is 192px of the controls
+column, which at 1920×1080 took the available height one pixel below what a 30px cell
+needs and halved the board the moment the toggle was flipped. It is 140px from `lg:` up.
+Whenever a control is added to this page, check the board scale at 1440×900 — the
+tightest of the three desktop sizes — before and after.
+
+**An overlay centred inside a scroll container clips its own title.**
+`items-center justify-center` + `overflow-y-auto` overflows equally in both directions
+and a scroller cannot reach what is above its top edge. The overlays use `m-auto` on the
+inner panel instead: identical centring when there is room, top-aligned and fully
+scrollable when there is not. All four panels share one container, so this is one fix.
+The scroller stays for phone landscape, where a 380px panel genuinely does not fit in
+345px of board.
+
 ### 23 IS SETTLED. THE GATE PASSED.
 
 *Decided 2026-08-06. The number was provisional for one day and is not provisional any

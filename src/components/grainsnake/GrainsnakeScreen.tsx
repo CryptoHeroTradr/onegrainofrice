@@ -186,18 +186,60 @@ export function GrainsnakeScreen() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-nori text-steamed">
+    /*
+     * ── `h-[100svh]`, NOT `min-h-screen`, AND IT IS THE WHOLE OF THE SCALE FIX ─────
+     * *Changed 2026-08-08.* `min-height` is not a definite height. A column flex
+     * container sized by `min-h-screen` is still laid out from its CONTENT, so there is
+     * no spare space for `flex-1` to distribute — `main` got its content height, the
+     * board's `flex-1 min-h-0` got nothing extra, and the board's height came from the
+     * canvas, whose size is measured from the board. `boardScale()` then had a fixed
+     * point at its floor and returned 15px on a 1440p monitor exactly as on a phone.
+     *
+     * A definite height breaks the loop: `main` gets 100svh minus the nav, the board
+     * gets what the HUD and the controls leave, and the measurement finally describes
+     * the screen. This is the same construction RICE CHOMP uses and for the same
+     * reason — see its shell, which spells out that `min-height` gives descendants
+     * nothing to resolve against.
+     *
+     * `svh` rather than `vh` so mobile browser chrome hiding does not resize the board
+     * mid-run, and `overflow-hidden` because a game page owns its viewport.
+     */
+    <div className="flex h-[100svh] min-h-0 flex-col overflow-hidden bg-nori text-steamed">
       <JourneyNav />
 
       {/*
-        PORTRAIT: HUD above, board centred, controls under the thumb.
-        LANDSCAPE: the same three side by side — a 400px-tall window has no vertical
-        budget for a HUD row AND a control cluster. The board keeps one 1fr slot in both.
+        THREE LAYOUTS, AND THE MIDDLE ONE USED TO EAT THE THIRD.
+
+        - **Base (portrait, and any narrow window):** HUD above, board centred,
+          controls under the thumb. The board takes the one `flex-1` slot.
+        - **Phone landscape** (`max-lg:landscape:`): the same three side by side,
+          because a 390px-tall window has no vertical budget for a HUD row AND a
+          control cluster.
+        - **Desktop** (`lg:`): the base column, centred, with the board allowed to
+          grow and the HUD clustered over it rather than spread to the window edges.
+
+        *Fixed 2026-08-08.* The middle branch was written as bare `landscape:`, which is
+        `@media (orientation: landscape)` — true of every desktop monitor ever made. So
+        a 2560×1440 screen got a layout designed for a 390px-tall phone: HUD pinned to
+        the far left, controls stranded mid-right, and 1,700px of empty paddy between
+        them. It is scoped to `max-lg` now — under 1024px WIDE — which is every phone in
+        landscape and no desktop.
+
+        **The stretching was not the whole story, and this is the part worth keeping.**
+        `landscape:items-center` also stopped the board's container stretching to the
+        row's height, so the container's height came from its own content — the canvas —
+        whose size is measured FROM the container. That loop has a fixed point at the
+        floor: 15px cells, 345px board, 345px container, measure again, 15px. Identical
+        at 1440×900 and 2560×1440, which is the tell. The column layout has no such loop
+        because `flex-1 min-h-0` gives the board a real height to be measured against.
       */}
-      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 landscape:flex-row landscape:items-center landscape:gap-4 lg:landscape:gap-8">
+      <main className="flex min-h-0 flex-1 flex-col px-3 pb-3 max-lg:landscape:flex-row max-lg:landscape:items-center max-lg:landscape:gap-4 lg:px-6 lg:pb-4">
         <div
           translate="no"
-          className="mx-auto flex w-full max-w-[720px] items-end justify-between gap-3 py-2 landscape:mx-0 landscape:w-auto landscape:max-w-none landscape:flex-col landscape:items-start landscape:gap-5 landscape:py-0"
+          // `lg:justify-center` rather than `justify-between`: spread across a 2560px
+          // window the four stats are four separate things at four different places,
+          // and the point of the desktop branch is that the HUD belongs to the board.
+          className="mx-auto flex w-full max-w-[720px] items-end justify-between gap-3 py-2 max-lg:landscape:mx-0 max-lg:landscape:w-auto max-lg:landscape:max-w-none max-lg:landscape:flex-col max-lg:landscape:items-start max-lg:landscape:gap-5 max-lg:landscape:py-0 lg:max-w-[1100px] lg:justify-center lg:gap-12 lg:py-2"
         >
           <Stat label="Score" value={stats.score.toLocaleString()} />
           <Stat label="Length" value={String(stats.length)} />
@@ -205,7 +247,9 @@ export function GrainsnakeScreen() {
           <Stat label="Tier" value={`${stats.tier}/${TIERS.length}`} tone="text-khaki" />
         </div>
 
-        <div className="relative mx-auto flex w-full max-w-[720px] min-h-0 flex-1 items-center justify-center overflow-auto landscape:mx-0">
+        {/* `lg:max-w-[1100px]` is what lets the board reach 45px cells (23 × 45 = 1035)
+            on a tall desktop while keeping the column a unit rather than a screen. */}
+        <div className="relative mx-auto flex w-full max-w-[720px] min-h-0 flex-1 items-center justify-center overflow-auto max-lg:landscape:mx-0 lg:max-w-[1100px]">
           <GrainsnakeCanvas ref={gameRef} reduced={reduced} onStats={onStats} />
 
           {panel === "menu" && !over && (
@@ -379,16 +423,37 @@ export function GrainsnakeScreen() {
           )}
         </div>
 
-        <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-2 pt-2 landscape:mx-0 landscape:w-auto landscape:max-w-none landscape:pt-0">
+        <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-2 pt-2 max-lg:landscape:mx-0 max-lg:landscape:w-auto max-lg:landscape:max-w-none max-lg:landscape:pt-0 lg:max-w-[1100px] lg:pt-3">
           {dpad && (
             <TouchControls
               onSteer={(d: Dir) => gameRef.current?.steer(d)}
-              className="h-[168px] w-[168px] sm:h-[192px] sm:w-[192px]"
+              /*
+               * SMALLER ON DESKTOP, and it is a board-size decision rather than a
+               * styling one. *2026-08-08.* The d-pad sits in the controls column, so
+               * every pixel of it comes off the board's `flex-1` slot — and because
+               * `boardScale()` steps in whole multiples of 15, a 192px pad at 1920×1080
+               * took the available height from 886 to 686, one pixel under the 690 a
+               * 30px cell needs, and HALVED the board to 15px the moment the toggle was
+               * flipped. A thumb needs 192px; a mouse pointer does not.
+               */
+              className="h-[168px] w-[168px] sm:h-[192px] sm:w-[192px] lg:h-[140px] lg:w-[140px]"
             />
           )}
-          <div className="flex w-full items-center justify-between gap-4 landscape:flex-col landscape:items-stretch landscape:gap-2">
-            <p className="font-mono text-[0.65rem] text-steamed/40 landscape:hidden">
-              Swipe the board to steer
+          {/* THE "Menu" BUTTON'S HOME. *Placed deliberately 2026-08-08.* It was
+              floating alone mid-right of a 2560px screen: this row is the phone
+              landscape control cluster, and its two siblings are `landscape:hidden`, so
+              on a desktop that matched the landscape branch the button was the only
+              thing left in it. With the branch scoped to phones the row is a real
+              controls row again — hint, Menu, and the paddy link below. */}
+          <div className="flex w-full items-center justify-between gap-4 max-lg:landscape:flex-col max-lg:landscape:items-stretch max-lg:landscape:gap-2 lg:justify-center lg:gap-8">
+            {/* The hint names the control the reader actually has. Swipe is the primary
+                control on touch and does not exist on a desktop, where telling someone
+                to swipe a board is telling them the wrong thing. */}
+            <p className="font-mono text-[0.65rem] text-steamed/40 max-lg:landscape:hidden">
+              <span className="[@media(pointer:fine)]:hidden">Swipe the board to steer</span>
+              <span className="hidden [@media(pointer:fine)]:inline">
+                Arrow keys or WASD to steer · P to pause
+              </span>
             </p>
             <button
               type="button"
@@ -400,7 +465,7 @@ export function GrainsnakeScreen() {
           </div>
           <Link
             href={PADDY_HREF}
-            className={`font-mono text-[0.65rem] text-steamed/40 hover:text-steamed landscape:hidden ${FOCUS}`}
+            className={`font-mono text-[0.65rem] text-steamed/40 hover:text-steamed max-lg:landscape:hidden ${FOCUS}`}
           >
             {PADDY_LABEL}
           </Link>
@@ -428,12 +493,27 @@ function Overlay({
   wide?: boolean;
 }) {
   return (
+    /*
+     * ── `m-auto` ON THE INNER, NOT `justify-center` ON THE SCROLLER ────────────────
+     * *Fixed 2026-08-08.* This was `items-center justify-center overflow-y-auto`, which
+     * is the classic way to build an overlay that clips its own title: when the content
+     * is taller than the box, `justify-content: center` overflows it EQUALLY in both
+     * directions and a scroll container cannot reach what has been pushed above its top
+     * edge. On desktop that meant the GRAINSNAKE heading was cut off and the last menu
+     * option was below the fold, inside a scrollbar on a 1440px-tall screen.
+     *
+     * `margin: auto` on the child centres it exactly the same way when there is room
+     * and degrades to top-aligned — fully scrollable — when there is not. The scroller
+     * stays as the last resort for a genuinely short window (a phone in landscape has
+     * ~330px of board to put a 380px panel in); at any normal size it never engages,
+     * which is the actual requirement: an overlay sizes to its content.
+     */
     <div
-      className={`absolute inset-0 flex flex-col items-center justify-center overflow-y-auto bg-nori/90 p-4 text-center ${
+      className={`absolute inset-0 flex overflow-y-auto bg-nori/90 p-4 text-center ${
         passThrough ? "pointer-events-none" : ""
       }`}
     >
-      <div className={`flex w-full flex-col items-center gap-4 ${wide ? "max-w-md" : "max-w-xs"}`}>
+      <div className={`m-auto flex w-full flex-col items-center gap-4 ${wide ? "max-w-md" : "max-w-xs"}`}>
         {children}
       </div>
     </div>
