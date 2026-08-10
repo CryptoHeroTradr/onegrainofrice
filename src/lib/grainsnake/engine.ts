@@ -100,16 +100,26 @@ export function rowOf(cell: number): number {
 }
 
 /**
- * The cell one step from `cell` in direction `d`, or -1 if that leaves the board.
+ * The cell one step from `cell` in direction `d`. **THE BOARD WRAPS ON BOTH AXES.**
  *
- * The wall is a BORDER, not a tile: leaving the grid is the collision, and there is
- * nothing inside the field to hit but the snake itself. -1 rather than a wrap,
- * because this game does not wrap and a silent wrap is the bug that would hide it.
+ * *Changed 2026-08-08 (`ENGINE_VERSION` 1 → 2). This function used to return -1 when
+ * the step left the grid, and its comment said "-1 rather than a wrap, because this
+ * game does not wrap and a silent wrap is the bug that would hide it." That was true
+ * of the old rules and is recorded because it was a decision, not an oversight — see
+ * the spec's* The board*. The game wraps now, so this ALWAYS returns a real cell.*
+ *
+ * **It can no longer fail, and that is the point.** There is no -1 path left, no
+ * `wrap` flag to consult and no mode to be in: a flag would be representable state
+ * that no rule reads, and it would mean the replayer had to be told which geometry a
+ * trace was played under instead of reading it off `engineVersion`. One geometry.
+ *
+ * `+ COLS` / `+ ROWS` before the modulo because JavaScript's `%` keeps the sign of the
+ * dividend — `-1 % 23` is `-1`, not `22`, which would index outside the board and read
+ * `undefined` through an untyped array.
  */
 export function neighbour(cell: number, d: Dir): number {
-  const c = colOf(cell) + DX[d];
-  const r = rowOf(cell) + DY[d];
-  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return -1;
+  const c = (colOf(cell) + DX[d] + COLS) % COLS;
+  const r = (rowOf(cell) + DY[d] + ROWS) % ROWS;
   return r * COLS + c;
 }
 
@@ -329,13 +339,10 @@ function drainTurn(state: GameState): void {
 function advanceOneCell(state: GameState): void {
   drainTurn(state);
 
+  // Always a real cell: the board wraps, so there is no off-board step to test for.
+  // The wall check that used to sit here is GONE rather than made conditional — see
+  // `neighbour()` above and the spec's *The board*.
   const next = neighbour(segmentAt(state, 0), state.dir);
-
-  // The border. Leaving the grid is the wall.
-  if (next < 0) {
-    state.dead = true;
-    return;
-  }
 
   const eatsGrain = next === state.grain;
   const eatsGolden = next === state.golden;
@@ -347,6 +354,15 @@ function advanceOneCell(state: GameState): void {
    * vacate is not a collision: a snake moving into the square its own tail leaves on
    * the same step survives. Getting this wrong makes tight turns randomly fatal at
    * exactly the lengths where a player is proudest of them.
+   *
+   * **SINCE THE BOARD WRAPS THIS IS THE ONLY DEATH LEFT, AND THEREFORE THE ONLY
+   * EXCEPTION LEFT.** It is also, quietly, where wrapping self-collision is handled:
+   * `next` came out of `neighbour()` already reduced modulo the board, so a head
+   * leaving the top and arriving at the bottom indexes `occupied` at the cell it
+   * actually arrived in. That is the naive implementation's bug — make the position
+   * modular and leave the occupancy test reading an unwrapped index, and the snake
+   * passes through itself at the seam and nowhere else. There is one cell index here
+   * and both reads use it.
    *
    * The exemption is void when the snake is growing, because then the tail does not
    * move. (Food never spawns inside the trail, so `grows && next === tail` cannot

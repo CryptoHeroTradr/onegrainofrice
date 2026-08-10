@@ -30,6 +30,17 @@ export interface WirePlayer {
   code: string | null;
   /** True once this player has ever filled the board. */
   filled: boolean;
+  /**
+   * The `ENGINE_VERSION` this player's best run was played under, or null when it is
+   * not known.
+   *
+   * DISPLAY ONLY. The board marks a row whose version differs from the one this build
+   * implements — never a row equal to some literal, because "old" is relative to today
+   * and hardcoding `=== 1` means the marker silently stops working at version 3. The
+   * score is untouched by this in every sense: nothing recomputes, nothing migrates,
+   * and the row is not in doubt. It says which rules were in force, and that is all.
+   */
+  engineVersion: number | null;
 }
 
 /** The submitting player's own standing, whether or not they are on the board. */

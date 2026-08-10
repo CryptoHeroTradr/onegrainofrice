@@ -268,8 +268,8 @@ export function GrainsnakeScreen() {
                   tier {TIERS.length}. Later grains are worth more.
                 </li>
                 <li>
-                  <strong className="text-steamed">One life.</strong> The wall and your own trail
-                  both end the run.
+                  <strong className="text-steamed">One life.</strong> The edges wrap — go off one
+                  side and you come back the other. Only your own trail ends the run.
                 </li>
               </ul>
               <button type="button" className={BTN} onClick={() => setPanel("menu")} autoFocus>

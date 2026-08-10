@@ -42,6 +42,7 @@ export function GET(req: Request): Response {
       goldens: p.best_goldens,
       code: p.country_code,
       filled: p.filled === 1,
+      engineVersion: p.best_engine_version,
     }));
 
     const row = vid ? getYou(vid) : null;

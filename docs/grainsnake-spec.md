@@ -16,8 +16,8 @@ where this game needs a different answer, the difference is stated as a differen
 ## What this is
 
 Classic snake, $RICE-flavoured: a grain of rice grows into a line of grains as it eats,
-on an open paddy square, and dies on the paddy wall or on itself. One life, one run, one
-score.
+on an open paddy square that **wraps at every edge**, and dies on itself. One life, one
+run, one score.
 
 **Originality constraint.** Snake is a genre, not a property — the mechanic predates
 every branded version of it and there is nothing here to homage or avoid. What still
@@ -64,7 +64,7 @@ Carried over from `docs/rice-chomp-spec.md`, unchanged and not re-argued:
     oversized original left beside its optimised version is still shipped to every
     visitor; removing it is part of the conversion, not tidying afterwards.
   - **The opening position is that this game ships with NO images at all.** A square of
-    paddy, a line of grains and a wall are three procedural shapes, and chomp's 316 KB
+    paddy, a line of grains and an edge treatment are three procedural shapes, and chomp's 316 KB
     went almost entirely on one wall texture for a maze with 200 wall tiles. If an
     image earns its place later it is subject to the budget above; it does not get to
     arrive because the budget exists.
@@ -154,8 +154,11 @@ Carried over from `docs/rice-chomp-spec.md`, unchanged and not re-argued:
      is drawn between `prevCell` and `currentCell` — the cell it came from and the cell
      the simulation has already put it in. It is never drawn between `currentCell` and a
      predicted next cell. Leading requires extrapolating along the direction vector,
-     which draws the head *inside the wall* on the step before the collision resolves,
-     so the player watches the death happen a frame after it visibly already had. The
+     which draws the head *inside its own trail* on the step before the collision
+     resolves, so the player watches the death happen a frame after it visibly already
+     had. (*This read "inside the wall" until 2026-08-08. The board wraps now and the
+     trail is the only thing left to be drawn inside of — the rule is unchanged and its
+     one remaining failure case is the one that always mattered.*) The
      cost of lagging is exactly one step of visual latency — 67 ms at tier 7, 167 ms at
      tier 1 — and that is the correct trade.
   2. **Each segment interpolates toward its SUCCESSOR CELL, not along the current
@@ -170,7 +173,7 @@ Carried over from `docs/rice-chomp-spec.md`, unchanged and not re-argued:
      resuming fires a burst of steps for the time spent in the menu; and the *fraction*
      must be held at its last value, or the trail keeps sliding smoothly between cells
      after the simulation has stopped — a paused snake visibly still moving, and a dead
-     one still gliding into the wall that killed it.
+     one still gliding into the trail that killed it.
 
 ## Route and information architecture
 
@@ -226,11 +229,96 @@ rather than in a later phase on purpose — see *Anti-cheat*.
 
 ## The board
 
-- **23 × 23 cells**, square, walled on all four sides. Odd on both axes so there is a
-  true centre cell to start on and a true centre column to start pointing along.
-- The wall is a *border*, not a tile type inside the field: there are no interior
-  obstacles. The board is empty and the snake is the only thing on it that can kill the
-  snake. That is the genre and it is also the design — see *What this is NOT*.
+- **23 × 23 cells**, square, and it **WRAPS ON BOTH AXES**. Odd on both axes so there is
+  a true centre cell to start on and a true centre column to start pointing along.
+- There are no interior obstacles and now no exterior ones either. **The snake is the
+  only thing on this board that can kill the snake** — which this file has claimed since
+  it was written, and which is only now literally true.
+
+### THE BOARD WRAPS. WALLS WERE THE ASSUMPTION; WRAPPING IS THE RULE.
+
+*Changed 2026-08-08, Lito's call. Recorded rather than substituted, because the wall was
+not a stray detail — it was in this section, in* The snake*, in* Food*, in the engine's
+`neighbour()` and in the attract screen's copy, and a reader who finds the wrap and no
+history will assume the wall was an oversight. It was not. It was a decision, and this is
+a different one.*
+
+**What it was.** The four borders were fatal. Leaving the grid was the collision;
+`neighbour()` returned -1 and the run ended.
+
+**What it is.** Going off an edge brings the snake out of the opposite side, on the same
+row or column. Cell arithmetic is modular on both axes. **Self-collision is the only
+death.**
+
+**Why.** Two reasons, and the second is the one that decides it:
+
+1. It is what the '90s game did. This game is an explicit homage and the wall was a
+   departure from it that nothing here asked for.
+2. **A wall death is a death the player did not build.** Everything else in this game
+   kills you with something you made: the trail is your own past route, and the whole
+   design rests on *length is the difficulty*. A border is the one hazard on the board
+   that the player did not put there, and removing it makes the sentence above — the one
+   this section already contained, and the reason there are no interior obstacles —
+   true without qualification instead of true apart from four edges.
+
+**It is not a mode, a toggle or a flag.** There is no `wrap: boolean` anywhere, in state
+or in rules. A flag would be representable state that no rule reads, which is the thing
+*The one hard constraint this game adds* forbids by name, and it would additionally mean
+the replayer could be handed a run whose geometry it has to be told about. There is one
+geometry. The version constant is how a run says which one it was played under.
+
+**What this costs, stated rather than discovered:** the early game is now unloseable, and
+exactly how unloseable is measured immediately below. The golden grain's travel budget was
+tuned against a distance that has halved — see *Food*. And the renderer now has a case it
+did not have: a segment that crosses a seam, which is in *Rendering the trail*.
+
+### THE FIRST TWO GRAINS CANNOT KILL YOU. THE THIRD CAN.
+
+*Measured 2026-08-08, not argued: an exhaustive search over every reachable body shape at
+each length, canonicalised by translating the head to the origin — which the torus makes
+an exact symmetry — and closed under non-growing moves as well as growing ones, so it is
+every shape the snake can be in and not merely every shape it can eat its way into.*
+
+| length | reachable shapes | lethal moves available |
+|---|---|---|
+| 3 (start) | 12 | **0** |
+| 4 | 36 | **0** |
+| 5 | 100 | 16 |
+| 6 | 284 | 48 |
+
+**Death is impossible below length 5.** The reason is short enough to state in full, and
+worth stating because it is what makes the number exact rather than empirical:
+
+- The head can never enter segment 1. Moving there *is* the reversal, and a reversal is
+  discarded rather than queued (*Controls*).
+- The head can never enter segment 2. Two steps of a self-avoiding walk leave the head at
+  a torus-Manhattan distance of exactly 2 — whether the two steps were straight or a
+  turn — and 23 is far too wide for a wrap to bring them back adjacent.
+- Segment 3 **can** be adjacent to the head, via a U-turn. But at length 4 segment 3 is
+  the *tail*, and the tail cell it is about to vacate is exempt (*The snake*). Food never
+  spawns on the body, so a step into the tail can never also be a growing step, which is
+  the only case where the exemption is void.
+- At length 5 segment 3 is no longer the tail and the U-turn kills.
+
+So: **length 3 and length 4 are safe by construction, length 5 is the first length that
+can end a run, and length 5 is `START_LENGTH + 2`. The first two grains carry no risk
+whatsoever; the third grain is the first one a player can die chasing.**
+
+**Difficulty now begins when the trail is long enough to trap you, not at tick 0.** Under
+the wall rule the first tick was already lethal — the snake starts pointing RIGHT eleven
+cells from the east border, so a player who pressed nothing died in under two seconds at
+tier 1. That is gone. The opening is a free run of two grains, and the difficulty curve
+starts from the third.
+
+Two consequences that are NOT bugs and should not be "fixed":
+
+- **A player who touches nothing after starting never dies.** They circle the torus
+  forever at length 3. The run has no terminator until they eat, which is correct: one
+  life ends on a death or a full board (*Scoring*) and neither has happened.
+- **The tier-1 threshold (0–7 food) now contains a risk-free prefix of 2.** Two of the
+  eight grains in the opening tier cannot kill you. That is a change to the difficulty
+  curve's left-hand end and it is the strongest single reason the thresholds below are
+  now more provisional than they were.
 - **529 cells, of which one is the head at t=0.** The maximum attainable length is
   therefore 529 and the game has a real, reachable end state. Filling the board is a win
   and is worth saying so on screen — it is the highest score in the game **by
@@ -361,6 +449,58 @@ one requirement, not two:
   frame — a trail that shimmers as it is redrawn is worse than either failure mode, and
   the render layer must not acquire state the simulation does not have.
 
+### A WRAPPING SEGMENT IS DRAWN TWICE, AT BOTH EDGES
+
+*Added 2026-08-08, with the wrap. This is the renderer's half of that change and it is
+the half that breaks visibly, so it is a requirement rather than a note.*
+
+The renderer interpolates every grain from where it came to where it is (*Hard
+constraints*, rules 1 and 2). A grain that has just wrapped came from column 22 and is at
+column 0, so the straight-line interpolation between them **streaks the entire width of
+the board** — a grain travelling backwards across the whole screen at once per wrap,
+which is both wrong and the most eye-catching thing on the page.
+
+**Every wrapping segment renders at both edges: drawn twice, the second copy offset by
+exactly one board width or height, so it leaves one side as it enters the other.** Not
+clipped, not skipped, not snapped — a skipped grain is a hole in the trail at the seam and
+a snapped one teleports.
+
+- **It applies to the head, the body and the tail alike.** The head is the one a player is
+  watching, the body is where a hole would read as a gap they could steer through — which
+  is the *unfair-feeling death* this whole section exists to prevent — and the tail's
+  origin comes from `vacatedCell`, which wraps too.
+- **A FUSED TRAIL MUST STAY FUSED ACROSS THE SEAM.** The overlap rule above is not
+  suspended at the edge. Two consecutive grains straddling the boundary have to show the
+  same merged rim they show anywhere else, which is precisely what drawing both copies
+  buys: the grain behind is still drawn at the edge the grain ahead is leaving.
+- The offset is a whole board width or height in board units, applied before scaling —
+  so it is exact at any cell size and does not accumulate rounding.
+
+### THE BORDER MUST READ AS PASSABLE
+
+*Added 2026-08-08.* The board currently has an inset lip drawn around it, which reads as a
+paddy bund: a raised edge, the thing you do not cross. That was correct when it was fatal
+and it is now **actively misleading** — a player who believes the edge kills will avoid a
+side of the board that is not merely safe but is a route, and the wrap's whole gameplay
+contribution is the routes it opens.
+
+This is the same argument as the beaded trail, in the opposite direction: there, the
+picture under-reported a hazard; here, it reports one that does not exist. **The player
+steers off the picture, not off the model**, and both failures are that sentence.
+
+So the edge treatment changes. What it must achieve, in priority order — the specific
+drawing is the renderer's business:
+
+1. **It must not read as a solid boundary.** No continuous unbroken line around the
+   field.
+2. **It should read as continuation** — that what leaves here arrives opposite. A broken
+   or dashed edge, or a treatment that visually pairs opposing sides, does this; a
+   softened version of the same solid lip does not.
+3. **It must not compete with the trail.** The board is read at 15 cells a second and the
+   edge is decoration; anything bright or high-contrast enough to pull the eye is worse
+   than no edge at all. The palette rule stands — **the paddy may not drift lighter**
+   (*Hard constraints*), and that includes its border.
+
 ## The snake
 
 - Starts at the centre cell, **length 3**, pointing RIGHT, and **does not move until the
@@ -370,11 +510,16 @@ one requirement, not two:
 - Eats a grain by entering its cell. Length grows by 1. **The tail does not advance on
   the step that eats**, which is the standard construction and the only one where the
   drawn length and the stored length agree on every frame.
-- **Dies on the border wall, and on any cell its own body occupies** — with one exact
+- **Dies on any cell its own body occupies, and on nothing else** — with one exact
   exception, stated because it is the classic off-by-one in this genre: **the tail cell
   the tail is about to vacate is not a collision.** A snake moving into the square its
   own tail leaves on the same step survives. Getting this wrong makes tight turns
   randomly fatal at exactly the lengths where a player is proudest of them.
+  - *This line read "Dies on the border wall, and on any cell its own body occupies"
+    until 2026-08-08. The board wraps now and the border is gone; see* The board *for the
+    change and its reasoning.* **The tail exemption is unchanged and is now the only
+    exception left in the death rule**, which makes it the single most load-bearing
+    conditional in the engine rather than one of two.
 - **ONE LIFE. NO CONTINUES.** Chomp has three and this has one, deliberately:
   - A life that restarts you at length 3 is not a second chance, it is a second game.
   - A life that preserves your length is not a penalty, because length *is* the
@@ -436,6 +581,38 @@ one requirement, not two:
       real geometry question for the whole run, and the escalating difficulty comes from
       routing around your own trail rather than from the clock.
 
+  - **⚠ THE 40 IS NOW TUNED AGAINST A DISTANCE THAT NO LONGER EXISTS. FLAGGED, NOT
+    CHANGED.** *2026-08-08, with the wrap. Lito's instruction was explicitly to flag it
+    and leave the number alone, and the number is still 40.*
+
+    **The maximum Manhattan distance on a 23 × 23 torus is 22, not 44.** Wrapping halves
+    it on both axes at once: the farthest any cell can be from any other is 11 columns
+    and 11 rows, because a further column is nearer the other way round.
+
+    The paragraph above chose 40 *because* it sat "just under the 44-cell diagonal" — the
+    whole argument was that a golden grain might be barely out of reach, and that this
+    kept "can I get there and back into space?" a live geometry question. Against 22 that
+    argument is gone: **40 steps is enough to cross the entire board and still have 18
+    left**, so a golden grain is now essentially always reachable and the only remaining
+    cost of going for one is the routing detour past your own trail. That is not nothing
+    — at length 200 the detour is the whole difficulty — but it is a *different* decision
+    from the one this section describes, and early in a run there is no decision at all.
+
+    So this is recorded as **the golden grain's decision needing a re-look, not as a
+    number needing an edit.** It is left at 40 deliberately:
+
+    - Changing it is an `ENGINE_VERSION` bump in its own right, and bundling a
+      difficulty re-tune into the commit that changes the board's topology would make
+      both changes unmeasurable — a run that scores differently afterwards could be
+      either.
+    - The right replacement is not obvious. 20 would restore the "just under the maximum
+      distance" property literally, and might make the grain unreachable in practice
+      rather than tight, because 20 steps of *routing* around a long trail is not 20
+      steps of straight-line travel. That needs the same thing the tier thresholds need:
+      runs to look at.
+    - **Do not change it as tidying.** Whoever changes it should be able to say what
+      they measured.
+
 ## Speed
 
 **The speed curve is authored in integer TICKS PER STEP, not in cells per second.** This
@@ -475,6 +652,34 @@ spend it in one frame.
   (1.11 → 1.25) are a clean geometric acceleration and need no help. **Everything that
   can actually be tuned about the difficulty curve is the food-count column**, and any
   future "the curve is wrong" conversation is a conversation about those seven numbers.
+- **⚠ AND THOSE SEVEN NUMBERS ARE MORE PROVISIONAL SINCE THE BOARD STARTED WRAPPING.**
+  *2026-08-08. They were already marked as placeholders — never measured against a
+  player — and this is a second, independent reason they are not to be trusted, recorded
+  where the mark already is rather than as a new caveat somewhere else.*
+
+  The wrap moved the risk curve, not just the geometry. Three specific ways, all of them
+  in the left-hand end of this table where the placeholder shape is least defensible:
+
+  1. **Tier 1 now contains a risk-free prefix of two grains** (*The board*): death is
+     impossible below length 5, so 2 of tier 1's 8 items cannot end a run. A tier tuned
+     for "roughly 20 s of wall-clock" was tuned on the assumption that all 20 of those
+     seconds were survivable-but-losable.
+  2. **The wall was carrying difficulty that no longer exists, and it was carrying most
+     of it early.** At length 3 on a walled board the hazard was entirely the border; the
+     trail was too short to matter. That hazard is gone and nothing replaced it, so the
+     opening is not merely safer — it is a different shape of difficulty from what these
+     numbers were drawn against.
+  3. **The late game barely moved.** At length 200 the board is mostly trail and the wrap
+     buys a little routing freedom at the seams and nothing else. So the wrap did not
+     scale the curve, it **tilted** it: it flattened the start and left the end alone,
+     which is exactly the shape a threshold table cannot express by having its numbers
+     nudged uniformly.
+
+  The instrument that resolves them is unchanged and is still absent — *where runs
+  actually end*, from `grainsnake_runs`, after the game has been played. What has changed
+  is that any run recorded before this rule change is now the wrong data for it, because
+  it was played on a board with an extra hazard. **The distribution has to be gathered
+  again from the wrapping engine.**
 - **Tier 6 is deliberately more than twice as long as tier 5 (30 items against 13) —
   because it is where competent players actually live.** *Reason replaced 2026-08-06,
   Lito's review; the widening is unchanged and the superseded reason is recorded below
@@ -909,6 +1114,18 @@ everything passes a suite of valid runs perfectly.
 - Pure-logic modules unit tested under the existing DOM-free vitest setup.
 - **`/games/grainsnake` is in `PLAY_SURFACE_ROUTES` and `test/play-surfaces.test.ts`
   covers it by name**, in both directions.
+- **THE BOARD WRAPS, AND IT IS ASSERTED ON ALL FOUR EDGES AND AT ALL FOUR CORNERS.**
+  Corners specifically, because a corner is where both axes wrap on consecutive steps and
+  an implementation that gets one axis right can still get the pair wrong.
+  - **Self-collision THROUGH a wrap is a death.** Moving off the top into your own trail
+    at the bottom ends the run. This is the assertion a naive implementation misses: it
+    is easy to make the head's position modular and leave the occupancy test reading a
+    cell index that was never wrapped, which produces a snake that passes through itself
+    at the seam and nowhere else.
+  - Growth, scoring and food spawn are unaffected by a wrap — a grain eaten after
+    wrapping is worth exactly what it was worth before.
+  - Determinism holds across a wrapping run at 120/60/45 Hz, and a wrapping run replays
+    to the same score.
 - **A full board is winnable.** Not "reachable in principle" — asserted, by a bot in
   `test/grainsnake-replay.test.ts` that fills the board on a fixed seed. A snake game
   whose win state is unreachable because of a tail-collision off-by-one looks completely
@@ -919,5 +1136,26 @@ everything passes a suite of valid runs perfectly.
   client/server divergence by construction, so this is a structural check, not a style
   one. Duration is derived server-side from `ticks`. See *Anti-cheat*.
 - **The replay checker rejects a tampered trace.** Run it against the failure.
+- **DEATH IS ASSERTED POSITIVELY, NOT ONLY NEGATIVELY.** *Added 2026-08-08, out of the
+  wrap change.* When the walls were removed, **zero of 517 tests failed** — because the
+  suite held eleven `expect(dead).toBe(false)` assertions and not one asserting that a
+  death happens, so deleting the only hazard that fires at short lengths could not have
+  failed anything. A suite that cannot notice a rule being deleted is not covering it.
+  - `test/grainsnake-death.test.ts` asserts a run that MUST die, dying for the named
+    reason — the head entered a cell its own trail occupied, which was not the vacating
+    tail — on a step whose tick is derived from the tier rather than hardcoded.
+  - Every killing case is paired with the nearest surviving one (the tail exemption, the
+    empty cell, the shorter snake), because "it died" is satisfied by an engine that
+    kills on every step and "it lived" by one that never kills.
+  - **A survival assertion below `MIN_LETHAL_LENGTH` is vacuous and must say so.**
+    `expectCouldHaveDied()` is the guard, in the same shape as the determinism suite's
+    `assertRan`: a value equal to the default measures nothing. Where length is the wrong
+    counterfactual — the tail-exemption test, whose counterfactual is *an engine without
+    the exemption* — the pairing is a positive control instead.
+  - **The audit found a test that had never tested its own subject.** "The tail cell
+    being vacated is not a collision" ran at the starting length of 3, where the
+    four-turn box does not re-enter the trail at all: it asserted that a snake survived
+    a manoeuvre that was never dangerous. It runs at length 4 now, which is the length at
+    which the returning cell IS the tail.
 - RICE CHOMP, the grains game and the WS process are untouched and still working.
   `chomp.db` is not opened by anything in this feature.

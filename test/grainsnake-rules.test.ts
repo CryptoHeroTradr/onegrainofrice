@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CELL_COUNT,
+  COLS,
   GOLDEN_EVERY,
   GOLDEN_STEPS,
   START_LENGTH,
@@ -22,6 +23,7 @@ import {
   spawnFood,
   steer,
   stepMut,
+  tailCell,
 } from "@/lib/grainsnake/engine";
 import { DOWN, LEFT, RIGHT, UP, opposite, type Dir } from "@/lib/grainsnake/types";
 import {
@@ -30,7 +32,10 @@ import {
   feed,
   head,
   nearlyFullState,
+  MIN_LETHAL_LENGTH,
+  expectCouldHaveDied,
   safeDir,
+  stateWithBody,
   serpentine,
   stepOneCell,
 } from "./grainsnake-support";
@@ -56,6 +61,12 @@ describe("growth", () => {
     for (const n of [1, 5, 20, 60]) {
       const s = createGame(7);
       feed(s, n);
+      // The survival guard only MEANS anything once death is possible. At n=1 the
+      // snake is length 4 and cannot die at all — asserted in
+      // `grainsnake-death.test.ts`, which is where that claim belongs — so the guard
+      // is scoped rather than faked by padding the fixture. The identity below is what
+      // n=1 is here to test.
+      if (s.length >= MIN_LETHAL_LENGTH) expectCouldHaveDied(s, `feed(${n})`);
       expect(s.dead, `died while being fed ${n}`).toBe(false);
       expect(s.foodEaten, `foodEaten after ${n}`).toBe(n);
       expect(s.length, `length after ${n}`).toBe(START_LENGTH + n);
@@ -69,6 +80,7 @@ describe("growth", () => {
     const target = TIERS[TIERS.length - 1].fromFood + 5;
     const s = createGame(3);
     feed(s, target);
+    expectCouldHaveDied(s, "fed past the last threshold");
     expect(s.dead).toBe(false);
     expect(s.foodEaten).toBe(target);
     expect(s.length).toBe(START_LENGTH + target);
@@ -99,16 +111,54 @@ describe("growth", () => {
   it("the tail cell being vacated is not a collision", () => {
     // The classic off-by-one: a snake moving into the square its own tail leaves on
     // the same step survives.
-    const s = createGame(21);
-    s.started = true;
-    // Drive a tight square: right, down, left, up — the last move re-enters the cell
-    // the tail is leaving on that very step.
+    //
+    // ── WHY THIS ONE IS NOT GUARDED BY `expectCouldHaveDied` ───────────────────────
+    // *Audited 2026-08-08.* It runs at length 4, below `MIN_LETHAL_LENGTH`, so that
+    // instrument rejects it — and here the instrument is asking the wrong question.
+    // The counterfactual for THIS test is not "a longer snake", it is "an engine
+    // without the exemption": the final step enters a cell the trail occupies, and an
+    // engine that dropped the exemption would kill on it at any length. Length 4 is not
+    // an arbitrary choice either — it is exactly the length at which the returning cell
+    // is the tail, which is the case the exemption exists for.
+    //
+    // So it is paired instead, with the two things that make it non-vacuous: the target
+    // really is occupied trail at the moment of the step, and the SAME manoeuvre at a
+    // longer length really does kill.
+    //
+    // ── AND THE FIXTURE WAS WRONG, WHICH IS WHAT THE PAIRING FOUND ────────────────
+    // It used to run `createGame(21)` at the starting length of THREE, and at length 3
+    // the box does not re-enter the trail at all: after right-down-left the body is
+    // three cells none of which is the origin, so the final UP steps into empty space.
+    // The test has therefore never exercised the exemption it is named after — it
+    // asserted that a snake survived a manoeuvre that was never dangerous. Length 4 is
+    // the length at which the returning cell IS the tail, so that is what it now uses.
+    const start = 12 * COLS + 12;
+    const s = stateWithBody([start, start - 1, start - 2, start - 3], RIGHT);
     const route: Dir[] = [RIGHT, DOWN, LEFT, UP];
-    for (const d of route) {
-      stepOneCell(s, d);
-      expect(s.dead, `died turning ${d}`).toBe(false);
+    for (let i = 0; i < route.length; i++) {
+      const last = i === route.length - 1;
+      if (last) {
+        const target = neighbour(head(s), route[i]);
+        expect(s.occupied[target], "the final step does not re-enter the trail").toBe(1);
+        expect(target, "the final step's target is not the tail").toBe(tailCell(s));
+      }
+      stepOneCell(s, route[i]);
+      expect(s.dead, `died turning ${route[i]}`).toBe(false);
     }
     expect(s.dead).toBe(false);
+  });
+
+  it("CONTROL: the same box at a longer length DOES kill", () => {
+    // The pairing that makes the exemption above a rule rather than a blanket pass. At
+    // length 6 the cell the box returns to is body rather than the vacating tail, so
+    // the exemption does not apply and the step is fatal. An engine that "fixed" the
+    // off-by-one by never colliding with itself passes the test above and fails here.
+    const start = 12 * COLS + 12;
+    const body = [start, start - 1, start - 2, start - 3, start - 4, start - 5];
+    const s = stateWithBody(body, RIGHT);
+    const route: Dir[] = [RIGHT, DOWN, LEFT, UP];
+    for (const d of route) stepOneCell(s, d);
+    expect(s.dead, "a four-turn box at length 6 must be fatal").toBe(true);
   });
 });
 
@@ -156,10 +206,13 @@ describe("input", () => {
   });
 
   it("a corner double-tap lands BOTH turns at the fastest tier", () => {
-    const s = createGame(4);
+    // Length 6 rather than the starting 3, so the `dead` guard at the end is an
+    // assertion rather than a formality — below `MIN_LETHAL_LENGTH` the snake cannot
+    // die and "it survived the corner" would be true of any engine at all.
+    const start = 11 * COLS + 8;
+    const s = stateWithBody([start, start - 1, start - 2, start - 3, start - 4, start - 5], RIGHT);
     // Put the snake in tier 7 — a 4-tick step, where one queue slot is not enough.
     s.foodEaten = TIERS[TIERS.length - 1].fromFood;
-    s.started = true;
     s.ticksToNextStep = ticksPerStepFor(s.foodEaten);
     expect(ticksPerStepFor(s.foodEaten)).toBe(4);
     expect(s.dir).toBe(RIGHT);
@@ -172,6 +225,7 @@ describe("input", () => {
     expect(s.dir, "first turn did not land").toBe(UP);
     stepOneCell(s);
     expect(s.dir, "second turn did not land").toBe(LEFT);
+    expectCouldHaveDied(s, "the two-deep queue");
     expect(s.dead).toBe(false);
   });
 
@@ -277,6 +331,7 @@ describe("golden grain", () => {
       stepOneCell(s, d === s.dir ? null : d);
       if (s.dead) break;
     }
+    expectCouldHaveDied(s, "the golden-budget bot");
     expect(s.dead, "bot died before the budget ran out").toBe(false);
     expect(s.goldensTaken, "bot ate the grain it was told to avoid").toBe(0);
     expect(s.golden, "expired early").toBeGreaterThanOrEqual(0);

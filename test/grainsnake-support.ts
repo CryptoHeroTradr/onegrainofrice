@@ -22,7 +22,16 @@ import {
   stepMut,
   tailCell,
 } from "@/lib/grainsnake/engine";
-import { DOWN, LEFT, RIGHT, UP, opposite, type Dir, type GameState } from "@/lib/grainsnake/types";
+import {
+  DOWN,
+  LEFT,
+  RIGHT,
+  UP,
+  opposite,
+  type Dir,
+  type GameState,
+  type InputEvent,
+} from "@/lib/grainsnake/types";
 
 export const DIRS: Dir[] = [UP, LEFT, DOWN, RIGHT];
 
@@ -44,8 +53,13 @@ export function bodyCells(state: GameState): number[] {
  * tail and applies the one documented exception.
  */
 export function isFatal(state: GameState, d: Dir): boolean {
+  // No off-board test. `neighbour()` wraps on both axes and cannot return a negative
+  // cell — `test/grainsnake-wrap.test.ts` asserts that exhaustively over every cell ×
+  // direction, which is what makes deleting the branch safe rather than optimistic.
+  // It used to read `if (next < 0) return true;` and became unreachable at
+  // ENGINE_VERSION 2; an unreachable branch in the helper every bot in this suite
+  // routes through is a lie about what the bots are avoiding.
   const next = neighbour(head(state), d);
-  if (next < 0) return true;
   if (!state.occupied[next]) return false;
   // The tail vacates on a non-growing step, so moving into it is legal.
   const grows = next === state.grain || next === state.golden;
@@ -57,7 +71,7 @@ export function isFatal(state: GameState, d: Dir): boolean {
  * A flood fill, used only to keep the test bot alive — no rule reads it.
  */
 function reachable(state: GameState, from: number): number {
-  if (from < 0 || state.occupied[from]) return 0;
+  if (state.occupied[from]) return 0;
   const seen = new Uint8Array(CELL_COUNT);
   const stack = [from];
   seen[from] = 1;
@@ -67,7 +81,7 @@ function reachable(state: GameState, from: number): number {
     n++;
     for (const d of DIRS) {
       const nb = neighbour(cell, d);
-      if (nb < 0 || seen[nb] || state.occupied[nb]) continue;
+      if (seen[nb] || state.occupied[nb]) continue;
       seen[nb] = 1;
       stack.push(nb);
     }
@@ -138,6 +152,206 @@ export function feed(state: GameState, n: number): void {
     state.grain = neighbour(head(state), d);
     stepOneCell(state, d === state.dir ? null : d);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Death — the instruments for asserting it POSITIVELY
+// ---------------------------------------------------------------------------
+
+/**
+ * The shortest snake that can die. **Measured, not assumed** — an exhaustive search
+ * over every reachable body shape at each length, canonicalised by translating the head
+ * to the origin (an exact symmetry on a torus) and closed under non-growing moves:
+ * length 3 has 12 reachable shapes and 0 lethal moves, length 4 has 36 and 0, length 5
+ * has 100 and 16. See the spec's *The board*.
+ *
+ * Why it matters to the SUITE rather than only to the design: an assertion that a snake
+ * did not die is vacuous below this length, because it could not have. Since
+ * ENGINE_VERSION 2 removed the walls, self-collision is the only death in the game, so
+ * every `expect(dead).toBe(false)` on a short snake is now a test that cannot fail for
+ * the reason it was written.
+ */
+export const MIN_LETHAL_LENGTH = 5;
+
+/**
+ * A direction that steps into the snake's own trail and is NOT the exempt vacating
+ * tail — i.e. a move that must kill. Null when the shape offers none.
+ *
+ * Asks the engine for the tail and applies the one documented exception, exactly as
+ * `isFatal` does; it does not re-derive the collision rule.
+ */
+export function suicideDir(state: GameState): Dir | null {
+  for (const d of DIRS) {
+    if (d === opposite(state.dir)) continue;
+    const next = neighbour(head(state), d);
+    if (!state.occupied[next]) continue;
+    const grows = next === state.grain || next === state.golden;
+    if (next === tailCell(state) && !grows) continue; // survivable by the exemption
+    return d;
+  }
+  return null;
+}
+
+/** What a deliberate self-collision did, so a test can assert the REASON. */
+export interface SelfCollision {
+  /** The cell the head was steered into. */
+  intoCell: number;
+  /** Was that cell trail at the moment of the step? */
+  wasOwnTrail: boolean;
+  /** Ticks the whole manoeuvre took. */
+  ticks: number;
+  /** The tick the run ended on. */
+  diedAtTick: number;
+}
+
+/** Clockwise from each direction — the coil that walks a snake into its own trail. */
+const CLOCKWISE: Record<Dir, Dir> = { [UP]: RIGHT, [RIGHT]: DOWN, [DOWN]: LEFT, [LEFT]: UP };
+
+/**
+ * End a run by steering DELIBERATELY into the trail, and report what it steered into.
+ *
+ * This is the instrument the suite was missing. Before ENGINE_VERSION 2 the only run in
+ * the whole suite that ended did so by holding one direction until a wall arrived; with
+ * the walls gone that manoeuvre either loops forever or — worse, because it still
+ * passes — laps the torus and dies of an *incidental* self-collision, which is a death
+ * nobody asked for at a tick nobody predicted.
+ *
+ * It coils clockwise until a lethal move exists, then takes it. Both halves are
+ * deterministic, so the tick it dies on is a fact a test may assert.
+ */
+export function dieBySelfCollision(state: GameState, guard = 64): SelfCollision {
+  let ticks = 0;
+  for (let i = 0; i < guard; i++) {
+    if (state.dead || state.filled) throw new Error("run ended before the collision was set up");
+    const kill = suicideDir(state);
+    if (kill !== null) {
+      const intoCell = neighbour(head(state), kill);
+      const wasOwnTrail = state.occupied[intoCell] === 1;
+      ticks += stepOneCell(state, kill);
+      return { intoCell, wasOwnTrail, ticks, diedAtTick: state.tick };
+    }
+    ticks += stepOneCell(state, CLOCKWISE[state.dir]);
+  }
+  throw new Error(`no self-collision reachable in ${guard} steps`);
+}
+
+/**
+ * THE GUARD AGAINST A VACUOUS `expect(dead).toBe(false)`.
+ *
+ * Same job as the determinism suite's `assertRan`: a value equal to the default
+ * measures nothing. A snake below `MIN_LETHAL_LENGTH` is not surviving, it is merely
+ * unable to die — so a test that asserts survival has to first establish that death was
+ * on the table.
+ */
+export function expectCouldHaveDied(state: GameState, label: string): void {
+  if (state.length < MIN_LETHAL_LENGTH) {
+    throw new Error(
+      `${label}: reached length ${state.length}, below MIN_LETHAL_LENGTH ${MIN_LETHAL_LENGTH} — ` +
+        `death was impossible, so asserting it did not happen measures nothing`,
+    );
+  }
+}
+
+/**
+ * Play a run with a grain-chasing bot and RECORD the input log it produced.
+ *
+ * The determinism and replay suites need a log that is a real run rather than a
+ * hand-written script: a blind script almost never meets a grain, so it replays a snake
+ * that ate nothing, and "the same empty run twice" is the vacuous pass those suites
+ * already learned to guard against once.
+ *
+ * The bot steps toward the grain by the SHORTEST path on the torus, which is what makes
+ * it wrap — it will happily leave one edge to arrive nearer the grain on the other, and
+ * that is the behaviour under test, not a contrivance. It refuses fatal moves and falls
+ * back to `safeDir`.
+ *
+ * Returns only `(tick, dir)` pairs, so the log is exactly what the replay format
+ * permits and can be handed straight to `replay()`.
+ */
+export function recordGreedyRun(
+  seed: number,
+  ticks: number,
+): { inputs: InputEvent[]; state: GameState; wraps: number } {
+  const state = createGame(seed);
+  const inputs: InputEvent[] = [];
+  let wraps = 0;
+
+  const towardGrain = (s: GameState): Dir | null => {
+    if (s.grain < 0) return null;
+    const hx = s.grain % COLS;
+    const hy = Math.floor(s.grain / COLS);
+    const cx = head(s) % COLS;
+    const cy = Math.floor(head(s) / COLS);
+    // Shortest signed step on each axis, wrapping.
+    const sx = ((hx - cx + COLS + COLS / 2) % COLS) - Math.floor(COLS / 2);
+    const sy = ((hy - cy + ROWS + ROWS / 2) % ROWS) - Math.floor(ROWS / 2);
+    const wants: Dir[] = [];
+    if (sx > 0) wants.push(RIGHT);
+    else if (sx < 0) wants.push(LEFT);
+    if (sy > 0) wants.push(DOWN);
+    else if (sy < 0) wants.push(UP);
+    for (const d of wants) {
+      if (d === opposite(state.dir)) continue;
+      if (!isFatal(s, d)) return d;
+    }
+    return null;
+  };
+
+  for (let t = 0; t < ticks; t++) {
+    const before = head(state);
+    const at = state.started ? state.tick : 0;
+    let input: Dir | null = null;
+    // Only offer an input when the snake is ABOUT to step, so the log stays sparse and
+    // every entry is one the engine actually consumed.
+    if (state.ticksToNextStep <= 1 || !state.started) {
+      input = towardGrain(state) ?? safeDir(state);
+      // A repeat of the current heading is not a turn and queues nothing — EXCEPT as
+      // the opening input, where it is what starts the run. Nulling it there is the
+      // bug that made two of the candidate seeds sit at tick 0 forever: the snake
+      // starts facing RIGHT, so a bot whose first choice is RIGHT never presses go.
+      if (state.started && input === state.dir) input = null;
+    }
+    if (input !== null) inputs.push({ tick: at, dir: input });
+    stepMut(state, input);
+    if (!state.dead && head(state) !== before && crossedSeam(before, head(state))) wraps++;
+    if (state.dead || state.filled) break;
+  }
+  return { inputs, state, wraps };
+}
+
+/** Did a single step from `from` to `to` cross a seam? One step, so any jump did. */
+export function crossedSeam(from: number, to: number): boolean {
+  const dx = Math.abs((from % COLS) - (to % COLS));
+  const dy = Math.abs(Math.floor(from / COLS) - Math.floor(to / COLS));
+  return dx > 1 || dy > 1;
+}
+
+/**
+ * A state whose trail is exactly `headFirst`, facing `dir`.
+ *
+ * Built by writing the ring rather than by playing, for the same reason
+ * `nearlyFullState` is: the shape is the fixture, not the thing under test. Placing a
+ * head on a border cell by playing there would take a hundred steps of bot and prove
+ * nothing about the step being measured.
+ */
+export function stateWithBody(headFirst: number[], dir: Dir, seed = 99): GameState {
+  const state = cloneState(createGame(seed));
+  const n = headFirst.length;
+  state.occupied.fill(0);
+  for (let i = 0; i < n; i++) {
+    const cell = headFirst[n - 1 - i]; // the ring runs tail → head
+    state.cells[i] = cell;
+    state.occupied[cell] = 1;
+  }
+  state.headPos = n - 1;
+  state.length = n;
+  state.foodEaten = Math.max(0, n - START_LENGTH);
+  state.grain = -1;
+  state.golden = -1;
+  state.started = true;
+  state.dir = dir;
+  state.ticksToNextStep = ticksPerStepFor(state.foodEaten);
+  return state;
 }
 
 /**

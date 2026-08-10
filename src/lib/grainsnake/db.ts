@@ -40,6 +40,11 @@ export interface GrainsnakePlayerRow {
   games: number;
   country_code: string | null;
   filled: number;
+  /**
+   * The `ENGINE_VERSION` the player's BEST run was played and verified under, or null
+   * when it cannot be determined. Read for display only — see `getTopPlayers`.
+   */
+  best_engine_version: number | null;
 }
 
 export interface SubmitResult {
@@ -336,16 +341,44 @@ function playerRank(handle: Database.Database, vid: string): number {
   return me ? (row?.n ?? 0) + 1 : 0;
 }
 
-/** THE board query, and the only one. One indexed read, no filter, no post-processing. */
+/**
+ * THE board query, and the only one.
+ *
+ * ── THE JOIN IS FOR THE VERSION MARKER, AND IT READS NOTHING IT COULD RECOMPUTE ──
+ * *Added 2026-08-08 with `ENGINE_VERSION` 2.* The board can now hold rows from several
+ * engine versions at once (spec, *Anti-cheat*: "it will"), so a row has to be able to
+ * say which rules it was played under. `grainsnake_players` is denormalised best-per-
+ * player and has no version column; `best_run_id` already points at the exact run, and
+ * that run has one.
+ *
+ * A LEFT JOIN on `grainsnake_runs.id` — the primary key — rather than a new
+ * `best_engine_version` column on the players table, for two reasons:
+ *   - **No migration and no second copy.** A denormalised version column would have to
+ *     be kept in step with `best_run_id` on every write, and the day it is not, the
+ *     board labels a row with the rules of a run it is no longer showing.
+ *   - It stays one indexed read plus a PK lookup, which is what "one indexed read" was
+ *     protecting.
+ *
+ * LEFT, not INNER: a player whose best run has somehow gone (it cannot, but the schema
+ * permits `best_run_id` to be NULL) still appears on the board, unlabelled. **Missing
+ * is not the same as old**, and inventing a label for an unknown is worse than omitting
+ * one — the marker's whole job is to be accurate about which rules applied.
+ *
+ * NOTHING HERE RECOMPUTES OR MIGRATES ANYTHING. No stored score is read except to show
+ * it, no row is written, and no run is re-verified. Verification happened once, at
+ * submit time.
+ */
 export function getTopPlayers(n: number): GrainsnakePlayerRow[] {
   const limit = Math.max(0, Math.floor(n));
   return getGrainsnakeDb()
     .prepare(
-      `SELECT display_name AS name, best_score, best_length, best_goldens, games,
-              country_code, filled
-         FROM grainsnake_players
-        WHERE best_score > 0
-        ORDER BY best_score DESC, last_seen ASC
+      `SELECT p.display_name AS name, p.best_score, p.best_length, p.best_goldens,
+              p.games, p.country_code, p.filled,
+              r.engine_version AS best_engine_version
+         FROM grainsnake_players p
+         LEFT JOIN grainsnake_runs r ON r.id = p.best_run_id
+        WHERE p.best_score > 0
+        ORDER BY p.best_score DESC, p.last_seen ASC
         LIMIT ?`,
     )
     .all(limit) as GrainsnakePlayerRow[];

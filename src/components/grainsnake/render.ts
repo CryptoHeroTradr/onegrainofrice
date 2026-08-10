@@ -36,7 +36,26 @@ import { NO_TRAIL_FX, type TrailFx } from "./fx";
 // ---------------------------------------------------------------------------
 
 const PADDY_FILL = "#14110d"; // nori
-const PADDY_INSET = "rgba(42,77,143,0.30)"; // porcelain, the inset lip
+/**
+ * ── THE EDGE READS AS PASSABLE, NOT AS A BUND. ──────────────────────────────────
+ * *Changed 2026-08-08 with the wrap.* This used to be `rgba(42,77,143,0.30)` —
+ * porcelain — painted as one unbroken `strokeRect` around the field: an inset lip, a
+ * raised paddy bund, the thing you do not cross. That was correct while the edge was
+ * fatal and it is now actively misleading, because a player who believes the edge
+ * kills will avoid a side of the board that is not merely safe but is a route, and the
+ * routes are the wrap's entire gameplay contribution.
+ *
+ * It is the beaded-trail argument in reverse: there the picture under-reported a
+ * hazard, here it reported one that does not exist, and both are *the player steers
+ * off the picture, not off the model*.
+ *
+ * What replaces it is a tick at every cell BOUNDARY and nothing along the cell itself,
+ * so each row and each column ends in a visible opening — a row of doorways rather
+ * than a wall. Olive-deep rather than porcelain: dimmer than what it replaces, because
+ * the board is read at 15 cells a second and the edge is decoration. The palette rule
+ * that the paddy may not drift lighter covers its border too.
+ */
+const SEAM_TICK = "rgba(71,77,46,0.75)"; // olive-deep, dim
 const GRAIN_FILL = "#eae3d2"; // paper
 const GRAIN_SPINE = "#fbf7ee"; // steamed
 const GRAIN_RIM = "#474d2e"; // olive-deep
@@ -123,22 +142,78 @@ function jitterFor(ringPos: number): { long: number; rot: number } {
 // Geometry helpers (render-side; floats are fine here)
 // ---------------------------------------------------------------------------
 
-function cx(cell: number, cell1: number, f: number, px: number): number {
-  const a = (cell % COLS) + 0.5;
-  const b = (cell1 % COLS) + 0.5;
-  return (a + (b - a) * f) * px;
-}
-function cy(cell: number, cell1: number, f: number, px: number): number {
-  const a = Math.floor(cell / COLS) + 0.5;
-  const b = Math.floor(cell1 / COLS) + 0.5;
-  return (a + (b - a) * f) * px;
+/**
+ * ── THE SEAM. EVERYTHING BELOW EXISTS BECAUSE THE BOARD WRAPS. ──────────────────
+ * *Added 2026-08-08 with `ENGINE_VERSION` 2.*
+ *
+ * The renderer interpolates every grain from the cell it came from to the cell it is
+ * in. A grain that has just wrapped came from column 22 and is in column 0, and the
+ * straight line between those two **streaks the full width of the board** — one grain
+ * flying backwards across the whole screen, once per wrap, which is both wrong and the
+ * most eye-catching thing on the page.
+ *
+ * The fix is two halves and both are needed:
+ *   1. Interpolate along the SHORTEST path on the torus (`wrapDelta`), so a wrapping
+ *      grain travels one cell outward past the edge instead of 22 cells backward.
+ *   2. Draw that grain a second time, offset by exactly one board width or height, so
+ *      it enters one side as it leaves the other (`forEachWrapCopy`).
+ *
+ * Not clipping and not snapping: a clipped grain is a hole in the trail at the seam —
+ * which reads as a gap the player could steer through, the exact unfair-feeling death
+ * the fused-trail rule exists to prevent — and a snapped one teleports.
+ */
+
+/** The signed one-axis step from `a` to `b` by the shortest way round a ring of `n`. */
+function wrapDelta(a: number, b: number, n: number): number {
+  let d = b - a;
+  if (d > n / 2) d -= n;
+  else if (d < -n / 2) d += n;
+  return d;
 }
 
-/** The angle from `from` to `to`, or `fallback` when they are the same cell. */
+/** Interpolated position in CELL units — may sit outside the board by up to one cell. */
+function lerpCell(from: number, to: number, f: number): { x: number; y: number } {
+  const ax = (from % COLS) + 0.5;
+  const ay = Math.floor(from / COLS) + 0.5;
+  return {
+    x: ax + wrapDelta(ax, (to % COLS) + 0.5, COLS) * f,
+    y: ay + wrapDelta(ay, Math.floor(to / COLS) + 0.5, ROWS) * f,
+  };
+}
+
+/**
+ * Call `draw` once per visible copy of a grain at cell-space `(x, y)`.
+ *
+ * Normally that is exactly one call. A grain straddling an edge gets two; a grain
+ * straddling a CORNER gets four, which is why the two axes are offered independently
+ * rather than as a single edge test — a corner is where both axes wrap on consecutive
+ * steps, and an implementation that handles one axis at a time still gets the pair
+ * wrong. Costs at most three extra ellipse draws per frame in total.
+ */
+function forEachWrapCopy(
+  x: number,
+  y: number,
+  px: number,
+  draw: (x: number, y: number) => void,
+): void {
+  // One cell of slack: a grain's long axis is 0.62 of a cell, so anything further
+  // inside the board than that cannot have a visible copy on the far side.
+  const xs = x < 1 ? [x, x + COLS] : x > COLS - 1 ? [x, x - COLS] : [x];
+  const ys = y < 1 ? [y, y + ROWS] : y > ROWS - 1 ? [y, y - ROWS] : [y];
+  for (const cxx of xs) for (const cyy of ys) draw(cxx * px, cyy * px);
+}
+
+/**
+ * The angle from `from` to `to`, or `fallback` when they are the same cell.
+ *
+ * Wrap-aware, and it has to be: raw column subtraction across a seam gives -22 and
+ * `atan2` turns that into a head pointing back the way it came — the snake spinning
+ * 180° for one step every time it crosses an edge.
+ */
 function angleBetween(from: number, to: number, fallback: number): number {
   if (from === to || from < 0 || to < 0) return fallback;
-  const dx = (to % COLS) - (from % COLS);
-  const dy = Math.floor(to / COLS) - Math.floor(from / COLS);
+  const dx = wrapDelta(from % COLS, to % COLS, COLS);
+  const dy = wrapDelta(Math.floor(from / COLS), Math.floor(to / COLS), ROWS);
   return Math.atan2(dy, dx);
 }
 
@@ -284,6 +359,44 @@ function drawFood(
   ctx.restore();
 }
 
+/**
+ * The board's edge, drawn as openings rather than as a boundary.
+ *
+ * One short tick at each cell BOUNDARY on all four sides, and nothing across the cell
+ * itself — so every row ends in a gap on the left and the right, and every column ends
+ * in a gap top and bottom. There is no continuous line anywhere on the field.
+ *
+ * The ticks are the SAME on opposing sides by construction, because both are drawn from
+ * the same boundary index: the gap in row 7 on the left lines up with the gap in row 7
+ * on the right, which is where a grain leaving one arrives at the other.
+ */
+function drawSeamEdge(ctx: CanvasRenderingContext2D, px: number): void {
+  const w = COLS * px;
+  const h = ROWS * px;
+  const len = px * 0.3; // well short of a cell, so the opening dominates the mark
+  ctx.save();
+  ctx.strokeStyle = SEAM_TICK;
+  ctx.lineWidth = Math.max(1, px * 0.06);
+  ctx.lineCap = "butt";
+  ctx.beginPath();
+  for (let r = 0; r <= ROWS; r++) {
+    const y = Math.round(r * px) + 0.5;
+    ctx.moveTo(0, y);
+    ctx.lineTo(len, y);
+    ctx.moveTo(w - len, y);
+    ctx.lineTo(w, y);
+  }
+  for (let c = 0; c <= COLS; c++) {
+    const x = Math.round(c * px) + 0.5;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, len);
+    ctx.moveTo(x, h - len);
+    ctx.lineTo(x, h);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ---------------------------------------------------------------------------
 // The frame
 // ---------------------------------------------------------------------------
@@ -313,9 +426,7 @@ export function paint(
 
   ctx.fillStyle = PADDY_FILL;
   ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = PADDY_INSET;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  drawSeamEdge(ctx, px);
 
   // Food first, so the snake is drawn over it as it arrives.
   if (state.grain >= 0) drawFood(ctx, state.grain, px, FOOD_FILL, null, 1);
@@ -355,15 +466,12 @@ export function paint(
     // Only the NEWEST segment grows in. It is the tail rather than the head, because
     // eating holds the tail still for a step — so the new grain appears at the back.
     const grow = j === state.length - 1 ? fx.tailGrow : 1;
-    drawSegment(
-      ctx,
-      cx(from, to, f, px),
-      cy(from, to, f, px),
-      px,
-      angleBetween(from, to, 0),
-      ringPos,
-      grow,
-    );
+    const p = lerpCell(from, to, f);
+    const angle = angleBetween(from, to, 0);
+    // BOTH EDGES. Every segment resolves its own copies, which is what keeps a fused
+    // trail fused across the seam: the grain behind is still drawn at the edge the
+    // grain ahead is leaving, so their rims merge there exactly as they do anywhere.
+    forEachWrapCopy(p.x, p.y, px, (x, y) => drawSegment(ctx, x, y, px, angle, ringPos, grow));
   }
 
   // RULE 1: the head LAGS. `segmentAt(1)` is the cell it came FROM — the body is its
@@ -371,12 +479,7 @@ export function paint(
   // code path in this file that computes a "next" cell.
   const headCell = segmentAt(state, 0);
   const cameFrom = originOf(0, headCell);
-  drawHead(
-    ctx,
-    cx(cameFrom, headCell, f, px),
-    cy(cameFrom, headCell, f, px),
-    px,
-    angleBetween(cameFrom, headCell, 0),
-    fx.headPop,
-  );
+  const hp = lerpCell(cameFrom, headCell, f);
+  const headAngle = angleBetween(cameFrom, headCell, 0);
+  forEachWrapCopy(hp.x, hp.y, px, (x, y) => drawHead(ctx, x, y, px, headAngle, fx.headPop));
 }

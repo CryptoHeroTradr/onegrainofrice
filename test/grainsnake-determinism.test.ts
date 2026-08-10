@@ -14,7 +14,11 @@
 import { describe, it, expect } from "vitest";
 import { drainTicks, runLog, snapshot } from "@/lib/grainsnake/engine";
 import { DOWN, LEFT, RIGHT, UP, type Dir, type InputEvent } from "@/lib/grainsnake/types";
-import { driveAccumulated, driveFrameCounted } from "./grainsnake-support";
+import {
+  driveAccumulated,
+  driveFrameCounted,
+  expectCouldHaveDied,
+} from "./grainsnake-support";
 
 /**
  * A fixed route that stays on the board for the whole comparison window.
@@ -74,6 +78,11 @@ describe("determinism", () => {
   function assertRan(s: ReturnType<typeof runLog>, label: string): void {
     expect(s.started, `${label}: never started`).toBe(true);
     expect(s.tick, `${label}: did not reach the target tick`).toBe(TARGET_TICKS);
+    // Not merely "did not die" — death has to have been POSSIBLE for that to mean
+    // anything. Since ENGINE_VERSION 2 removed the walls, self-collision is the only
+    // death in the game and it cannot happen below MIN_LETHAL_LENGTH, so a comparison
+    // run that stayed short would be asserting survival it could not have failed.
+    expectCouldHaveDied(s, label);
     expect(s.dead, `${label}: died before the comparison point`).toBe(false);
     // Eating is what puts the PRNG stream, growth and scoring into the comparison.
     expect(s.foodEaten, `${label}: never ate, so the RNG was never drawn`).toBe(EXPECTED_FOOD);

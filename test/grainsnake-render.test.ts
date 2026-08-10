@@ -12,11 +12,16 @@
  * touches anything but the context it is handed.
  */
 import { describe, it, expect } from "vitest";
-import { COLS } from "@/lib/grainsnake/rules";
+import { COLS, ROWS } from "@/lib/grainsnake/rules";
 import { createGame, segmentAt } from "@/lib/grainsnake/engine";
-import { RIGHT, UP, type GameState } from "@/lib/grainsnake/types";
+import { LEFT, RIGHT, UP, type GameState } from "@/lib/grainsnake/types";
 import { paint } from "@/components/grainsnake/render";
-import { feed, stepOneCell } from "./grainsnake-support";
+import {
+  expectCouldHaveDied,
+  feed,
+  stateWithBody,
+  stepOneCell,
+} from "./grainsnake-support";
 
 const PX = 20;
 
@@ -246,6 +251,175 @@ describe("the trail reads as FUSED, not as separated beads", () => {
   });
 });
 
+describe("the trail stays FUSED ACROSS THE SEAM", () => {
+  /**
+   * *Added 2026-08-08, with the wrap.* The fuse gate measured a trail mid-board. The
+   * edge is now somewhere players deliberately go — it is the whole gameplay
+   * contribution of wrapping — so the gate's result has to hold there too, and it does
+   * not hold for free: a segment that crosses a seam is at column 22 and column 0 at
+   * once, and drawing it in only one of those places opens a gap at exactly the place
+   * the player is steering through.
+   *
+   * The criterion is the same one the mid-board test uses, made torus-aware: for every
+   * consecutive pair of grains, the SHORTEST distance between any drawn copy of one and
+   * any drawn copy of the other is one cell, and their rims merge over it. Comparing
+   * copies rather than primary positions is the point — the copy outside the board is
+   * what makes the seam continuous.
+   */
+  const W = COLS * PX;
+  const H = ROWS * PX;
+
+  /** Every drawn copy of the grain that belongs at `cell`, including off-board ones. */
+  function copiesAt(grains: Drawn[], cell: number): Drawn[] {
+    const c = centreOf(cell);
+    const out: Drawn[] = [];
+    for (const g of grains) {
+      for (const ox of [-1, 0, 1]) {
+        for (const oy of [-1, 0, 1]) {
+          if (Math.abs(g.x - (c.x + ox * W)) < 0.001 && Math.abs(g.y - (c.y + oy * H)) < 0.001) {
+            out.push(g);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * A trail laid across the left/right seam, travelling LEFT: the head has just left
+   * column 0 and arrived at column 22, with its body still at columns 0, 1, 2.
+   *
+   * The direction has to agree with the BODY, not merely be declared. The first draft
+   * put the head at column 0 with the body at 22, 21, 20 and labelled it LEFT — but a
+   * head that came from column 22 and is at column 0 has travelled one step RIGHT, so
+   * the renderer correctly drew it facing right and the 180° test correctly reported a
+   * π discrepancy against a genuinely-leftward control. The fixture was wrong, not the
+   * renderer.
+   */
+  function straddlingSnake(): GameState {
+    return stateWithBody(
+      [COLS - 1 + 5 * COLS, 0 + 5 * COLS, 1 + 5 * COLS, 2 + 5 * COLS],
+      LEFT,
+    );
+  }
+
+  it("draws a wrapping grain at BOTH edges", () => {
+    const s = straddlingSnake();
+    const grains = bodyGrains(render(s, 1));
+    // The head is at column 0. Its copy belongs one cell past the right edge, so the
+    // grain behind it at column 22 has something to merge with.
+    const headCell = segmentAt(s, 0);
+    const copies = copiesAt(grains, headCell);
+    expect(copies.length, "the wrapping head was drawn only once").toBeGreaterThanOrEqual(2);
+    expect(copies.some((g) => g.x < 0 || g.x > W), "no copy outside the board").toBe(true);
+  });
+
+  it("leaves NO HOLE in the trail — every segment is visible on the board at every f", () => {
+    /**
+     * The gameplay assertion, and the one the "both edges" test above is too weak to
+     * make. *Added after a mutation run: drawing only the primary copy failed exactly
+     * one assertion, because at f=1 the primary positions of a wrapping pair are
+     * already adjacent to each other — they are simply both OFF the board.*
+     *
+     * A segment drawn only outside the field is a gap in the trail where the player is
+     * looking, which is the unfair-feeling death the fused-trail rule exists to
+     * prevent, and it is worse at the seam than anywhere because the seam is where
+     * wrapping invites them to steer.
+     */
+    const s = straddlingSnake();
+    for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+      const grains = bodyGrains(render(s, f));
+      // Bounds INCLUSIVE: at f=0.5 a wrapping grain sits exactly on the seam, with its
+      // two copies at x=0 and x=W. Both are half-visible and both are correct; a strict
+      // inequality counts neither and reports a hole that is not there.
+      const onBoard = grains.filter((g) => g.x >= 0 && g.x <= W && g.y >= 0 && g.y <= H);
+      expect(onBoard.length, `f=${f}: a segment vanished off the board`).toBeGreaterThanOrEqual(
+        s.length,
+      );
+    }
+  });
+
+  it("keeps consecutive grains exactly one cell apart, seam or no seam", () => {
+    const s = straddlingSnake();
+    const grains = bodyGrains(render(s, 1));
+
+    for (let i = 1; i < s.length; i++) {
+      const a = copiesAt(grains, segmentAt(s, i - 1));
+      const b = copiesAt(grains, segmentAt(s, i));
+      expect(a.length, `segment ${i - 1} was not drawn`).toBeGreaterThan(0);
+      expect(b.length, `segment ${i} was not drawn`).toBeGreaterThan(0);
+
+      let best = Infinity;
+      let bestPair: [Drawn, Drawn] | null = null;
+      for (const g of a) {
+        for (const h of b) {
+          const d = Math.hypot(h.x - g.x, h.y - g.y);
+          if (d < best) {
+            best = d;
+            bestPair = [g, h];
+          }
+        }
+      }
+      expect(best, `segments ${i - 1}→${i} are not one cell apart`).toBeCloseTo(PX, 5);
+      const [g, h] = bestPair!;
+      expect(g.rx + h.rx, `segments ${i - 1}→${i} leave a gap at the seam`).toBeGreaterThan(best);
+    }
+  });
+
+  it("overlaps at the seam by the same amount it does mid-board", () => {
+    // The comparison that makes the number mean something: the same two ring slots,
+    // hence the same jitter, measured in both places.
+    const seam = straddlingSnake();
+    const mid = stateWithBody(
+      [10 + 5 * COLS, 11 + 5 * COLS, 12 + 5 * COLS, 13 + 5 * COLS],
+      LEFT,
+    );
+
+    const overlapOf = (s: GameState): number[] => {
+      const grains = bodyGrains(render(s, 1));
+      const out: number[] = [];
+      for (let i = 1; i < s.length; i++) {
+        const a = copiesAt(grains, segmentAt(s, i - 1));
+        const b = copiesAt(grains, segmentAt(s, i));
+        let best = Infinity;
+        let sum = 0;
+        for (const g of a)
+          for (const h of b) {
+            const d = Math.hypot(h.x - g.x, h.y - g.y);
+            if (d < best) {
+              best = d;
+              sum = g.rx + h.rx;
+            }
+          }
+        out.push(sum - best);
+      }
+      return out;
+    };
+
+    const atSeam = overlapOf(seam);
+    const atMid = overlapOf(mid);
+    expect(atSeam.length).toBe(atMid.length);
+    for (let i = 0; i < atSeam.length; i++) {
+      expect(atSeam[i], `pair ${i}: seam overlap differs from mid-board`).toBeCloseTo(atMid[i], 5);
+      expect(atSeam[i], `pair ${i}: rims do not merge`).toBeGreaterThan(0);
+    }
+  });
+
+  it("the head does not spin 180° when it crosses a seam", () => {
+    // Raw column subtraction across a seam gives -22, and `atan2` turns that into a
+    // head pointing back the way it came for one step per crossing.
+    const s = straddlingSnake();
+    const grains = bodyGrains(render(s, 1));
+    const headDraw = grains.at(-1)!;
+    // Travelling LEFT: the head's long axis points along ±x, i.e. angle ≈ 0 or π. The
+    // failure is a 180° flip, so compare against the mid-board control's angle.
+    const mid = stateWithBody([10 + 5 * COLS, 11 + 5 * COLS, 12 + 5 * COLS, 13 + 5 * COLS], LEFT);
+    const midHead = bodyGrains(render(mid, 1)).at(-1)!;
+    const norm = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    expect(norm(headDraw.rotation)).toBeCloseTo(norm(midHead.rotation), 5);
+  });
+});
+
 describe("jitter is stable — the trail does not shimmer", () => {
   it("gives a grain the same silhouette on every frame of a step", () => {
     const s = movedSnake();
@@ -263,6 +437,7 @@ describe("jitter is stable — the trail does not shimmer", () => {
     // no segment far enough from either end for "one step older" to be meaningful.
     const s = createGame(162);
     feed(s, 8);
+    expectCouldHaveDied(s, "the jitter fixture");
     expect(s.dead).toBe(false);
 
     // `bodyGrains` is drawn tail-first, so index (n-1-k) is the grain k back from the

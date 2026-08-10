@@ -33,20 +33,45 @@
  * Stored rows are NEVER re-verified or rescored on a bump. Verification happened once,
  * at submit time, and a bump invalidates nothing.
  */
-export const ENGINE_VERSION = 1;
+export const ENGINE_VERSION = 2;
+
+/**
+ * What each PAST engine version's rules were, in one phrase, for the board to label a
+ * row with. **DISPLAY ONLY — no rule reads this, and nothing here may ever become a
+ * rule.** It sits beside `ENGINE_VERSION` for the same reason that constant sits beside
+ * the tunables: this is the file you are already editing when you bump it, and a
+ * version with no description is a row the board can only label "old".
+ *
+ * The current version is deliberately ABSENT. A row played under today's rules is not
+ * marked at all (see `Leaderboard.tsx`) — marking is for rows whose rules differ from
+ * the ones in this file, which is `version !== ENGINE_VERSION` and never
+ * `version === <some literal>`.
+ *
+ * **Add an entry here in the same commit that bumps the constant above.** The phrase
+ * describes what the run was PLAYED UNDER; it is not a doubt about the row. Those runs
+ * were verified when they were submitted and their scores are final.
+ */
+export const ENGINE_RULE_LABELS: Readonly<Record<number, string>> = {
+  1: "walled rules",
+};
 
 // ---------------------------------------------------------------------------
 // The board
 // ---------------------------------------------------------------------------
 
 /**
- * 23 × 23, walled on all four sides, no interior obstacles.
+ * 23 × 23, WRAPPING on both axes, no obstacles of any kind.
  *
  * Odd on both axes so there is a true centre cell to start on and a true centre
  * column to start pointing along. Settled 2026-08-06 by the size gate: 13 adjacent
  * grains read as 13 grains at the ~15px cell this implies on a 390px phone, through
  * a straight run and around a corner, at true CSS pixels on a DPR-3 device. 19×19 was
  * costed and rejected — see the spec's *The board*.
+ *
+ * The wrap arrived 2026-08-08 (version 2) and did not change either number, but it
+ * changed what they mean: the maximum Manhattan distance between two cells is now
+ * **22**, not 44, because wrapping halves it on both axes at once. `GOLDEN_STEPS`
+ * below was tuned against the 44 and is flagged there.
  */
 export const COLS = 23;
 export const ROWS = 23;
@@ -96,6 +121,18 @@ export const GOLDEN_EVERY = 8;
  * Manhattan distance at EVERY tier, so "can I get there and back into space?" stays a
  * real geometry question for the whole run instead of dissolving exactly when the
  * game is hardest.
+ *
+ * ⚠ **THE DESIGN HALF OF THAT ARGUMENT DIED WITH THE WALLS, AND THE NUMBER IS LEFT
+ * ALONE ON PURPOSE.** *2026-08-08, version 2.* The maximum Manhattan distance on a
+ * 23 × 23 TORUS is **22**, not 44 — 11 columns and 11 rows, because a further column
+ * is nearer the other way round. 40 steps now crosses the entire board with 18 to
+ * spare, so a golden grain is essentially always reachable and the only cost left is
+ * the routing detour past your own trail.
+ *
+ * Not changed here, deliberately: retuning it is a version bump of its own, and
+ * bundling a difficulty change into the commit that changed the board's topology
+ * would make both unmeasurable. See the spec's *Food* for what a replacement would
+ * need to be based on. **Do not change this as tidying.**
  */
 export const GOLDEN_STEPS = 40;
 
@@ -151,6 +188,19 @@ export interface Tier {
  *
  * The difficulty bot is NOT the instrument either: it plays to fill the board, which
  * is the distribution being argued against.
+ *
+ * ⚠ **AND THEY GOT MORE PROVISIONAL AT VERSION 2, WHEN THE BOARD STARTED WRAPPING.**
+ * The wrap TILTED this curve rather than scaling it — it flattened the opening and
+ * left the late game alone, which is the one shape a threshold table cannot express by
+ * having its numbers nudged uniformly:
+ *   - Death is impossible below length 5 (measured exhaustively; spec, *The board*), so
+ *     **2 of tier 1's 8 items cannot end a run.** A tier sized for "~20 s of wall-clock"
+ *     was sized assuming all of it was losable.
+ *   - The wall carried most of the early difficulty — at length 3 the trail is too short
+ *     to matter — and nothing replaced it.
+ *   - At length 200 the wrap buys a little routing freedom at the seams and nothing else.
+ * Runs recorded before version 2 are the wrong data for this: they were played with an
+ * extra hazard. The distribution has to be gathered again.
  *
  * So: ship these, gather runs, then tune. Changing any of them is an `ENGINE_VERSION`
  * bump.

@@ -29,7 +29,13 @@ import {
   stepFx,
   trailFx,
 } from "@/components/grainsnake/fx";
-import { feed, safeDir, stepOneCell } from "./grainsnake-support";
+import {
+  MIN_LETHAL_LENGTH,
+  dieBySelfCollision,
+  feed,
+  safeDir,
+  stepOneCell,
+} from "./grainsnake-support";
 
 const PX = 15;
 
@@ -69,13 +75,27 @@ function playRun(observe: boolean, reduced: boolean): string {
     tick();
   }
 
-  // Now end it: hold one direction until the wall arrives.
-  const wallward = s.dir;
-  let guard = 0;
-  while (!s.dead && !s.filled && guard++ < 60) {
-    stepOneCell(s, wallward === s.dir ? null : wallward);
-    tick();
+  /**
+   * Now end it, ON PURPOSE. *Rewritten 2026-08-08, ENGINE_VERSION 2.*
+   *
+   * This used to read "hold one direction until the wall arrives", with a 60-step
+   * guard. Wrapping removed the wall, and the manoeuvre did not fail — it got worse in
+   * the way that still passes. At the length this run reaches (33) the snake laps the
+   * 23-wide torus and dies of an INCIDENTAL self-collision, a death nobody asked for at
+   * a tick nobody predicted; shorten the feed below ~20 and it circles forever and the
+   * guard expires on a LIVE snake, with every assertion in this file still green
+   * because they compare two runs that are wrong in the same way.
+   *
+   * So it is replaced rather than repaired: `dieBySelfCollision` coils until a lethal
+   * move exists and then takes it, which is deterministic in both halves and ends the
+   * run for a reason this file can name.
+   */
+  const before = s.dead;
+  const death = dieBySelfCollision(s);
+  if (before || !s.dead || !death.wasOwnTrail) {
+    throw new Error("playRun did not end on a deliberate self-collision");
   }
+  tick();
   return snapshot(s);
 }
 
@@ -93,10 +113,24 @@ describe("observing a run cannot change it", () => {
 
   it("the run under test is a real one — it ate, tiered up and died", () => {
     // Without this the assertions above are satisfied by a run that never happened.
+    //
+    // **THE TITLE SAYS "died" AND NOW THE TEST DOES TOO.** *2026-08-08.* It asserted
+    // food and tier and never death, which made it the one test that could have caught
+    // the wall-terminator above going quiet, not catching it. A title that names a
+    // property the body does not check is worse than no test: it is a claim in the
+    // report that nothing backs.
     const s = createGame(162);
     feed(s, 20);
     expect(s.foodEaten).toBe(20);
     expect(tierIndexFor(s.foodEaten)).toBeGreaterThan(0);
+    expect(s.dead, "the fixture died while being fed").toBe(false);
+    expect(s.length, "too short for death to be possible").toBeGreaterThanOrEqual(
+      MIN_LETHAL_LENGTH,
+    );
+
+    const death = dieBySelfCollision(s);
+    expect(s.dead, "the run never ended").toBe(true);
+    expect(death.wasOwnTrail, "ended for some reason other than its own trail").toBe(true);
   });
 });
 
