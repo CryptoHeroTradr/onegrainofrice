@@ -34,6 +34,7 @@ import {
   type WalletTx,
 } from "@/components/charity/ui";
 import { readJson } from "@/lib/readJson";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
 /** SOL transactions below this (dust / rent) are hidden from Recent Activity. */
 const MIN_SOL_TX = 0.01;
@@ -80,7 +81,15 @@ interface Partner {
   url: string;
   logo?: string;
   photo?: string;
+  /** Describes the photo for screen readers. */
+  photoAlt?: string;
+  /** object-position for the photo's crop; centred when omitted. */
+  photoPosition?: string;
   photoCaption?: string;
+  /** A short field film. When present it leads the slide instead of the photo. */
+  video?: { src: string; poster: string; caption?: string; alt: string };
+  /** Headline figures from the partner, shown as a small strip under the blurb. */
+  stats?: Array<{ value: string; label: string }>;
   eyebrow: string;
   tagline: string;
   blurb: string;
@@ -120,8 +129,14 @@ const COUNTRIES: Country[] = [
       nativeName: "Fundación Alrededor de la Mesa",
       url: "http://alrededordelamesa.org/",
       logo: "/charity/colombia-partner-logo.png",
-      photo: "/charity/colombia-partner.jpg",
-      photoCaption: "Each week, 40 to 100 children gather around the table.",
+      // The field film leads this slide; it carries burned-in English subtitles,
+      // so it still tells the story with the sound off (as it autoplays).
+      video: {
+        src: "/charity/colombia-story.mp4",
+        poster: "/charity/colombia-story-poster.jpg",
+        caption: "From the table in Cartagena — 100 children ate today.",
+        alt: "Children and volunteers at Around the Table Foundation in Cartagena, Colombia",
+      },
       eyebrow: "Cartagena, Colombia · Nonprofit",
       tagline: "Every child deserves a place at the table.",
       blurb:
@@ -149,9 +164,43 @@ const COUNTRIES: Country[] = [
     tab: "Perú",
     heading: "🇵🇪 Perú",
     body: "Peru faces significant food insecurity, particularly in rural and indigenous communities.\nOur partners distribute rice directly to families in need, sourced locally where possible to support Peruvian farmers too.",
-    partnerLabel: "TBA — Partner organization coming soon",
+    partnerLabel: "Cáritas Cusco",
     bg: "/charity/charity-peru.png",
     fallback: "linear-gradient(135deg, #19130d 0%, #0A0805 100%)",
+    partner: {
+      name: "Cáritas Cusco",
+      url: "https://www.caritascusco.org/",
+      logo: "/charity/peru-partner-logo.svg",
+      photo: "/charity/peru-partner.jpg",
+      // The source frame is portrait; bias the crop upward to keep faces in it.
+      photoPosition: "center 28%",
+      photoAlt:
+        "A farming couple in traditional Andean dress holding a fresh harvest of lettuce on the high plains outside Cusco",
+      photoCaption: "Andean families growing — and eating — their own harvest.",
+      eyebrow: "Cusco, Perú · Catholic Church nonprofit",
+      tagline: "We sow hope with every gesture.",
+      blurb:
+        "Born after the 1950 earthquake to deliver emergency aid, Cáritas Cusco now works across all eight provinces of the Archdiocese of Cusco — food, dignity and opportunity for families in the Andes, with the communities themselves leading their own development.",
+      stats: [
+        { value: "+64", label: "Projects" },
+        { value: "+620", label: "Communities" },
+        { value: "+64,000", label: "People" },
+      ],
+      pillars: [
+        {
+          title: "Banco de Alimentos Cusco",
+          text: "Their food bank turns 20 soles into breakfast for a family of four. Rice goes straight into those baskets.",
+        },
+        {
+          title: "Communities in the lead",
+          text: "Identity, education, health and decent work — programs run with the families they serve, not handed to them.",
+        },
+        {
+          title: "First on the ground",
+          text: "Founded for earthquake relief and still built for it: emergency response and resilience across the Cusco region.",
+        },
+      ],
+    },
   },
   {
     key: "usa",
@@ -538,7 +587,13 @@ function Leaderboards({ impact }: { impact: Impact | null }) {
                   key={c.id}
                   rank={i + 1}
                   label={`${c.flag} ${c.country}`}
-                  sub={c.usd > 0 ? `${c.meals.toLocaleString()} meals` : "Partnership forming"}
+                  sub={
+                    c.usd > 0
+                      ? `${c.meals.toLocaleString()} meals`
+                      : c.status === "forming"
+                        ? "Partnership forming"
+                        : `${c.name} · partner confirmed`
+                  }
                   value={formatUsd(c.usd)}
                   dim={c.usd === 0}
                 />
@@ -883,6 +938,86 @@ function useCarouselHeight(slide: 0 | 1) {
 }
 
 /**
+ * The lead visual on a partner's story slide: their field film if they have
+ * one, otherwise a photo. The film autoplays muted (its subtitles are burned
+ * in, so the sound is optional) and stops whenever the donate slide is showing
+ * — nothing should keep playing off-screen.
+ */
+function PartnerMedia({ partner, paused }: { partner: Partner; paused: boolean }) {
+  const reduced = usePrefersReducedMotion();
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (paused || reduced) el.pause();
+    else void el.play().catch(() => undefined);
+  }, [paused, reduced]);
+
+  const caption = partner.video?.caption ?? partner.photoCaption;
+  const media = partner.video ? (
+    <video
+      ref={videoRef}
+      src={asset(partner.video.src)}
+      poster={asset(partner.video.poster)}
+      aria-label={partner.video.alt}
+      controls
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      autoPlay={!reduced}
+      style={{
+        display: "block",
+        width: "auto",
+        maxWidth: "100%",
+        maxHeight: "clamp(260px, 55vh, 460px)",
+        margin: "0 auto",
+        borderRadius: 10,
+        border: "1px solid rgba(201,168,76,0.35)",
+        background: "#000",
+      }}
+    />
+  ) : partner.photo ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={asset(partner.photo)}
+      alt={partner.photoAlt ?? partner.name}
+      loading="lazy"
+      style={{
+        width: "100%",
+        height: "clamp(150px, 26vw, 220px)",
+        objectFit: "cover",
+        objectPosition: partner.photoPosition,
+        borderRadius: 10,
+        border: "1px solid rgba(201,168,76,0.35)",
+        display: "block",
+      }}
+    />
+  ) : null;
+
+  if (!media) return null;
+
+  return (
+    <figure style={{ margin: "0 0 1rem" }}>
+      {media}
+      {caption && (
+        <figcaption
+          style={{
+            color: C.muted,
+            fontSize: "0.75rem",
+            marginTop: "0.4rem",
+            textAlign: "center",
+          }}
+        >
+          {caption}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+/**
  * Countries with a live partner: a two-slide carousel. Slide 1 is the partner
  * story (the first thing you see); "Donate" flips to slide 2, the donation form
  * with the full running total. The total is present on both, condensed on the
@@ -936,40 +1071,57 @@ function PartnerCarousel({
               {partner.tagline}
             </h2>
 
-            {partner.photo && (
-              <figure style={{ margin: "0 0 1rem" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={asset(partner.photo)}
-                  alt={`Children at ${partner.name} in Cartagena, Colombia`}
-                  loading="lazy"
-                  style={{
-                    width: "100%",
-                    height: "clamp(150px, 26vw, 220px)",
-                    objectFit: "cover",
-                    borderRadius: 10,
-                    border: "1px solid rgba(201,168,76,0.35)",
-                    display: "block",
-                  }}
-                />
-                {partner.photoCaption && (
-                  <figcaption
-                    style={{
-                      color: C.muted,
-                      fontSize: "0.75rem",
-                      marginTop: "0.4rem",
-                      textAlign: "center",
-                    }}
-                  >
-                    {partner.photoCaption}
-                  </figcaption>
-                )}
-              </figure>
-            )}
+            <PartnerMedia partner={partner} paused={slide !== 0} />
 
             <p style={{ color: C.white, fontSize: "0.95rem", lineHeight: 1.6, margin: 0 }}>
               {partner.blurb}
             </p>
+
+            {partner.stats && (
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  margin: "0.9rem 0 0",
+                }}
+              >
+                {partner.stats.map((s) => (
+                  <div
+                    key={s.label}
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      padding: "0.5rem 0.25rem",
+                      borderRadius: 8,
+                      border: "1px solid rgba(201,168,76,0.35)",
+                      background: "rgba(20,15,8,0.6)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: C.gold,
+                        fontFamily: SERIF,
+                        fontSize: "clamp(1rem, 3vw, 1.3rem)",
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      {s.value}
+                    </div>
+                    <div
+                      style={{
+                        color: C.muted,
+                        fontSize: "0.66rem",
+                        letterSpacing: "0.1em",
+                        textTransform: "uppercase",
+                        marginTop: "0.2rem",
+                      }}
+                    >
+                      {s.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <ul
               style={{
