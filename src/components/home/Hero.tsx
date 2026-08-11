@@ -111,19 +111,24 @@ const HERO_FILM_ALT = "A single glowing grain of rice hovering above an open upt
  * "Enter the Village" CTA is intentionally gone (game/village link removed);
  * only the primary "Get $RICE" CTA remains. Condensed ~40% vertically.
  *
- * THE SECTION IS PLAIN BLACK (2026-08-11). It always carried `bg-black`, but
- * `AmbientFarm` was painted over it — a warm gradient (#000 → #070605 → #14110d
- * with a gold radial at the top) plus drifting grain specks — so the hero read
- * as near-black-with-a-tint rather than black. Dropping the backdrop is what
- * actually makes it black; the class alone never did. `AmbientFarm` itself is
- * untouched and still backs JourneyHero.
+ * THE BACKGROUND IS ONE FLAT COLOUR, `#080602` (2026-08-11). It used to be
+ * `bg-black` with `AmbientFarm` painted over it — a warm gradient (#000 →
+ * #070605 → #14110d with a gold radial at the top) plus drifting grain specks —
+ * so the class said black and the section never was. Both went: the backdrop is
+ * gone, and the colour is now stated once, on the section, where it can be read
+ * off the markup instead of inferred from what is layered on top.
+ *
+ * It is a near-black with warmth in it rather than #000, which matters here —
+ * the film is `object-contain` in a 4:5 box, so the colour meets the footage's
+ * own edges on every viewport. `AmbientFarm` itself is untouched and still backs
+ * JourneyHero.
  */
 export function Hero() {
   const { pour } = useRice();
   return (
     <section
       id="top"
-      className="relative flex min-h-[24vh] flex-col overflow-hidden bg-black px-6 pb-2 pt-16 text-bone lg:min-h-0 lg:pb-1 lg:pt-24"
+      className="relative flex min-h-[24vh] flex-col overflow-hidden bg-[#080602] px-6 pb-2 pt-16 text-bone lg:min-h-0 lg:pb-1 lg:pt-24"
     >
 
       {/* Mobile: single-column flex, ordered so the Buy CTA drops BELOW the blurb
