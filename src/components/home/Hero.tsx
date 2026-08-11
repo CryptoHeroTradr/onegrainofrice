@@ -34,10 +34,18 @@ function MealsDonated() {
 /**
  * The hero film — replaces the `hero-grain.png` still (2026-08-11).
  *
- * MUTED, AND THAT IS NOT NEGOTIABLE. The file carries an audio track, but every
- * browser blocks an unmuted autoplay outright — so an unmuted <video> here does
- * not play loudly, it does not play AT ALL, and the hero is a dead black box.
- * Sound arriving unasked on a landing page is the other reason.
+ * SILENT TWICE OVER. The `muted` attribute is what lets it autoplay at all —
+ * every browser blocks an unmuted autoplay outright, so an unmuted <video> here
+ * would not play loudly, it would not play AT ALL, and the hero would be a dead
+ * black box. But `muted` is a property of this element, and a viewer can reach
+ * past it (Chrome's right-click "Show controls", picture-in-picture, the OS
+ * media session). So the AUDIO TRACK IS GONE FROM THE FILE — stripped with
+ * `ffmpeg -c:v copy -an`, which rewrites the container without re-encoding a
+ * single frame, so the picture is bit-identical and 180KB left with the sound.
+ * There is now no sound to un-mute.
+ *
+ * `loop` is what makes an 11-second clip a hero rather than something that plays
+ * once and freezes. No `controls`: this is art, not a player.
  *
  * `playsInline` keeps iOS Safari from hijacking it into the fullscreen player,
  * where it would cover the page the moment it autoplays.
