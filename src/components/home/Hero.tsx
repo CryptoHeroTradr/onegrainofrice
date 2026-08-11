@@ -111,24 +111,31 @@ const HERO_FILM_ALT = "A single glowing grain of rice hovering above an open upt
  * "Enter the Village" CTA is intentionally gone (game/village link removed);
  * only the primary "Get $RICE" CTA remains. Condensed ~40% vertically.
  *
- * THE BACKGROUND IS ONE FLAT COLOUR, `#080602` (2026-08-11). It used to be
- * `bg-black` with `AmbientFarm` painted over it — a warm gradient (#000 →
- * #070605 → #14110d with a gold radial at the top) plus drifting grain specks —
- * so the class said black and the section never was. Both went: the backdrop is
- * gone, and the colour is now stated once, on the section, where it can be read
- * off the markup instead of inferred from what is layered on top.
+ * THE BACKGROUND IS ONE FLAT COLOUR, `#000000` (2026-08-11, superseding the
+ * warm near-black `#080602` of earlier the same day). It used to be `bg-black`
+ * with `AmbientFarm` painted over it — a warm gradient (#000 → #070605 →
+ * #14110d with a gold radial at the top) plus drifting grain specks — so the
+ * class said black and the section never was. Both went: the backdrop is gone,
+ * and the colour is stated once, on the section, where it can be read off the
+ * markup instead of inferred from what is layered on top.
  *
- * It is a near-black with warmth in it rather than #000, which matters here —
- * the film is `object-contain` in a 4:5 box, so the colour meets the footage's
- * own edges on every viewport. `AmbientFarm` itself is untouched and still backs
- * JourneyHero.
+ * The warm near-black was chosen so the section would meet the film's own edges
+ * (it is `object-contain` in a 4:5 box, so that seam is on every viewport);
+ * true black matches the footage's letterbox exactly instead, which is why it
+ * wins. `AmbientFarm` itself is untouched and still backs JourneyHero.
+ *
+ * STACKING: the film is an ABSOLUTE element inside HeroFilm, and absolutely
+ * positioned boxes paint above every static sibling no matter where they sit in
+ * the DOM — so the bottom row, which `-mt-20` pulls up INTO the film's column on
+ * desktop, was being covered by it. Copy always wins: the film's wrapper is
+ * pinned to `z-0` and every text/CTA block carries `relative z-10`.
  */
 export function Hero() {
   const { pour } = useRice();
   return (
     <section
       id="top"
-      className="relative flex min-h-[24vh] flex-col overflow-hidden bg-[#080602] px-6 pb-2 pt-16 text-bone lg:min-h-0 lg:pb-1 lg:pt-24"
+      className="relative flex min-h-[24vh] flex-col overflow-hidden bg-black px-6 pb-2 pt-16 text-bone lg:min-h-0 lg:pb-1 lg:pt-24"
     >
 
       {/* Mobile: single-column flex, ordered so the Buy CTA drops BELOW the blurb
@@ -138,7 +145,7 @@ export function Hero() {
       <div className="relative z-10 flex flex-1 flex-col justify-start">
         <div className="mx-auto flex w-full max-w-[1180px] flex-col items-center gap-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-8 lg:gap-y-2">
           {/* Wordmark */}
-          <h1 className="order-1 m-0 w-full max-w-[30rem] sm:max-w-[34rem] lg:order-none lg:col-start-1 lg:row-start-1 lg:max-w-[25.5rem] lg:justify-self-start">
+          <h1 className="relative z-10 order-1 m-0 w-full max-w-[30rem] sm:max-w-[34rem] lg:order-none lg:col-start-1 lg:row-start-1 lg:max-w-[25.5rem] lg:justify-self-start">
             <Image
               src={asset("/onegrainofrice.png")}
               alt={`${site.heroTitle.pre} ${site.heroTitle.accent}`}
@@ -151,7 +158,10 @@ export function Hero() {
 
           {/* Grain — spans the wordmark / meals / Buy stack in column one. */}
           <div className="order-2 flex w-full flex-col items-center lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:-mt-8">
-            <div className="relative w-full max-w-[24rem] lg:max-w-[28rem]">
+            {/* z-0, not auto: the film inside is absolute, and an auto-z
+                positioned box would paint over the copy that -mt-* pulls up
+                into this column. */}
+            <div className="relative z-0 w-full max-w-[24rem] lg:max-w-[28rem]">
               <HeroFilm />
             </div>
           </div>
@@ -161,13 +171,13 @@ export function Hero() {
               width so the box centres on the button rather than hugging the
               column's left edge. Mobile: above "just hold". */}
           <div
-            className={`order-3 flex justify-center lg:order-none lg:col-start-1 lg:row-start-2 lg:-mt-16 lg:justify-self-start ${BUY_W_LG}`}
+            className={`relative z-10 order-3 flex justify-center lg:order-none lg:col-start-1 lg:row-start-2 lg:-mt-16 lg:justify-self-start ${BUY_W_LG}`}
           >
             <MealsDonated />
           </div>
 
           {/* Bottom row: "just hold" line, then the tagline + blurb. */}
-          <div className="order-4 mx-auto w-full max-w-3xl text-center lg:order-none lg:col-span-2 lg:row-start-4 lg:-mt-20">
+          <div className="relative z-10 order-4 mx-auto w-full max-w-3xl text-center lg:order-none lg:col-span-2 lg:row-start-4 lg:-mt-20">
             <p className="font-display text-xl italic text-bone">
               just hold <span className="text-khaki not-italic">ONE</span>{" "}
               <span className="italic">grain.</span>
@@ -193,7 +203,7 @@ export function Hero() {
               pour({ x: e.clientX, y: e.clientY, count: 36 });
               playPour();
             }}
-            className="order-5 mt-1 inline-block transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki lg:order-none lg:col-start-1 lg:row-start-3 lg:-mt-14 lg:justify-self-start"
+            className="relative z-10 order-5 mt-1 inline-block transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-khaki lg:order-none lg:col-start-1 lg:row-start-3 lg:-mt-14 lg:justify-self-start"
           >
             <Image
               src={asset("/buyrice.png")}
