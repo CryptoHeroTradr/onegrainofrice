@@ -5,8 +5,8 @@ import { site } from "@/config/site";
 import { asset } from "@/lib/asset";
 import { useRice } from "@/components/rice/RiceParticles";
 import { playPour } from "@/lib/sound";
-import { AmbientFarm } from "@/components/journey/AmbientFarm";
 import { useMealsDonated } from "@/hooks/useCharityImpact";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
 /** Width of the Buy CTA art on desktop — the meals box is centred on it. */
 const BUY_W_LG = "lg:w-[18rem]";
@@ -32,11 +32,83 @@ function MealsDonated() {
 }
 
 /**
+ * The hero film — replaces the `hero-grain.png` still (2026-08-11).
+ *
+ * MUTED, AND THAT IS NOT NEGOTIABLE. The file carries an audio track, but every
+ * browser blocks an unmuted autoplay outright — so an unmuted <video> here does
+ * not play loudly, it does not play AT ALL, and the hero is a dead black box.
+ * Sound arriving unasked on a landing page is the other reason.
+ *
+ * `playsInline` keeps iOS Safari from hijacking it into the fullscreen player,
+ * where it would cover the page the moment it autoplays.
+ *
+ * REDUCED MOTION GETS THE POSTER FRAME, not the loop — the same gate AmbientFarm
+ * uses. A looping video is exactly what that setting is asking us not to do, and
+ * the poster is the film's own first frame, so nothing about the art changes.
+ *
+ * That same frame is the `poster` on the video, extracted from the file itself
+ * (`ffmpeg -vf select=eq(n\,0)`), so the hero paints art immediately instead of
+ * a black hole while 3.8MB buffers. Without it the most prominent thing on the
+ * page is empty for as long as the visitor's connection takes.
+ *
+ * The box keeps the still's `aspect-[4/5]` and the film is `object-contain`
+ * inside it. The film is 848×1280 (taller and narrower than 4:5), so a native
+ * aspect ratio here would push the hero ~7rem taller on desktop — and against a
+ * black section the contained edges are invisible, so the letterbox costs
+ * nothing and the layout does not move.
+ *
+ * `grain-glow` is deliberately NOT applied. It is a pulsing gold `drop-shadow`
+ * that hugged the PNG's transparent silhouette; a video frame is an opaque
+ * rectangle, so the same rule draws a glowing BOX around it — and its 0.95↔1
+ * opacity pulse would flicker the footage.
+ */
+function HeroFilm() {
+  const reduced = usePrefersReducedMotion();
+  const poster = asset("/ricelandingvid-poster.jpg");
+
+  return (
+    <div className="relative aspect-[4/5] w-full">
+      {reduced ? (
+        <Image
+          src={poster}
+          alt={HERO_FILM_ALT}
+          fill
+          priority
+          sizes="(min-width: 1024px) 28rem, 70vw"
+          className="object-contain"
+        />
+      ) : (
+        <video
+          className="absolute inset-0 h-full w-full object-contain"
+          autoPlay
+          muted
+          loop
+          playsInline
+          poster={poster}
+          aria-label={HERO_FILM_ALT}
+        >
+          <source src={asset("/ricelandingvid.mp4")} type="video/mp4" />
+        </video>
+      )}
+    </div>
+  );
+}
+
+const HERO_FILM_ALT = "A single glowing grain of rice hovering above an open upturned palm";
+
+/**
  * New-home hero — the single luminous grain over an open, upturned palm (never
  * a bowl), the brand thesis. Extracted from JourneyHero so the new page no
  * longer mounts the SEED→GROW→HARVEST→DONATE journey spine. The old secondary
  * "Enter the Village" CTA is intentionally gone (game/village link removed);
  * only the primary "Get $RICE" CTA remains. Condensed ~40% vertically.
+ *
+ * THE SECTION IS PLAIN BLACK (2026-08-11). It always carried `bg-black`, but
+ * `AmbientFarm` was painted over it — a warm gradient (#000 → #070605 → #14110d
+ * with a gold radial at the top) plus drifting grain specks — so the hero read
+ * as near-black-with-a-tint rather than black. Dropping the backdrop is what
+ * actually makes it black; the class alone never did. `AmbientFarm` itself is
+ * untouched and still backs JourneyHero.
  */
 export function Hero() {
   const { pour } = useRice();
@@ -45,7 +117,6 @@ export function Hero() {
       id="top"
       className="relative flex min-h-[24vh] flex-col overflow-hidden bg-black px-6 pb-2 pt-16 text-bone lg:min-h-0 lg:pb-1 lg:pt-24"
     >
-      <AmbientFarm />
 
       {/* Mobile: single-column flex, ordered so the Buy CTA drops BELOW the blurb
           (order-4). Desktop: 2-col grid — wordmark + Buy stacked left, grain
@@ -68,16 +139,7 @@ export function Hero() {
           {/* Grain — spans the wordmark / meals / Buy stack in column one. */}
           <div className="order-2 flex w-full flex-col items-center lg:order-none lg:col-start-2 lg:row-start-1 lg:row-span-3 lg:-mt-8">
             <div className="relative w-full max-w-[24rem] lg:max-w-[28rem]">
-              <div className="grain-glow relative aspect-[4/5] w-full">
-                <Image
-                  src={asset("/hero-grain.png")}
-                  alt="A single glowing grain of rice hovering above an open upturned palm"
-                  fill
-                  priority
-                  sizes="(min-width: 1024px) 28rem, 70vw"
-                  className="object-contain"
-                />
-              </div>
+              <HeroFilm />
             </div>
           </div>
 
