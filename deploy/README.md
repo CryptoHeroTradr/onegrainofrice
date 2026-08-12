@@ -59,6 +59,35 @@ static chunks) and prints the promote command.
 > build succeeds, the site is fine, and the damage is a committed `tsconfig.json`
 > pointing at a path that exists on exactly one machine. Recover with
 > `git checkout tsconfig.json && rm -rf tmp/`.
+>
+> **`next dev` DOES BOTH OF THESE TOO, AND THIS NOTE COVERED ONLY HALF THE
+> COMMANDS UNTIL NOW.** *Amended 2026-08-13, after finding a `next dev` that had
+> been running for six days writing through the `./.next` symlink into the live
+> build directory.* Dev mutates `tsconfig.json` by the same mechanism — it manages
+> the same `include` list — and it writes to `./.next` by default, which since the
+> build/promote split is a **symlink into `builds/<sha>`**: the directory the live
+> process is serving. Nothing is damaged on the day it happens. The failure it
+> sets up is a build directory being swapped or removed **during a promote** with
+> a dev server still holding files open inside it, which is the worst possible
+> moment to discover it. Use **`deploy/dev.sh`** (below), never a bare `next dev`.
+
+**Local dev (safe — never writes `./.next`, never dirties the tree):**
+
+```bash
+deploy/dev.sh          # port 3005 by default
+deploy/dev.sh 3099     # or pass one
+```
+
+*Added 2026-08-13.* Forces `NEXT_DIST_DIR=builds/_dev`, so the live `./.next`
+symlink is untouched; snapshots and restores `tsconfig.json` on exit — success,
+failure **or Ctrl-C** — using the same trap `build.sh` uses; and refuses to start
+if the port is already listening, because Next's fallback behaviour is to pick
+the next port up, and the next port up from 3005 is **3006, the live one**.
+`pnpm dev` runs this script, so the protection is not something to remember.
+
+`builds/_dev` rather than a new `.next-dev`: `builds/` is already gitignored and
+already excluded in `tsconfig.json`, so this reuses two exclusions instead of
+adding two more places to forget one.
 
 **2. Promote (a separate, deliberate act — you run it, watching):**
 
