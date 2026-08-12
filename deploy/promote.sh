@@ -21,6 +21,17 @@ set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # repo root
 PM2_APP="onegrainofrice"
+
+# `--verify <id>` runs the manifest check against a build and STOPS — no symlink, no pm2,
+# no marker written. *Added 2026-08-13 with the check itself*, for two reasons: it lets you
+# ask "is this rollback target still intact?" while nothing is on fire, which is the only
+# calm moment to find out; and it makes the guard testable on the real code path, rather
+# than on a copy of it in a test harness that could drift.
+VERIFY_ONLY=0
+if [ "${1:-}" = "--verify" ] || [ "${1:-}" = "--check" ]; then
+  VERIFY_ONLY=1
+  shift
+fi
 ID="${1:-}"
 
 # The live process must serve ./.next (default distDir). Make sure no build-time
@@ -38,6 +49,152 @@ TARGET="builds/$ID"
 if [ ! -d "$TARGET" ] || [ ! -f "$TARGET/BUILD_ID" ]; then
   echo "!! $TARGET is missing or incomplete. Build first: deploy/build.sh" >&2
   exit 1
+fi
+
+# --- verify the target against its manifest -------------------------------------
+#
+# *Added 2026-08-13.* The check above ("the directory exists and has a BUILD_ID") is an
+# existence test. build.sh's completeness check runs where the data is FRESH — on the
+# directory it just produced — and promote.sh runs where the data is TRUSTED, which can be
+# weeks later. A build truncated, half-deleted, cut short by a full disk or badly rsynced
+# in between used to promote in silence.
+#
+# THIS RUNS BEFORE THE SYMLINK SWAP. Verifying afterwards produces an accurate report
+# about a site that is already down.
+#
+# Missing files and size mismatches REFUSE. Extra files only warn: every failure this
+# guards against removes a file or changes its size, while extra files turn up for benign
+# reasons (a stray dev server wrote into a build directory once, which is part of why this
+# exists) and refusing on them would make the guard the outage.
+verify_target() {
+  local target="$1"
+  local manifest="$target/BUILD_MANIFEST"
+  local built="$target/BUILT"
+
+  # THE MIGRATION DISCRIMINATOR. Read from BUILT, not from the manifest — a missing
+  # manifest cannot tell you whether it was never written or has been deleted.
+  local claims_manifest=no
+  if [ -f "$built" ] && LC_ALL=C grep -qx 'MANIFEST=1' "$built"; then claims_manifest=yes; fi
+
+  # ── FAIL CLOSED ──────────────────────────────────────────────────────────────
+  # A manifest that is absent, empty or truncated must not silently skip verification.
+  # This is the branch a truncated build actually hits.
+  if [ ! -s "$manifest" ]; then
+    if [ "$claims_manifest" = yes ]; then
+      echo "!! REFUSING to promote $target." >&2
+      echo "   Its BUILT says MANIFEST=1, so build.sh wrote a manifest — and" >&2
+      echo "   $manifest is now $([ -e "$manifest" ] && echo "EMPTY" || echo "MISSING")." >&2
+      echo "   That is exactly the damage this check exists to catch. Rebuild:" >&2
+      echo "       deploy/build.sh" >&2
+      exit 1
+    fi
+    echo "  !! UNVERIFIED BUILD — $target has no manifest."
+    echo "     It predates manifest-writing builds (no MANIFEST=1 in its BUILT), so this"
+    echo "     promote is allowed and its contents CANNOT be checked against what was"
+    echo "     built. Grandfathered on purpose: refusing here would make every existing"
+    echo "     rollback target unusable in the name of protecting it."
+    echo
+    return 0
+  fi
+
+  # The manifest must validate itself before anything is validated against it.
+  if [ "$(head -1 "$manifest")" != "MANIFEST_VERSION=1" ]; then
+    echo "!! REFUSING: $manifest has an unrecognised first line." >&2
+    echo "   got: $(head -1 "$manifest")" >&2
+    echo "   A newer build.sh may have written it; this promote.sh cannot read it." >&2
+    exit 1
+  fi
+  if [ "$(tail -1 "$manifest")" != "END_MANIFEST" ]; then
+    echo "!! REFUSING: $manifest is TRUNCATED (no END_MANIFEST terminator)." >&2
+    echo "   A manifest cut short describes a subset of the build and would verify" >&2
+    echo "   clean against a build that is missing everything it forgot to mention." >&2
+    exit 1
+  fi
+
+  local declared listed
+  declared="$(LC_ALL=C sed -n 's/^FILE_COUNT=//p' "$manifest" | head -1)"
+  listed="$(LC_ALL=C grep -c '^SIZE	' "$manifest" || true)"
+  if [ -z "$declared" ] || ! [ "$declared" -eq "$declared" ] 2>/dev/null; then
+    echo "!! REFUSING: $manifest has no usable FILE_COUNT." >&2
+    exit 1
+  fi
+  if [ "$declared" != "$listed" ]; then
+    echo "!! REFUSING: $manifest is INTERNALLY INCONSISTENT." >&2
+    echo "   FILE_COUNT=$declared but it lists $listed files." >&2
+    exit 1
+  fi
+
+  local expected actual extras
+  expected="$(mktemp)"; actual="$(mktemp)"; extras="$(mktemp)"
+  LC_ALL=C awk -F'\t' '$1 == "SIZE" { printf "%s\t%s\n", $3, $2 }' "$manifest" \
+    | LC_ALL=C sort > "$expected"
+  # BUILD_MANIFEST is not in its own list, and DEPLOYED is written by THIS script on a
+  # previous promote — neither is a discrepancy.
+  ( cd "$target" && find . -type f -printf '%P\t%s\n' ) \
+    | LC_ALL=C grep -vE '^(BUILD_MANIFEST|DEPLOYED)	' \
+    | LC_ALL=C sort > "$actual"
+
+  local bad=0
+  # Whole-line comparison: a size change shows up here as a non-matching expected line.
+  while IFS=$'\t' read -r path size; do
+    local present
+    present="$(LC_ALL=C awk -F'\t' -v p="$path" '$1 == p { print $2; exit }' "$actual")"
+    if [ -z "$present" ]; then
+      echo "   MISSING  $path: $size expected, absent"
+    else
+      echo "   SIZE     $path: $size expected, $present present"
+    fi
+    bad=$((bad + 1))
+  done < <(LC_ALL=C comm -23 "$expected" "$actual")
+
+  LC_ALL=C comm -13 "$expected" "$actual" \
+    | LC_ALL=C awk -F'\t' 'NR==FNR { known[$1]; next } !($1 in known) { print "   EXTRA    " $1 " (" $2 " bytes, not in the manifest)" }' \
+      "$expected" - > "$extras" || true
+
+  local n_expected n_actual
+  n_expected="$(wc -l < "$expected" | tr -d ' ')"
+  n_actual="$(wc -l < "$actual" | tr -d ' ')"
+
+  if [ "$bad" != 0 ]; then
+    echo "!! REFUSING to promote $target — $bad file(s) do not match the manifest." >&2
+    echo "   manifest: $n_expected files · on disk: $n_actual" >&2
+    echo "   The paths and deltas are listed above. Rebuild rather than promoting this." >&2
+    rm -f "$expected" "$actual" "$extras"
+    exit 1
+  fi
+
+  # Contents, for the three files where contents are what matter.
+  local sha_bad=0
+  while IFS=$'\t' read -r _ file want; do
+    local got
+    got="$(sha256sum "$target/$file" 2>/dev/null | cut -d' ' -f1)"
+    if [ "$got" != "$want" ]; then
+      echo "   CONTENT  $file: sha256 $want expected, ${got:-absent} present"
+      sha_bad=$((sha_bad + 1))
+    fi
+  done < <(LC_ALL=C grep '^SHA256	' "$manifest")
+  if [ "$sha_bad" != 0 ]; then
+    echo "!! REFUSING to promote $target — $sha_bad manifest file(s) have wrong contents." >&2
+    rm -f "$expected" "$actual" "$extras"
+    exit 1
+  fi
+
+  echo "  verified: $n_expected files match the manifest (size + path), 3 checksummed."
+  if [ -s "$extras" ]; then
+    echo "  !! $(wc -l < "$extras" | tr -d ' ') file(s) present that the build did not write."
+    echo "     Not a refusal — nothing this check guards against ADDS files — but worth a look:"
+    head -10 "$extras"
+  fi
+  rm -f "$expected" "$actual" "$extras"
+}
+
+if [ "$VERIFY_ONLY" = 1 ]; then
+  echo "=== onegrainofrice · verify $TARGET (no promote) ==="
+fi
+verify_target "$TARGET"
+if [ "$VERIFY_ONLY" = 1 ]; then
+  echo "=== verify only: nothing was promoted, nothing was restarted ==="
+  exit 0
 fi
 
 CURRENT_LINK="$(readlink .next 2>/dev/null || true)"   # empty if .next is a real dir

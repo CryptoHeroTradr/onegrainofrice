@@ -79,11 +79,68 @@ fi
 if [ "$fail" != 0 ]; then echo; echo "BUILD INCOMPLETE — do not promote $OUT" >&2; exit 1; fi
 
 # Provenance marker written at build time (what commit/dirty this build came from).
+#
+# `MANIFEST=1` is the MIGRATION DISCRIMINATOR, and it is here rather than in the manifest
+# because the manifest cannot testify to its own absence. promote.sh reads this line to
+# tell "this build was made before manifests existed" (warn, proceed) from "this build
+# should have a manifest and does not" (refuse). See deploy/README.md.
 {
   echo "BUILT_FROM_COMMIT=$SHA"
   echo "BUILT_DIRTY_FILES=$DIRTY"
   echo "BUILT_AT=$STAMP"
+  echo "MANIFEST=1"
 } > "$OUT/BUILT"
+
+# --- the manifest, written LAST -------------------------------------------------
+#
+# *Added 2026-08-13.* The completeness check above runs on the directory this script just
+# produced — it proves the build was whole when it was made, and says nothing about the
+# directory weeks later, when promote.sh is asked to roll back to it. A build that was
+# complete at build time and has since been truncated, half-deleted, cut short by a full
+# disk or badly rsynced used to promote in silence, because promote.sh's only test was
+# "the directory exists and has a BUILD_ID".
+#
+# WHAT IS RECORDED AND WHY IT IS NOT A CHECKSUM OF THE TREE. Every one of those failures
+# either removes a file or changes its size, so path + size + count catches all of them.
+# Hashing ~2,000 files would buy detection of silent bit-rot that has never been observed
+# here, and would charge for it on every promote. Checksums are spent on exactly the three
+# files whose CONTENTS gate correctness: BUILD_ID, build-manifest.json,
+# prerender-manifest.json.
+#
+# WRITTEN LAST, AFTER THE COMPLETENESS CHECK ABOVE HAS PASSED. A manifest written any
+# earlier would faithfully describe an incomplete build, which is worse than no manifest:
+# it would make a broken directory verifiable.
+MANIFEST="$OUT/BUILD_MANIFEST"
+BUILD_LIST="$(mktemp)"
+# NO `trap ... EXIT` here: this script already has one, restoring tsconfig.json, and a
+# second EXIT trap REPLACES the first rather than adding to it. That would trade a stray
+# temp file for the dirty tracked file the whole snapshot exists to prevent.
+( cd "$OUT" && find . -type f -printf '%P\t%s\n' ) | LC_ALL=C sort > "$BUILD_LIST"
+
+# The format is tab-separated, so a path containing a tab would make it ambiguous to
+# parse. Refuse HERE, where it is cheap and loud, rather than mis-verifying later.
+if ! LC_ALL=C awk -F'\t' 'NF != 2 { exit 1 }' "$BUILD_LIST"; then
+  echo "!! a build path contains a tab — the manifest format cannot represent it." >&2
+  LC_ALL=C awk -F'\t' 'NF != 2 { print "   " $0 }' "$BUILD_LIST" >&2
+  exit 1
+fi
+
+{
+  echo "MANIFEST_VERSION=1"
+  echo "BUILT_FROM_COMMIT=$SHA"
+  echo "BUILT_AT=$STAMP"
+  printf 'FILE_COUNT=%s\n' "$(wc -l < "$BUILD_LIST" | tr -d ' ')"
+  for f in BUILD_ID build-manifest.json prerender-manifest.json; do
+    printf 'SHA256\t%s\t%s\n' "$f" "$(sha256sum "$OUT/$f" | cut -d' ' -f1)"
+  done
+  LC_ALL=C awk -F'\t' '{ printf "SIZE\t%s\t%s\n", $2, $1 }' "$BUILD_LIST"
+  # The terminator is how a TRUNCATED manifest is detected. Without it, a manifest cut
+  # short mid-write describes a subset of the build and verifies clean against it.
+  echo "END_MANIFEST"
+} > "$MANIFEST"
+
+echo "  manifest: $(wc -l < "$BUILD_LIST" | tr -d ' ') files recorded in $OUT/BUILD_MANIFEST"
+rm -f "$BUILD_LIST"
 
 echo
 echo "=== build OK: $OUT (commit $SHA, $DIRTY dirty) — NOT live ==="

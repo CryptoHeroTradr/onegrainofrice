@@ -89,6 +89,86 @@ the next port up, and the next port up from 3005 is **3006, the live one**.
 already excluded in `tsconfig.json`, so this reuses two exclusions instead of
 adding two more places to forget one.
 
+> **THE COMPLETENESS CHECK RUNS WHERE THE DATA IS FRESH. THE MANIFEST IS HOW IT
+> TRAVELS TO WHERE THE DATA IS TRUSTED.** *Added 2026-08-13.* The check above
+> runs on the directory `build.sh` just produced. It proves the build was whole
+> when it was made and says nothing about that directory weeks later, when
+> `promote.sh` is asked to roll back to it — and `promote.sh`'s only test used to
+> be "the directory exists and has a `BUILD_ID`". A build that was complete at
+> build time and had since been truncated, half-deleted, cut short by a full disk
+> or badly rsynced **promoted in silence**.
+>
+> `build.sh` now writes `BUILD_MANIFEST` as its **last** step, after the
+> completeness check passes. Written any earlier it would faithfully describe an
+> incomplete build, which is worse than no manifest at all: it would make a broken
+> directory verifiable.
+>
+> **What it records, and what it deliberately does not.** Path, size and file
+> count for every file, plus a sha256 of exactly three: `BUILD_ID`,
+> `build-manifest.json`, `prerender-manifest.json` — the three whose *contents*
+> gate correctness. It does **not** hash the tree. Truncation, half-deletion,
+> out-of-disk and bad rsync all either remove a file or change its size, so path +
+> size catches every failure mode on the list; hashing ~840 files would buy
+> detection of silent bit-rot that has never been observed here and charge for it
+> on every promote.
+>
+> **Missing or wrong-sized files refuse. Extra files only warn.** Nothing this
+> guards against *adds* files, and extra files turn up for benign reasons — a
+> stray dev server wrote into a live build directory once, which is part of why
+> this exists. Refusing on those would make the guard the outage.
+
+**Verifying a rollback target without promoting it:**
+
+```bash
+deploy/promote.sh --verify <id>     # checks the manifest, changes nothing
+```
+
+Runs the identical check the real promote runs and stops before the symlink. Use
+it to ask "is that rollback target still intact?" while nothing is on fire, which
+is the only calm moment to find out.
+
+**Migration: `no manifest` has to mean two different things.**
+
+Every build made before 2026-08-13 — 56 of them, including the one currently live
+— has no manifest. So the absent case cannot simply refuse, or this change would
+make every existing rollback target unusable in the name of protecting it.
+
+`build.sh` therefore writes **`MANIFEST=1` into the `BUILT` file** of every build
+it produces from now on, and `promote.sh` reads *that* to tell the two apart:
+
+| `BUILT` says `MANIFEST=1` | `BUILD_MANIFEST` | promote.sh |
+|---|---|---|
+| no (old build) | absent | **WARNS LOUDLY and proceeds** — grandfathered |
+| yes | absent, empty, or truncated | **REFUSES** — fail closed |
+| either | present | **VERIFIES IT** |
+
+> *Rejected: letting the manifest's own absence mean "old build".* It is the
+> obvious design and it is precisely the fail-open this check exists to prevent —
+> a deleted manifest would look identical to a build that never had one, so the
+> damage would disable the guard that detects it.
+>
+> *Rejected: comparing dates or directory mtimes.* An mtime says when something
+> last touched the directory, not when it was built, and the dev-server incident
+> is a standing example of something touching one for unrelated reasons.
+>
+> *Rejected: a version field inside the manifest.* It answers the wrong question.
+> It can distinguish an old format from a new one; it cannot say anything at all
+> when the file is not there, which is the case that matters.
+>
+> **The known residual, stated rather than discovered:** if a build loses *both*
+> its manifest and its `BUILT` marker, it falls back to the grandfathered path and
+> promotes unverified. That takes two specific files disappearing, and the loud
+> `UNVERIFIED BUILD` banner still fires on the way past — which is the mitigation.
+> This is a guard against truncation and bad copies, not against an adversary.
+
+A grandfathered promote prints, before anything is switched:
+
+```
+  !! UNVERIFIED BUILD — builds/7d937fa has no manifest.
+     It predates manifest-writing builds (no MANIFEST=1 in its BUILT), so this
+     promote is allowed and its contents CANNOT be checked against what was built.
+```
+
 **2. Promote (a separate, deliberate act — you run it, watching):**
 
 ```bash
