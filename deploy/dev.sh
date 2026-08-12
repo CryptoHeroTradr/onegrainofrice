@@ -66,6 +66,17 @@ restore_tsconfig() {
 trap restore_tsconfig EXIT INT TERM
 
 mkdir -p builds
-# NOT `exec` — exec replaces this shell and takes the EXIT trap with it, so tsconfig.json
-# would never be restored. Run it as a child and let the trap fire on Ctrl-C.
+# ─── DO NOT ADD `exec` HERE. ─────────────────────────────────────────────────────────
+# `exec` in front of a long-running process is the obvious tidy-up for a wrapper script —
+# one fewer process, signals go straight through — and it is wrong in THIS script, for a
+# reason nothing at this line would otherwise show you:
+#
+#   exec REPLACES this shell, and the EXIT trap set above goes with it. tsconfig.json is
+#   then never restored, so every dev session ends with a tracked file rewritten to point
+#   at builds/_dev — the exact damage this script exists to prevent, reintroduced by a
+#   change that looks like a cleanup and breaks nothing visible.
+#
+# Nothing fails loudly if you do it. The build keeps working, dev keeps working, and the
+# tree is dirty in a way that gets committed by someone who did not cause it. Run Next as
+# a CHILD and let the trap fire on exit, failure, or Ctrl-C.
 NEXT_DIST_DIR="$OUT" node node_modules/next/dist/bin/next dev -p "$PORT"

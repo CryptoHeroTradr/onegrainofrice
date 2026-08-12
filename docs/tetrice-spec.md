@@ -475,6 +475,31 @@ edit to remember; the test refuses it.
 **7-bag. Shuffle all seven shapes, deal all seven, reshuffle.** A shape is never more than
 twelve pieces away, and the player can count.
 
+**WHAT THE BAG GUARANTEES, EXACTLY — AND THE THING IT DOES NOT, WHICH LOOKS LIKE A BUG.**
+*Added 2026-08-13, out of Phase 2. The line above ("never more than twelve pieces away")
+was already correct and is now pinned by `test/tetrice-bag.test.ts`; what was missing is the
+adjacent claim that everyone reaches for and that is false.*
+
+| Property | Holds? |
+|---|---|
+| Every **aligned** window of 7 (pieces 0–6, 7–13, …) contains each shape exactly once | **Yes** — that is what a bag is |
+| Every **sliding** window of 7 contains each shape exactly once | **NO**, and it must not |
+| Maximum gap between two occurrences of a shape | **12 pieces**, and the bound is tight |
+| Every sliding window of **14** contains all seven | **Yes** |
+
+**Straddling duplicates are correct behaviour, not a defect.** A 7-bag permutes *within* a
+bag. Nothing stops a shape being last out of one bag and first out of the next, so a
+window that straddles the boundary legitimately holds it twice — an S immediately after an
+S is the bag working, not the bag broken.
+
+This is written down because the "fix" is obvious, cheap and wrong: constraining the
+boundary (re-rolling a repeat, or forbidding a shape from opening a bag if it closed the
+last one) makes the sequence *more* predictable, changes the drought distribution the
+difficulty curve was tuned against, and is an `ENGINE_VERSION` bump that silently rescores
+nothing while quietly changing every future run. `test/tetrice-bag.test.ts` therefore
+**asserts that straddling duplicates occur**, so the property cannot be removed by someone
+who believes they are removing a bug.
+
 - *Rejected: pure random.* Independent uniform draws produce droughts — the wait for an I
   is geometric, so a run in ten will wait more than twenty pieces for one — and a drought
   does not read as variance, it reads as broken. The player concludes the game is cheating,
@@ -665,7 +690,10 @@ forced lock.**
      edge is not an edge case, it is what everybody does while deciding: DAS keeps firing
      move-left events, every one of them is refused by the wall, and if a refused move
      counted as a reset the piece would sit there until the 15-reset cap forced it down —
-     roughly 8 seconds of a piece not falling while the player is doing nothing unusual.
+     **7.75 seconds** of a piece not falling while the player is doing nothing unusual.
+     (*The figure was "roughly 8 seconds" until 2026-08-13; see the corrected bound below.
+     It is written out here too because a derived number in prose outlives the table it was
+     derived from.*)
   3. **A rotation whose every SRS kick failed.** The rotation did not happen (*Rotation*),
      so nothing about the state changed and nothing resets.
 
@@ -675,10 +703,25 @@ forced lock.**
   a piece in open space.
 - A downward move needs no special case: while the piece can move down, the lock timer is
   not running.
-- **The worst-case stall is bounded and it is worth knowing the number:** 30 frames plus 15
-  resets of 30 frames is 480 frames — **8 seconds** on one piece, at any level. That is the
-  ceiling on infinity-spin. It is generous on purpose; the cap exists to make the game
-  terminate, not to punish a player who is thinking.
+- **The worst-case stall is bounded, and the number is 465 frames — 7.75 seconds on one
+  piece, at any level.** *Corrected 2026-08-13, out of Phase 2, where the engine measured
+  it. This read "30 frames plus 15 resets of 30 frames is 480 frames — 8 seconds", which is
+  the arithmetic anyone would do and it is one frame per cycle too generous.*
+  **The frame a reset is spent on is also the first frame of the delay it starts**, so only
+  the first cycle costs a full 30 frames and every later one costs 29. That single sentence
+  is the reason; without it the obvious arithmetic restores 480 on the next read.
+
+  | | |
+  |---|---|
+  | First cycle (timer −1 → 29, then the reset frame) | 30 |
+  | 14 further reset cycles, 29 each | 406 |
+  | Final wait, timer 1 → 30 | 29 |
+  | **Total** | **465 frames = 7.75 s at 60 Hz** |
+
+  That is the ceiling on infinity-spin. It is generous on purpose; the cap exists to make
+  the game terminate, not to punish a player who is thinking. The number is pinned by
+  `test/tetrice-lock.test.ts`, which asserts the exact frame count rather than a bound —
+  the arithmetic is the thing being protected.
 - **Hard drop bypasses all of it** and locks on the tick it lands (*Scoring*).
 
 **Level up every 10 lines cleared.** `level = 1 + floor(totalLinesCleared / 10)`, evaluated
@@ -905,6 +948,34 @@ implementation to drift.
     lives: on the server's `tetrice_seeds` row, written by the server, never in the format
     and never trusted from the client. That is the distinction — the format holds nothing
     time-typed; the server may know things about its own clock.
+**THE VERIFIER MUST NOT INHERIT THE ENGINE'S FORGIVENESS. TRAILING INPUT PAST TOP-OUT IS A
+422.** *Added 2026-08-13, out of Phase 2, and written now rather than in Phase 5 because by
+then the permissive behaviour will look like a decision the route was built on.*
+
+`step()` **no-ops on input after a run is over**: it returns the state unchanged, does not
+advance the tick count, and does not throw. That is right for the engine — a client looping
+a frame counter to the end of a trace runs past the tick the run ended on, and that is
+ordinary rather than a bug, so the engine has nothing to protect there.
+
+**It is wrong for the route handler, and for exactly the same reason.** A submitted log
+carrying entries past the top-out tick would replay to a perfectly valid-looking score with
+the trailing junk silently absorbed — the verifier would compute the right number and
+accept a payload it never actually examined. Permissiveness in the simulation becomes a
+blind spot in the check, which is the general shape of this failure and not a quirk of this
+one function.
+
+- `POST /api/tetrice/score` **rejects a trace whose last entry falls after the tick the
+  replay topped out on**, with a 422. Not truncated, not ignored: refused.
+- The reason it is a 422 rather than a silent trim is that an honest client cannot produce
+  one. The run ends on a tick the client knows about, because it is the tick that drew the
+  game-over card. A log that keeps going is a log that was assembled rather than played.
+- **The verifier asserts the tick count it derived, not the one it was handed.** Duration
+  comes from the replayed tick count (`ticks × 1000 / 60`), so a trace padded past the end
+  cannot inflate it either.
+- `test/tetrice-replay.test.ts` covers this with a **known-bad trace**: a valid run with
+  ten junk entries appended must be refused. A checker that accepts everything passes a
+  suite of valid runs perfectly.
+
 - **Bounds are measured, not guessed.** The tick count and the trace-entry count are capped
   and checked *before* simulating, because a trace is an input to a loop that runs on the
   web process. The cap comes from a real long run in `test/tetrice-replay.test.ts` plus
@@ -968,6 +1039,9 @@ an unchosen bag" either.
 - **The replay checker rejects a tampered trace.** Run it against the failure, not only
   against valid runs — a checker that accepts everything passes a suite of good runs
   perfectly.
+  - *Added 2026-08-13:* **including a trace with trailing input past the top-out tick**,
+    which is the one tampering the engine itself will not notice — `step()` absorbs it
+    silently by design (*Anti-cheat*). 422, not a truncation.
 - **A seed the server did not issue is rejected**, and so is a seed spent twice. Asserted
   against the route, both directions.
   - *Added 2026-08-12 with the shopping amendment (*The randomizer*).* Also asserted: a
@@ -982,7 +1056,8 @@ an unchosen bag" either.
   covering "the rule" would be written against whichever instance the author had in mind
   and would pass on an engine that gets the other two wrong:
   1. **Rotate on a resting O** — tap rotate every frame and assert the piece still locks on
-     schedule, not 8 seconds later.
+     schedule, not 7.75 seconds later (*the stall bound, corrected 2026-08-13 — see*
+     Gravity and lock).
   2. **Move into a wall** — hold left against the well edge on a resting piece and assert
      the same. This is the common one and it is the one to write first.
   3. **A rotation whose every kick fails** — a piece boxed so that no SRS offset resolves,
