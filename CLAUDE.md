@@ -17,6 +17,30 @@
   `~/.ssh/config`, not a real hostname. Do not rewrite it to `github.com` — that breaks
   auth.
 - **Tailwind v4** (`tailwindcss: ^4`, `@tailwindcss/postcss: ^4`).
+- **A TEST THAT GUARDS AGAINST A FAILURE MUST BE SHOWN FAILING WHEN THAT FAILURE IS
+  PRESENT, AND THE DEMONSTRATION LIVES IN THE TEST FILE.** *Added 2026-08-13, after the
+  third instance in two days — which is what makes it a pattern rather than three
+  coincidences.* A green test is evidence of nothing until you know it can go red. The
+  demonstration is a control assertion, a deliberately broken fixture, or — where the
+  subject is not testable in-process, like a shell script — a hand-falsification recorded
+  with its steps, in the file or in the commit that adds it.
+  - `test/tetrice-palette.test.ts` asserts that no two value-confusable shapes share a
+    grain axis. If a future palette separated all seven by luminance, that would pass
+    while the axis code did nothing — so it carries a control asserting the palette **still
+    collides**, plus a deliberately colliding fake palette the checker must reject.
+  - `test/tetrice-rotation.test.ts` sweeps every shape and transition and asserts a kicked
+    rotation took the first feasible offset. A sweep where every rotation was refused would
+    pass vacuously, so it asserts a floor on rotations attempted **and** on kicks actually
+    exercised.
+  - `deploy/dev.sh` (commit `fa6edbf`): the first run of its trap test interrupted the
+    script before `next build` had mutated `tsconfig.json`, so a broken trap would have
+    passed identically. Redone by waiting until `git status` showed the file genuinely
+    dirty, then interrupting. **The first version of that test measured nothing and looked
+    exactly like the second.**
+  - The general form is already in the *Repo-wide* rule above — *a reading taken from
+    somewhere other than the thing under test measures the instrument* — and this is its
+    other half: **before believing a green test, ask what result the broken version would
+    produce.** If it is the same one, the test is decoration.
 
 ## TETRICE
 
