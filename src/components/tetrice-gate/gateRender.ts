@@ -11,20 +11,34 @@
  * improvement to this file.
  */
 
-export type Shape = "I" | "J" | "L" | "S" | "Z" | "T" | "O";
-export const SHAPES: readonly Shape[] = ["I", "J", "L", "S", "Z", "T", "O"];
+/**
+ * *Phase 2, 2026-08-13:* the shape table, the token map, the axis code and `VALUE_SPREAD`
+ * now live in `src/games/tetrice/engine/rules.ts` and are imported from there. They were
+ * defined in this throwaway file first because it was the only thing that existed; the
+ * palette suite imported them from here, and that import was a tripwire set to fire when
+ * Phase 6 deleted the page. This is the phase that disarms it. **Nothing shape-related is
+ * defined in this file any more** — a second copy is a second thing to drift.
+ */
+export {
+  AXIS,
+  SHAPES,
+  SHAPE_DEF,
+  TOKEN,
+  VALUE_SPREAD,
+  cellsOf,
+  type Axis,
+  type Shape,
+} from "@/games/tetrice/engine/rules";
 
-/** Spec table: one @theme token per shape. Read from the live CSS custom properties at
- *  runtime (see `readPalette`) — these are the documented fallbacks, not a second source. */
-export const TOKEN: Record<Shape, string> = {
-  I: "--color-porcelain",
-  J: "--color-olive-deep",
-  L: "--color-khaki",
-  S: "--color-bamboo",
-  Z: "--color-tuna",
-  T: "--color-salmon",
-  O: "--color-olive",
-};
+import {
+  AXIS,
+  SHAPES,
+  TOKEN,
+  VALUE_SPREAD,
+  cellsOf,
+  type Axis,
+  type Shape,
+} from "@/games/tetrice/engine/rules";
 
 const FALLBACK: Record<Shape, string> = {
   I: "#2a4d8f",
@@ -34,18 +48,6 @@ const FALLBACK: Record<Shape, string> = {
   Z: "#c1443a",
   T: "#f4a08a",
   O: "#6a6c3a",
-};
-
-/** Spec table: the three-way categorical axis code, in screen space. */
-export type Axis = "horizontal" | "vertical" | "diagNE" | "diagSE";
-export const AXIS: Record<Shape, Axis> = {
-  I: "horizontal",
-  J: "vertical",
-  S: "diagNE", // ↗
-  O: "horizontal",
-  L: "diagSE", // ↘
-  Z: "diagSE", // ↘
-  T: "vertical",
 };
 
 /** Canvas radians. y is down, so ↗ is a negative rotation and ↘ a positive one. */
@@ -66,45 +68,6 @@ export const FAMILY: Record<Shape, string> = {
   T: "red",
   O: "green",
 };
-
-// --- shapes -----------------------------------------------------------------
-//
-// Canonical cells in a bounding box, in a FIXED ORDER. The order is the cell's identity:
-// rotation transforms coordinates and leaves the index alone, which is what lets the
-// jitter key `(pieceInstanceId, cellIndex)` survive rotation unchanged, per the spec.
-
-interface ShapeDef {
-  box: number;
-  cells: ReadonlyArray<readonly [number, number]>;
-  rotates: boolean;
-}
-
-export const SHAPE_DEF: Record<Shape, ShapeDef> = {
-  I: { box: 4, cells: [[0, 1], [1, 1], [2, 1], [3, 1]], rotates: true },
-  J: { box: 3, cells: [[0, 0], [0, 1], [1, 1], [2, 1]], rotates: true },
-  L: { box: 3, cells: [[2, 0], [0, 1], [1, 1], [2, 1]], rotates: true },
-  S: { box: 3, cells: [[1, 0], [2, 0], [0, 1], [1, 1]], rotates: true },
-  Z: { box: 3, cells: [[0, 0], [1, 0], [1, 1], [2, 1]], rotates: true },
-  T: { box: 3, cells: [[1, 0], [0, 1], [1, 1], [2, 1]], rotates: true },
-  O: { box: 2, cells: [[0, 0], [1, 0], [0, 1], [1, 1]], rotates: false },
-};
-
-/** Cells of `shape` in rotation state `rot` (0..3), index-stable. O ignores rot. */
-export function cellsOf(shape: Shape, rot: number): Array<readonly [number, number]> {
-  const def = SHAPE_DEF[shape];
-  const turns = def.rotates ? ((rot % 4) + 4) % 4 : 0;
-  return def.cells.map(([x, y]) => {
-    let cx = x;
-    let cy = y;
-    for (let t = 0; t < turns; t++) {
-      const nx = def.box - 1 - cy;
-      const ny = cx;
-      cx = nx;
-      cy = ny;
-    }
-    return [cx, cy] as const;
-  });
-}
 
 // --- deterministic noise ----------------------------------------------------
 
@@ -155,14 +118,6 @@ function parseHex(hex: string): [number, number, number] {
     parseInt(full.slice(4, 6), 16),
   ];
 }
-
-/**
- * Per-grain value variation around the piece's hue — the white/tan variation from the
- * mood board. VALUE ONLY: the channels are scaled together, so nothing shifts hue.
- * ±14% is the cap; wider than that and it reads as a second colour, which the spec
- * forbids.
- */
-export const VALUE_SPREAD = 0.14;
 
 /** Rec.709 luminance. The greyscale pass is a real render, not a filter over the output. */
 function toMono(r: number, g: number, b: number): [number, number, number] {

@@ -28,11 +28,17 @@
  *     so two bands overlap exactly when max/min < 1.14/0.86 ≈ 1.326. It is computed from
  *     `VALUE_SPREAD` so that widening the variation cannot silently loosen the test.
  *
- * PHASE 2 MOVES THE IMPORTS. `TOKEN`, `AXIS` and `VALUE_SPREAD` currently live in the
- * throwaway gate renderer, which is the only place they exist today. When the engine lands
- * they move to `engine/rules.ts` and this file re-points at it. **Phase 6 deletes the gate,
- * and if the constants have not moved by then this suite fails loudly — which is the
- * intended behaviour, not an accident to work around.**
+ * **PHASE 2 MOVED THE IMPORTS, AND THE TRIPWIRE IS DISARMED.** *2026-08-13.* `TOKEN`,
+ * `AXIS` and `VALUE_SPREAD` were defined in the throwaway gate renderer, because it was
+ * the only thing that existed when this suite was written; this file imported them from
+ * there deliberately, so that deleting the gate in Phase 6 would fail loudly rather than
+ * quietly take the constants with it. They now live in `src/games/tetrice/engine/rules.ts`
+ * and are imported from there, and the gate re-exports them rather than defining a second
+ * copy. Phase 6 can now delete the page without touching this suite.
+ *
+ * They sit in `rules.ts` under an explicit heading saying the simulation never reads them,
+ * because that file's other contract is "changing a number here is an `ENGINE_VERSION`
+ * bump" — and a colour cannot change a replay's score.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -42,9 +48,11 @@ import {
   SHAPES,
   TOKEN,
   VALUE_SPREAD,
-  type Palette,
   type Shape,
-} from "@/components/tetrice-gate/gateRender";
+} from "@/games/tetrice/engine/rules";
+
+/** The gate renderer's `Palette` shape, kept local so this suite outlives that file. */
+type Palette = Record<Shape, string>;
 
 const GLOBALS_CSS = join(__dirname, "..", "src", "app", "globals.css");
 
