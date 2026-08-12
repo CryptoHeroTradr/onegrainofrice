@@ -397,6 +397,41 @@ trades directly against the **ghost-piece read** (an outline compared against a 
 edge) and the **empty-cell read** (*THE PIECE IS READ FROM THE WELL*, which makes the rim
 load-bearing). Neither candidate can be evaluated on the fused read alone.
 
+**CHOSEN: THE BRICK-OFFSET LATTICE. THE CROSS-AXIS OVERLAP TERM IS REJECTED, AND THE
+REASON IS NOT THE ONE THIS SECTION PREDICTED.** *Decided 2026-08-13, Phase 3, with both
+candidates implemented and compared on `/dev/tetrice-gate` — the same page, the SHIPPED
+painter, all seven shapes at 15 px and 30 px, in colour and in greyscale, with the ghost
+piece built first and shown against a locked stack.*
+
+- **Brick.** The grain keeps its 1.8:1 shape and its reach; alternate cells of a piece
+  shift by a quarter pitch **along the grain axis**, so the gaps between grain rows in
+  neighbouring cells cannot line up into one continuous channel. At 15 px the I reads as a
+  single woven band instead of two ribbons, J and T interlock instead of standing apart as
+  strands, and O is a block rather than four bars. The diagonals are unchanged, because
+  they never had the problem.
+  - **The phase is keyed on `cellIndex`, not on the board row.** A phase keyed on world
+    position would re-shift every cell of the piece on every row of gravity — a twitch once
+    per fall step, and exactly the world-position dependence the jitter key exists to
+    prevent.
+- *Rejected: the fixed cross-axis overlap term.* It works — all seven fuse — and it costs
+  more than the silhouette. To reach the cell boundary across the axis the grain has to
+  thicken from 1.8:1 to about 1.33:1, and **at that aspect the grain's own orientation
+  stops being legible.** In the greyscale capture, I against O and J against T read as
+  blocks of round beads with only a faint rake left. So the cross-axis fix pays for fusion
+  with the axis code's legibility — and the axis code is the *only* identity channel a
+  greyscale or colour-blind player has (*THE CEILING, MEASURED*). **Trading the one
+  remaining identity channel for a cosmetic fusion property is the wrong trade in the most
+  expensive direction available.**
+- **The predicted cost did not decide it.** This section expected the trade to be
+  silhouette blur against the ghost read, and brick was chosen partly because it spends no
+  extra overspill and leaves the ghost as crisp as it was. But the visible, measurable
+  difference between the candidates turned out to be the *identity cue*, not the outline —
+  which is written down here because the next mechanism will be evaluated against the same
+  two candidates and the same wrong expectation.
+- Evidence: `/home/deploy/onegrainofrice-asset-sources/tetrice-gate/`,
+  files `fx-anisotropic-*` (before), `fx-brick-*` and `fx-crossAxis-*` (after, both
+  candidates), including the greyscale pair that decided it.
+
 **The NEXT queue renders at a larger cell than the well** — call it 1.4× — and this is
 recorded here because it is free and because the queue is where a collision shows first.
 The queue is the harder identification task: the piece is alone, out of context, and looked

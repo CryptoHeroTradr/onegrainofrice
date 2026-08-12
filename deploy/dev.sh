@@ -91,4 +91,10 @@ mkdir -p builds
 # Nothing fails loudly if you do it. The build keeps working, dev keeps working, and the
 # tree is dirty in a way that gets committed by someone who did not cause it. Run Next as
 # a CHILD and let the trap fire on exit, failure, or Ctrl-C.
-NEXT_DIST_DIR="$OUT" node node_modules/next/dist/bin/next dev -p "$PORT"
+# -H 127.0.0.1 is NOT optional and NOT only about exposure. Next 16 blocks its own dev
+# resources for requests whose host is not in `allowedDevOrigins` (default: localhost), so
+# a server bound to 0.0.0.0 and reached as http://127.0.0.1:PORT serves HTML that never
+# HYDRATES — no error, no console message, just a page that renders the server output and
+# then does nothing. That cost an hour once; binding loopback is also what a dev server on
+# a public VPS should do anyway.
+NEXT_DIST_DIR="$OUT" node node_modules/next/dist/bin/next dev -H 127.0.0.1 -p "$PORT"
