@@ -77,7 +77,25 @@
  * silent: it asserts every game route's play-surface status by name, and that
  * every entry here is a route that actually exists on disk.
  */
-export const PLAY_SURFACE_ROUTES: readonly string[] = ["/games/chomp", "/games/grainsnake"];
+/**
+ * ── A NON-GAME ROUTE IS ON THIS LIST, AND IT IS TEMPORARY. ────────────────────
+ * *Added 2026-08-12.* `/dev/tetrice-gate` is a throwaway prototype page (see
+ * `src/app/dev/tetrice-gate/page.tsx`) that exists to falsify the palette and
+ * grain-axis decisions in `docs/tetrice-spec.md` before TETRICE's render phase
+ * commits to them. It is here for the rule's own reason and not because it is a
+ * game: the chopstick cursor and the rice-particle field would sit on top of the
+ * exact pixels being judged, and a legibility gate read through a pointer trail
+ * is measuring the instrument rather than the thing.
+ *
+ * It is named in `UNLISTED_PLAY_SURFACES` in `test/play-surfaces.test.ts`, which
+ * is what keeps it a decision somebody made rather than a route that drifted onto
+ * the list. **Delete both entries together with the page.**
+ */
+export const PLAY_SURFACE_ROUTES: readonly string[] = [
+  "/games/chomp",
+  "/games/grainsnake",
+  "/dev/tetrice-gate",
+];
 
 /** True when this route is a game that should be left alone by ambient decoration. */
 export function isPlaySurface(pathname: string | null | undefined): boolean {

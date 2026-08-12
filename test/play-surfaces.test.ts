@@ -107,9 +107,12 @@ describe("play surfaces", () => {
    * REMOVE an entry in the same commit that adds its card.
    */
   const UNLISTED_PLAY_SURFACES: ReadonlyArray<{ route: string; why: string }> = [
-    // EMPTY, which restores the original stricter invariant: every play surface is a
-    // listed game. GRAINSNAKE's entry was removed 2026-08-07 when its leaderboard
-    // shipped and its card went into src/config/games.ts.
+    // GRAINSNAKE's entry was removed 2026-08-07 when its leaderboard shipped and its
+    // card went into src/config/games.ts.
+    {
+      route: "/dev/tetrice-gate",
+      why: "throwaway TETRICE palette/grain-axis gate — never gets a card, and is deleted with the page before Phase 2 ships (added 2026-08-12)",
+    },
   ];
 
   it("every play-surface route is a game, or is a NAMED unlisted route", () => {
