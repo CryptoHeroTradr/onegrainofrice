@@ -21,8 +21,10 @@ import {
   buildStack,
   paintField,
   paintPiece,
+  paintGhost,
   paintCell,
   readPalette,
+  type FusionMode,
   type Palette,
   type Shape,
 } from "./gateRender";
@@ -75,12 +77,14 @@ function RotationRow({
   palette,
   mono,
   grid,
+  fusion,
 }: {
   shape: Shape;
   cell: number;
   palette: Palette;
   mono: boolean;
   grid: boolean;
+  fusion: FusionMode;
 }) {
   const slot = 5;
   return (
@@ -110,7 +114,7 @@ function RotationRow({
               // the SAME piece instance re-rendered, which is the point: a rotation must
               // not re-roll the jitter.
               `rot-demo-${shape}`,
-              { cell, palette, mono },
+              { cell, palette, mono, fusion },
             );
           }
         }}
@@ -126,6 +130,7 @@ function PieceTile({
   palette,
   mono,
   grid,
+  fusion,
   id,
 }: {
   shape: Shape;
@@ -134,6 +139,7 @@ function PieceTile({
   palette: Palette;
   mono: boolean;
   grid: boolean;
+  fusion: FusionMode;
   id: string;
 }) {
   const box = SHAPE_DEF[shape].box;
@@ -145,7 +151,7 @@ function PieceTile({
       cell={cell}
       draw={(ctx) => {
         paintField(ctx, w, w, { cell, grid });
-        paintPiece(ctx, shape, rot, { col: 0.5, row: 0.5 }, id, { cell, palette, mono });
+        paintPiece(ctx, shape, rot, { col: 0.5, row: 0.5 }, id, { cell, palette, mono, fusion });
       }}
     />
   );
@@ -158,6 +164,7 @@ function Pair({
   palette,
   mono,
   grid,
+  fusion,
   note,
 }: {
   a: Shape;
@@ -166,6 +173,7 @@ function Pair({
   palette: Palette;
   mono: boolean;
   grid: boolean;
+  fusion: FusionMode;
   note: string;
 }) {
   return (
@@ -179,6 +187,7 @@ function Pair({
               palette={palette}
               mono={mono}
               grid={grid}
+              fusion={fusion}
               id={`pair-${a}${b}-${s}`}
             />
             <span className="font-mono text-[10px] text-paper opacity-70">{s}</span>
@@ -195,10 +204,13 @@ export default function TetriceGate() {
   // Overrides start null so the URL is the initial view; a click takes over from there.
   const [monoOverride, setMonoOverride] = useState<boolean | null>(null);
   const [gridOverride, setGridOverride] = useState<boolean | null>(null);
+  const [fusionOverride, setFusionOverride] = useState<string | null>(null);
 
   const params = mounted ? new URLSearchParams(window.location.search) : null;
   const mono = monoOverride ?? params?.get("mono") === "1";
   const grid = gridOverride ?? params?.get("grid") !== "0";
+  // PHASE 3 ACCEPTANCE EVIDENCE: the fused read, before and after, on the SHIPPED painter.
+  const fusion = ((fusionOverride ?? params?.get("fusion")) || "brick") as FusionMode;
   const palette = mounted ? readPalette(document.documentElement) : null;
 
   if (!palette) return <div className="p-4 font-mono text-xs text-paper">…</div>;
@@ -218,7 +230,7 @@ export default function TetriceGate() {
           cell={cell}
           draw={(ctx) => {
             paintField(ctx, 10, 6, { cell, grid });
-            for (const c of stack) paintCell(ctx, c, { cell, palette, mono });
+            for (const c of stack) paintCell(ctx, c, { cell, palette, mono, fusion });
           }}
         />
       </div>
@@ -245,6 +257,17 @@ export default function TetriceGate() {
           >
             {mono ? "greyscale ON" : "greyscale off"}
           </button>
+          {(["anisotropic", "crossAxis", "brick"] as const).map((m) => (
+            <button
+              key={m}
+              id={`fusion-${m}`}
+              type="button"
+              onClick={() => setFusionOverride(m)}
+              className={`border px-2 py-1 font-mono text-[11px] ${fusion === m ? "border-tuna text-tuna" : "border-khaki/40"}`}
+            >
+              {m}
+            </button>
+          ))}
           <button
             id="toggle-grid"
             type="button"
@@ -274,6 +297,7 @@ export default function TetriceGate() {
                       palette={palette}
                       mono={mono}
                       grid={grid}
+              fusion={fusion}
                       id={`primary-${s}-${rot}`}
                     />
                     <span className="font-mono text-[10px] opacity-70">
@@ -290,10 +314,10 @@ export default function TetriceGate() {
         <section id="panel-pairs-15" className="flex flex-col gap-2">
           <h2 className="font-mono text-xs">Hue-family pairs — well floor, cell 15px</h2>
           <div className="flex flex-wrap gap-6">
-            <Pair a="S" b="O" cell={15} palette={palette} mono={mono} grid={grid} note="both green" />
-            <Pair a="Z" b="T" cell={15} palette={palette} mono={mono} grid={grid} note="both red" />
-            <Pair a="J" b="O" cell={15} palette={palette} mono={mono} grid={grid} note="both green" />
-            <Pair a="S" b="J" cell={15} palette={palette} mono={mono} grid={grid} note="both green" />
+            <Pair fusion={fusion} a="S" b="O" cell={15} palette={palette} mono={mono} grid={grid} note="both green" />
+            <Pair fusion={fusion} a="Z" b="T" cell={15} palette={palette} mono={mono} grid={grid} note="both red" />
+            <Pair fusion={fusion} a="J" b="O" cell={15} palette={palette} mono={mono} grid={grid} note="both green" />
+            <Pair fusion={fusion} a="S" b="J" cell={15} palette={palette} mono={mono} grid={grid} note="both green" />
           </div>
         </section>
 
@@ -302,8 +326,8 @@ export default function TetriceGate() {
             Hue-family pairs — NEXT queue, cell {queueCell}px (1.4× the 30px well)
           </h2>
           <div className="flex flex-wrap gap-6 overflow-x-auto">
-            <Pair a="S" b="O" cell={queueCell} palette={palette} mono={mono} grid={grid} note="both green" />
-            <Pair a="Z" b="T" cell={queueCell} palette={palette} mono={mono} grid={grid} note="both red" />
+            <Pair fusion={fusion} a="S" b="O" cell={queueCell} palette={palette} mono={mono} grid={grid} note="both green" />
+            <Pair fusion={fusion} a="Z" b="T" cell={queueCell} palette={palette} mono={mono} grid={grid} note="both red" />
           </div>
         </section>
 
@@ -319,6 +343,7 @@ export default function TetriceGate() {
                   palette={palette}
                   mono={mono}
                   grid={grid}
+              fusion={fusion}
                   id={`queue-${s}`}
                 />
                 <span className="font-mono text-[10px] opacity-70">{s}</span>
@@ -343,12 +368,64 @@ export default function TetriceGate() {
                   palette={palette}
                   mono={mono}
                   grid={grid}
+                  fusion={fusion}
                 />
               ))}
             </div>
           </section>
         ))}
 
+
+        {/* ---- PHASE 3: the ghost against a locked stack, in one frame ---- */}
+        {[22, 15].map((cell) => (
+          <section id={`panel-ghost-${cell}`} key={cell} className="flex flex-col gap-2">
+            <h2 className="font-mono text-xs">
+              Ghost + locked stack — cell {cell}px · fusion {fusion}
+            </h2>
+            <div className="overflow-x-auto">
+              <GateCanvas
+                wCells={10}
+                hCells={12}
+                cell={cell}
+                draw={(ctx) => {
+                  paintField(ctx, 10, 12, { cell, grid });
+                  // A four-row stack at the bottom, from the same deterministic sample.
+                  const stackCells = buildStack(10, 4, 0x9051);
+                  const occupied = new Set<string>();
+                  for (const c of stackCells) {
+                    const row = c.row + 8;
+                    occupied.add(`${c.col},${row}`);
+                    paintCell(ctx, { ...c, row }, { cell, palette, mono, fusion });
+                  }
+                  // An S piece falling down the middle, and its landing position.
+                  const shape: Shape = "S";
+                  const col = 3;
+                  const cellsFor = (r: number) =>
+                    SHAPE_DEF[shape].cells.map(([x, y]) => [col + x, r + y] as const);
+                  let land = 1;
+                  while (
+                    land < 11 &&
+                    !cellsFor(land + 1).some(([x, y]) => occupied.has(`${x},${y}`) || y > 11)
+                  ) {
+                    land += 1;
+                  }
+                  paintGhost(ctx, shape, 0, { col, row: land }, "ghost-demo", {
+                    cell,
+                    palette,
+                    mono,
+                    fusion,
+                  });
+                  paintPiece(ctx, shape, 0, { col, row: 1 }, "ghost-demo", {
+                    cell,
+                    palette,
+                    mono,
+                    fusion,
+                  });
+                }}
+              />
+            </div>
+          </section>
+        ))}
         {stackPanel(22, "panel-stack-22")}
         {stackPanel(15, "panel-stack-15")}
 
@@ -367,6 +444,7 @@ export default function TetriceGate() {
                     palette={palette}
                     mono={mono}
                     grid={grid}
+              fusion={fusion}
                     id={`fuse-${s}-${cell}`}
                   />
                   <span className="font-mono text-[10px] opacity-70">

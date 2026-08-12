@@ -94,6 +94,7 @@
 export const PLAY_SURFACE_ROUTES: readonly string[] = [
   "/games/chomp",
   "/games/grainsnake",
+  "/games/tetrice",
   "/dev/tetrice-gate",
 ];
 

@@ -30,33 +30,9 @@ export {
   type Shape,
 } from "@/games/tetrice/engine/rules";
 
-import {
-  AXIS,
-  SHAPES,
-  TOKEN,
-  VALUE_SPREAD,
-  cellsOf,
-  type Axis,
-  type Shape,
-} from "@/games/tetrice/engine/rules";
+import { SHAPES, cellsOf, type Shape } from "@/games/tetrice/engine/rules";
 
-const FALLBACK: Record<Shape, string> = {
-  I: "#2a4d8f",
-  J: "#474d2e",
-  L: "#c4b370",
-  S: "#4e7a3e",
-  Z: "#c1443a",
-  T: "#f4a08a",
-  O: "#6a6c3a",
-};
 
-/** Canvas radians. y is down, so ↗ is a negative rotation and ↘ a positive one. */
-const AXIS_RAD: Record<Axis, number> = {
-  horizontal: 0,
-  vertical: Math.PI / 2,
-  diagNE: -Math.PI / 4,
-  diagSE: Math.PI / 4,
-};
 
 /** Hue family, for the gate's own labelling only. */
 export const FAMILY: Record<Shape, string> = {
@@ -69,9 +45,28 @@ export const FAMILY: Record<Shape, string> = {
   O: "green",
 };
 
-// --- deterministic noise ----------------------------------------------------
+/**
+ * *Phase 3, 2026-08-13:* grain painting is no longer implemented here. It lives in
+ * `src/games/tetrice/client/grains.ts` — the renderer the GAME uses — and this page
+ * re-exports it. The gate's whole value is that what it shows is what ships; a private
+ * copy of the painter would make its fused-read comparison evidence about a different
+ * program.
+ */
+export {
+  paintCell,
+  paintPiece,
+  paintGhost,
+  readPalette,
+  GHOST_ALPHA,
+  type CellPaint,
+  type PaintOpts,
+  type Palette,
+  type FusionMode,
+} from "@/games/tetrice/client/grains";
 
-/** FNV-1a over the key string. The key is the contract: piece instance + cell + grain. */
+import { type CellPaint } from "@/games/tetrice/client/grains";
+
+/** Local hash, for the stack sample's deterministic shape order only. */
 function hash32(key: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < key.length; i++) {
@@ -81,131 +76,12 @@ function hash32(key: string): number {
   return h >>> 0;
 }
 
-/** xorshift32, so one key yields a short deterministic stream. */
 function streamFrom(seed: number): () => number {
   let s = seed || 0x9e3779b9;
   return () => {
-    s ^= s << 13;
-    s >>>= 0;
-    s ^= s >>> 17;
-    s ^= s << 5;
-    s >>>= 0;
+    s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0;
     return s / 0x100000000;
   };
-}
-
-// --- colour -----------------------------------------------------------------
-
-export type Palette = Record<Shape, string>;
-
-/** Sample the seven chromatic @theme tokens off the live document. */
-export function readPalette(root: HTMLElement): Palette {
-  const cs = getComputedStyle(root);
-  const out = {} as Palette;
-  for (const s of SHAPES) {
-    const v = cs.getPropertyValue(TOKEN[s]).trim();
-    out[s] = v || FALLBACK[s];
-  }
-  return out;
-}
-
-function parseHex(hex: string): [number, number, number] {
-  const h = hex.replace("#", "").trim();
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  return [
-    parseInt(full.slice(0, 2), 16),
-    parseInt(full.slice(2, 4), 16),
-    parseInt(full.slice(4, 6), 16),
-  ];
-}
-
-/** Rec.709 luminance. The greyscale pass is a real render, not a filter over the output. */
-function toMono(r: number, g: number, b: number): [number, number, number] {
-  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return [y, y, y];
-}
-
-function grainFill(base: string, value: number, mono: boolean): string {
-  const [r0, g0, b0] = parseHex(base);
-  let r = r0 * value;
-  let g = g0 * value;
-  let b = b0 * value;
-  if (mono) [r, g, b] = toMono(r, g, b);
-  const c = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  return `rgb(${c(r)}, ${c(g)}, ${c(b)})`;
-}
-
-// --- grains -----------------------------------------------------------------
-
-/**
- * Geometry, in units of the cell size.
- *
- * The 2x2 cluster is loose: four grains at the quarter points. The grain's long radius is
- * larger than a quarter-cell on purpose — the cluster spills ~8% past the cell boundary so
- * that two cells of the same piece MERGE at their shared edge and the piece reads as one
- * fused shape rather than four beads (spec: *grains overlap slightly along shared cell
- * edges*).
- */
-const GRAIN_LONG = 0.30;
-const GRAIN_SHORT = 0.165;
-const CLUSTER_OFFSET = 0.25;
-const JITTER_POS = 0.055;
-/** Angle jitter is deliberately small. The axis is a CATEGORICAL code; wobble that
- *  approaches the 45° gap between categories would be destroying the thing under test. */
-const JITTER_ANGLE = (5 * Math.PI) / 180;
-
-export interface CellPaint {
-  shape: Shape;
-  /** Survives movement and rotation, and is carried into the locked board cell. */
-  pieceInstanceId: string;
-  /** Index of the cell WITHIN the piece — not a world position, not an index from spawn. */
-  cellIndex: number;
-  /** Where to paint it, in cells. */
-  col: number;
-  row: number;
-}
-
-export interface PaintOpts {
-  cell: number;
-  palette: Palette;
-  mono: boolean;
-  originX?: number;
-  originY?: number;
-}
-
-/** Paint one cell: four grains in a loose 2x2, on this shape's fixed screen-space axis. */
-export function paintCell(
-  ctx: CanvasRenderingContext2D,
-  cell: CellPaint,
-  o: PaintOpts,
-): void {
-  const c = o.cell;
-  const ox = (o.originX ?? 0) + cell.col * c;
-  const oy = (o.originY ?? 0) + cell.row * c;
-  const base = o.palette[cell.shape];
-  const angle = AXIS_RAD[AXIS[cell.shape]];
-
-  for (let g = 0; g < 4; g++) {
-    // THE KEY. Piece instance + cell index + grain index. No world position, no index
-    // from spawn — so a piece that moves, rotates or locks re-rolls nothing.
-    const rand = streamFrom(hash32(`${cell.pieceInstanceId}:${cell.cellIndex}:${g}`));
-    const jx = (rand() * 2 - 1) * JITTER_POS * c;
-    const jy = (rand() * 2 - 1) * JITTER_POS * c;
-    const ja = (rand() * 2 - 1) * JITTER_ANGLE;
-    const value = 1 + (rand() * 2 - 1) * VALUE_SPREAD;
-
-    const qx = g % 2 === 0 ? -CLUSTER_OFFSET : CLUSTER_OFFSET;
-    const qy = g < 2 ? -CLUSTER_OFFSET : CLUSTER_OFFSET;
-
-    ctx.save();
-    ctx.translate(ox + c / 2 + qx * c + jx, oy + c / 2 + qy * c + jy);
-    ctx.rotate(angle + ja);
-    ctx.fillStyle = grainFill(base, value, o.mono);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, GRAIN_LONG * c, GRAIN_SHORT * c, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
 }
 
 // --- field ------------------------------------------------------------------
@@ -240,26 +116,6 @@ export function paintField(
     ctx.lineTo(ox + wCells * c, Math.round(oy + y * c) + 0.5);
     ctx.stroke();
   }
-}
-
-/** Paint a whole piece at a cell offset. */
-export function paintPiece(
-  ctx: CanvasRenderingContext2D,
-  shape: Shape,
-  rot: number,
-  at: { col: number; row: number },
-  pieceInstanceId: string,
-  o: PaintOpts,
-): void {
-  cellsOf(shape, rot).forEach(([x, y], cellIndex) => {
-    paintCell(ctx, {
-      shape,
-      pieceInstanceId,
-      cellIndex,
-      col: at.col + x,
-      row: at.row + y,
-    }, o);
-  });
 }
 
 // --- the stacked-field sample ----------------------------------------------

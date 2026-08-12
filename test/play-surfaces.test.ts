@@ -62,6 +62,11 @@ const EXPECTED: ReadonlyArray<{ route: string; playSurface: boolean; why: string
     playSurface: true,
     why: "arrow keys are its controls, and the translate script is a third-party request it may not make",
   },
+  {
+    route: "/games/tetrice",
+    playSurface: true,
+    why: "arrow keys are its controls, and a cursor over a well the player reads cell by cell is noise",
+  },
 ];
 
 describe("play surfaces", () => {
@@ -109,6 +114,10 @@ describe("play surfaces", () => {
   const UNLISTED_PLAY_SURFACES: ReadonlyArray<{ route: string; why: string }> = [
     // GRAINSNAKE's entry was removed 2026-08-07 when its leaderboard shipped and its
     // card went into src/config/games.ts.
+    {
+      route: "/games/tetrice",
+      why: "shipped before its card: the leaderboard is Phase 5 and src/config/games.ts gains an entry then (added 2026-08-13)",
+    },
     {
       route: "/dev/tetrice-gate",
       why: "throwaway TETRICE palette/grain-axis gate — never gets a card, and is deleted with the page before Phase 2 ships (added 2026-08-12)",
