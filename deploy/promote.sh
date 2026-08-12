@@ -105,8 +105,13 @@ verify_target() {
     echo "   whose contents cannot be checked at all." >&2
     echo >&2
     echo "   If you have looked and know this directory is intact, declare it:" >&2
-    echo "       printf 'BACKFILLED_AT=%s\\n' \"\$(date -u +%F)\" > $built" >&2
+    echo "       printf 'DECLARED_AT=%s\\n' \"\$(date -u +%F)\" > $built" >&2
     echo "   and re-run. Otherwise rebuild: deploy/build.sh" >&2
+    echo >&2
+    echo "   DECLARED_AT, not BACKFILLED_AT: they are different claims and the next" >&2
+    echo "   person to read this directory needs to be able to tell them apart." >&2
+    echo "   BACKFILLED = reconstructed from what was knowable, in daylight." >&2
+    echo "   DECLARED   = an operator vouched for it by hand, probably at 2am." >&2
     exit 1
   fi
 
@@ -127,11 +132,29 @@ verify_target() {
       echo "       deploy/build.sh" >&2
       exit 1
     fi
+    # WHICH KIND OF UNVERIFIED BUILD THIS IS. *Added 2026-08-13.* There are three ways a
+    # directory can reach this branch and they are three different claims about how much
+    # anyone knows about it. The banner names which, because this is the moment somebody
+    # needs to know — and the weakest of the three used to look identical to the strongest.
+    local declared_at backfilled_at kind detail
+    declared_at="$(LC_ALL=C sed -n 's/^DECLARED_AT=//p' "$built" | head -1)"
+    backfilled_at="$(LC_ALL=C sed -n 's/^BACKFILLED_AT=//p' "$built" | head -1)"
+    if [ -n "$declared_at" ]; then
+      kind="DECLARED BY HAND on $declared_at"
+      detail="an operator vouched for this directory at a refusal — by definition under pressure. It has NO build-time provenance, and nothing has ever checked its contents."
+    elif [ -n "$backfilled_at" ]; then
+      kind="BACKFILLED on $backfilled_at"
+      detail="its provenance was reconstructed after the fact because it predates BUILT/manifest writing. Its contents have never been checked."
+    else
+      kind="PRE-MANIFEST"
+      detail="its BUILT was written at build time, before manifests existed, so there is nothing to check the contents against."
+    fi
+
     echo "  !! UNVERIFIED BUILD — $target has no manifest."
-    echo "     It predates manifest-writing builds (no MANIFEST=1 in its BUILT), so this"
-    echo "     promote is allowed and its contents CANNOT be checked against what was"
-    echo "     built. Grandfathered on purpose: refusing here would make every existing"
-    echo "     rollback target unusable in the name of protecting it."
+    echo "     KIND: $kind"
+    echo "     $detail"
+    echo "     Promoting it is allowed on purpose: refusing here would make every"
+    echo "     pre-manifest rollback target unusable in the name of protecting it."
     echo
     return 0
   fi

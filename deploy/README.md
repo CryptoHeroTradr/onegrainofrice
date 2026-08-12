@@ -160,10 +160,25 @@ it produces from now on, and `promote.sh` reads *that* to tell the two apart:
 > *should* be refused.
 >
 > **The way past, if it ever fires on a build you know is good, is a declaration rather
-> than a flag** — the refusal prints the one-line `printf … > builds/<id>/BUILT` that
+> than a flag** — the refusal prints a one-line `printf … > builds/<id>/BUILT` that
 > re-declares it. That is deliberate (it cannot be typed reflexively as a command prefix),
 > it leaves a record on disk, and it keeps this guard off the critical path out of an
 > incident, which is the standing rule a hard stop here would otherwise break.
+
+**Three ways a directory can be unverifiable, and they are three different claims.**
+*Added 2026-08-13.* A `BUILT` written at 2am under pressure used to look identical on disk
+to one reconstructed carefully in daylight. It does not any more, and `promote.sh` names
+which it is looking at in the banner — the moment somebody actually needs to know:
+
+| Marker in `BUILT` | Banner says | What it means |
+|---|---|---|
+| *(none — `BUILT_FROM_COMMIT` only)* | `PRE-MANIFEST` | Written at build time by an older `build.sh`, before manifests existed. Provenance is real; there is simply nothing to check the contents against. **Strongest of the three.** |
+| `BACKFILLED_AT=<date>` | `BACKFILLED on <date>` | Provenance reconstructed after the fact, in daylight, for a directory that never had a `BUILT`. The twelve listed above. Contents have never been checked. |
+| `DECLARED_AT=<date>` | `DECLARED BY HAND on <date>` | An operator hit the missing-`BUILT` refusal and vouched for the directory — by definition under pressure. **No build-time provenance at all.** Weakest of the three, and the one worth a second look afterwards. |
+
+Nothing in `promote.sh` treats them differently — all three take the grandfathered path and
+promote. The distinction is for the human reading the banner, and for whoever asks later
+how a given directory came to be trusted.
 
 > *Rejected: letting the manifest's own absence mean "old build".* It is the
 > obvious design and it is precisely the fail-open this check exists to prevent —
