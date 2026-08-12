@@ -359,6 +359,47 @@ needs and halved the board the moment the toggle was flipped. It is 140px from `
 Whenever a control is added to this page, check the board scale at 1440×900 — the
 tightest of the three desktop sizes — before and after.
 
+**A BOARD THAT DOES NOT FIT IS SHOWN SMALLER. IT IS NEVER SHOWN CLIPPED.** *Added
+2026-08-12, out of a phone bug report: the top and bottom rows were off the screen
+whenever the d-pad was on.*
+
+The paragraph above says the floor exists because "the honest failure is a board that
+overflows a container which scrolls". **That container does not scroll.** The board slot
+centres its child, and a centred child overflows EQUALLY in both directions — so there
+is nothing above the scroller's top edge to scroll to and the canvas is simply clipped.
+It is the same shape as the overlay defect below, one element out, and it cost the
+player the two rows of a torus whose whole point is that the edges wrap.
+
+So the two things `boardScale()` was conflating are now separate, and both rules hold at
+once:
+
+- **The RASTER stays on the 15px grid.** The backing store is `COLS × px × dpr`, every
+  silhouette is still drawn at an integer cell size, and `render.ts` is untouched. The
+  gate's finding is not weakened by any of this.
+- **The CSS BOX is `boardFit()` times that**, which is 1 on every desktop and on every
+  phone with the d-pad closed, and less than 1 only when even the floor board is bigger
+  than the slot. The browser then does ONE uniform downscale of a finished
+  full-resolution raster — the same operation a DPR-2 display performs in reverse, and
+  nothing like resampling each grain at 13.7px as it is drawn.
+
+**A d-pad may cost board SIZE. It may never cost board EDGES.** That is the invariant to
+check when a control is added, and `test/grainsnake-scale.test.ts` asserts it across
+portrait phones with the controls column at both 0 and 232px.
+
+**And the floor was hiding a third instance of defect 2.** The landscape branch centres
+its three columns with `items-center`, which stops the board slot stretching — so the
+slot's height came from the canvas, whose size is measured from the slot, exactly as in
+the `min-height` case above. The hard floor concealed it: the loop had a fixed point at
+345px, so the board merely overflowed and looked wrong rather than behaving wrong. Scale
+the canvas to its box and the SAME loop has a fixed point at zero and walks the board
+down to it — measured at a 6.5px cell on an 844×390 handset. The slot is
+`max-lg:landscape:self-stretch` now, which gives it `main`'s definite height.
+**A board that fits is only meaningful if the box is real**; whenever a fitting rule is
+added, check that nothing on the chain from the viewport to the measurement is sized by
+its own output. Measured after the fix: 345px unclipped in landscape with the pad open,
+30px cells at 1080p, and nothing clipped on any of seven emulated viewports × both pad
+states.
+
 **An overlay centred inside a scroll container clips its own title.**
 `items-center justify-center` + `overflow-y-auto` overflows equally in both directions
 and a scroller cannot reach what is above its top edge. The overlays use `m-auto` on the
@@ -842,6 +883,13 @@ Carried over from chomp, unchanged and for the same reasons:
 - Touch: swipe and an optional on-screen d-pad, both available. **The d-pad defaults OFF
   on every pointer type**; swipe is primary and always live, and the line under the board
   says so. An explicit choice overrides the default forever after, in both directions.
+  - *The code disagreed with this line from 2026-08-07 to 2026-08-12, defaulting the pad
+    on for `(pointer: coarse)` on a latency argument — a d-pad press has no recognition
+    step where a swipe costs one touch sample, about a quarter of a cell at tier 7. The
+    argument is true and is why the pad exists; it is not worth 168–192px of the controls
+    column on the viewport with the least height to give, which is what put the board's
+    slot under the floor board and clipped its edges. Reverted, and recorded here rather
+    than quietly, because the drift was never written down in the first place.*
 - **The swipe re-anchors after every turn** — a drag registers at 22 CSS pixels of travel
   and then resets its origin, so one unbroken drag can trace a whole route without
   lifting off. A lift with no turn in it is a TAP, which means "get on with it".

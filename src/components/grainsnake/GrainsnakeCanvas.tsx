@@ -61,15 +61,44 @@ const MAX_DPR = 2;
  * rests on 15px really being 15px. So the ladder is 15, 30, 45 and nothing between.
  *
  * **It never returns less than 15**, even when the viewport cannot hold 345px. A
- * board scaled to 13px to fit a 320px phone would be a board nobody measured, and
- * the honest failure is a board that overflows its container (which scrolls) rather
- * than one that is quietly illegible.
+ * board scaled to 13px to fit a 320px phone would be a board nobody measured — so the
+ * DRAWING is always on a 15px grid, and a box too small for it is handled by
+ * `boardFit()` below rather than by drawing at a size the gate never saw.
  */
 const CELL_FLOOR = 15;
 export function boardScale(boxW: number, boxH: number): number {
   const fit = Math.min(boxW / COLS, boxH / ROWS);
   const steps = Math.floor(fit / CELL_FLOOR);
   return steps < 1 ? CELL_FLOOR : steps * CELL_FLOOR;
+}
+
+/**
+ * ── A BOARD THAT DOES NOT FIT IS SHOWN SMALLER. IT IS NEVER SHOWN CLIPPED. ───────
+ * *Added 2026-08-12, out of a phone bug report: the top and bottom rows were off the
+ * screen whenever the d-pad was on.*
+ *
+ * The floor board is 345×345, and this file used to hand the canvas that size whatever
+ * the box was, on the reasoning that "the honest failure is a board that overflows a
+ * container which scrolls". **That container does not scroll.** The board slot centres
+ * its child with `items-center`, and a centred child overflows EQUALLY in both
+ * directions, so there is nothing above the scroller's top edge to scroll to; the
+ * canvas is simply clipped top and bottom. The failure was not honest, it was silent,
+ * and on a 667px phone with the d-pad open — 168px of controls out of the column — it
+ * cost the player two rows of a torus whose whole point is that the edges wrap.
+ *
+ * The fix separates the two things `boardScale()` was conflating. The RASTER stays on
+ * the 15px grid the gate validated: the backing store is still `COLS * px * dpr`, every
+ * silhouette is still drawn at an integer cell size, and none of `render.ts` changes.
+ * Only the CSS box shrinks, so the browser does ONE uniform downscale of a finished,
+ * full-resolution raster — which is the same operation a DPR-2 display already performs
+ * in reverse, and nothing like resampling each grain at 13.7px as it is drawn.
+ *
+ * It returns 1 whenever the board fits, which is every desktop and every phone with the
+ * d-pad closed, so the common path is untouched.
+ */
+export function boardFit(boxW: number, boxH: number, px: number): number {
+  const fit = Math.min(boxW / (COLS * px), boxH / (ROWS * px));
+  return fit < 1 ? fit : 1;
 }
 
 export interface GrainsnakeStats {
@@ -152,6 +181,9 @@ export const GrainsnakeCanvas = forwardRef<
   const accRef = useRef(0);
   const pxRef = useRef(0);
   const dprRef = useRef(1);
+  /** Last committed CSS width. Cached alongside `px` because the two can move
+   *  independently: a box that shrinks below the floor board changes this and not that. */
+  const cssRef = useRef(0);
   const pausedRef = useRef(false);
   const countdownRef = useRef(0);
   const reducedRef = useRef(reduced);
@@ -438,14 +470,21 @@ export const GrainsnakeCanvas = forwardRef<
       retry = 0;
       const px = boardScale(box.width, box.height);
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      if (px === pxRef.current && dpr === dprRef.current) return;
-      pxRef.current = px;
-      dprRef.current = dpr;
       const w = COLS * px;
       const h = ROWS * px;
-      // CSS size in true pixels; only the backing store is scaled by DPR.
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
+      // 1 unless even the floor board is bigger than the box, in which case the WHOLE
+      // board is shown smaller rather than 345px of it being shown clipped.
+      const fit = boardFit(box.width, box.height, px);
+      const cssW = Math.floor(w * fit);
+      const cssH = Math.floor(h * fit);
+      if (px === pxRef.current && dpr === dprRef.current && cssW === cssRef.current) return;
+      pxRef.current = px;
+      dprRef.current = dpr;
+      cssRef.current = cssW;
+      // CSS size is what the player sees; the backing store is the 15px grid times DPR,
+      // so shrinking the box costs display size and never drawing resolution.
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       draw();

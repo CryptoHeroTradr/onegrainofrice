@@ -43,6 +43,9 @@ const NAV = code("src/components/journey/JourneyNav.tsx");
 const CHOMP = code("src/components/chomp/ChompScreen.tsx");
 const COPY = code("src/components/primitives/CopyAddress.tsx");
 const PREFS = code("src/components/chomp/prefs.ts");
+const SNAKE_PREFS = code("src/components/grainsnake/prefs.ts");
+const SNAKE_CANVAS = code("src/components/grainsnake/GrainsnakeCanvas.tsx");
+const SNAKE_SCREEN = code("src/components/grainsnake/GrainsnakeScreen.tsx");
 
 describe("the nav row can shrink", () => {
   it("has exactly one elastic element — the wordmark — and it can reach zero", () => {
@@ -138,5 +141,50 @@ describe("the d-pad", () => {
   it("still persists an explicit choice in both directions", () => {
     expect(PREFS).toMatch(/export function setDpadOn/);
     expect(PREFS).toMatch(/write\(DPAD_KEY, on\)/);
+  });
+});
+
+/**
+ * GRAINSNAKE had the same bug one game later, reported 2026-08-12 — and it had a
+ * second half chomp does not, because grainsnake's board has a hard floor.
+ *
+ * The pad defaulted ON for `(pointer: coarse)`, which is every phone. On a 667px
+ * handset that leaves the board's slot around 315px, the floor board is 345px, and
+ * the slot centres its child — so the top and bottom rows were clipped with no scroll
+ * position that could reach them. Turning the pad OFF by default hides the symptom on
+ * the common path; scaling the board to fit is what makes it impossible.
+ */
+describe("the grainsnake d-pad", () => {
+  it("defaults OFF, on every pointer type", () => {
+    expect(SNAKE_PREFS).toMatch(/const DPAD_DEFAULT = false/);
+    expect(SNAKE_PREFS).toMatch(/read\(DPAD_KEY, DPAD_DEFAULT\)/);
+    expect(SNAKE_PREFS).not.toMatch(/pointer:\s*coarse/);
+  });
+
+  it("still persists an explicit choice in both directions", () => {
+    expect(SNAKE_PREFS).toMatch(/export function setDpad\(/);
+    expect(SNAKE_PREFS).toMatch(/write\(DPAD_KEY, on\)/);
+  });
+
+  it("sizes the canvas to the box it was given, never past it", () => {
+    // The CSS box is `w * fit`; the backing store stays on the 15px grid times DPR,
+    // so a box under 345px costs display size and never drawing resolution.
+    expect(SNAKE_CANVAS).toMatch(/const fit = boardFit\(box\.width, box\.height, px\)/);
+    expect(SNAKE_CANVAS).toMatch(/canvas\.style\.width = `\$\{cssW\}px`/);
+    expect(SNAKE_CANVAS).toMatch(/canvas\.style\.height = `\$\{cssH\}px`/);
+    expect(SNAKE_CANVAS).toMatch(/canvas\.width = Math\.round\(w \* dpr\)/);
+    // The old form handed the canvas the floor board whatever the box was.
+    expect(SNAKE_CANVAS).not.toMatch(/canvas\.style\.width = `\$\{w\}px`/);
+  });
+
+  it("gives the board slot a definite height in the landscape branch", () => {
+    // Without this the slot's height comes from the canvas, whose size is measured
+    // from the slot. The floor used to pin that loop at 345px and merely overflow;
+    // a canvas that scales to fit turns the same loop into a collapse, measured at a
+    // 6.5px cell on an 844×390 handset before `self-stretch` was added.
+    expect(SNAKE_SCREEN).toMatch(/max-lg:landscape:self-stretch/);
+    // `items-center` on the row is what makes it necessary — if it ever goes, the
+    // slot stretches by default and this class is merely redundant, not wrong.
+    expect(SNAKE_SCREEN).toMatch(/max-lg:landscape:items-center/);
   });
 });

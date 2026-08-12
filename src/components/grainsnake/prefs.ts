@@ -57,38 +57,38 @@ function write(key: string, on: boolean): void {
 }
 
 /**
- * ── THE D-PAD DEFAULTS ON FOR A COARSE POINTER. ─────────────────────────────────
- * *Decided 2026-08-07, and it is the opposite of RICE CHOMP's default — which is why
- * it is argued rather than copied.*
+ * ── THE D-PAD DEFAULTS OFF ON EVERY POINTER TYPE. ───────────────────────────────
+ * *Reverted 2026-08-12, Lito's call, and it puts the code back where the spec always
+ * said it was — `docs/grainsnake-spec.md`, Controls: "the d-pad defaults OFF on every
+ * pointer type". The 2026-08-07 coarse-pointer default was never written into the
+ * spec, so this is drift being closed rather than a new rule.*
  *
- * Chomp defaults its d-pad OFF because swipe is unambiguously its primary control and
- * a control cluster costs board height on the viewport with the least of it. That
- * reasoning does not survive the latency measurement here.
+ * The argument for defaulting it on was a latency one: a d-pad press costs nothing to
+ * recognise where a swipe costs one touch sample, about a quarter of a cell at tier 7.
+ * That is true and it is still why the d-pad exists. It is not worth what it costs,
+ * because the cost is BOARD, and the board is the game.
  *
- * At tier 7 a cell is 67 ms. Swipe recognition costs one touch sample at any real
- * finger speed — a quarter of a cell — and a d-pad press costs nothing at all, because
- * a tap has no distance to accumulate before its direction is known. The gap is small
- * but it is in one direction, and it widens exactly where the game is hardest. Both
- * controls are live at once regardless, so the default is only a question of what a
- * new player meets first, and on a phone that should be the control with no
- * recognition step in it.
+ * The cluster is 168–192px out of the controls column on the viewport with the least
+ * height to give. On a 667px-tall phone that takes the board's slot under 345px — the
+ * floor board — and the player meets a game whose top and bottom rows are off-screen.
+ * A control that shaves a quarter-cell off one turn is not worth two rows of a torus
+ * the player cannot see. Swipe is primary, always live, and the line under the board
+ * says so.
+ *
+ * The clipping itself is fixed independently, in `GrainsnakeCanvas`: the board is now
+ * scaled down to fit rather than overflowing, so turning the d-pad ON costs board size
+ * and never board EDGES. Both halves are needed — this one is about what a new player
+ * meets first, that one is about the game being honest at any size.
  *
  * An explicit choice still overrides the default forever after, in both directions,
  * which is what makes either default cheap.
  */
-function coarsePointerDefault(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  try {
-    return window.matchMedia("(pointer: coarse)").matches;
-  } catch {
-    return false;
-  }
-}
+const DPAD_DEFAULT = false;
 
 let dpad: boolean | null = null;
 
 function dpadValue(): boolean {
-  if (dpad === null) dpad = read(DPAD_KEY, coarsePointerDefault());
+  if (dpad === null) dpad = read(DPAD_KEY, DPAD_DEFAULT);
   return dpad;
 }
 
@@ -108,10 +108,10 @@ function subscribe(l: Listener): () => void {
 }
 
 export function useDpad(): boolean {
-  // The server snapshot is `false`: the default depends on `matchMedia`, which does
-  // not exist there, and rendering a control cluster on the server that the client
-  // then removes is a hydration mismatch rather than a preference.
-  return useSyncExternalStore(subscribe, dpadValue, () => false);
+  // The server snapshot is `false`, which is now also the client default — so the
+  // only pass that can differ is one where the player has previously turned the pad
+  // ON, and `useSyncExternalStore` resolves that after hydration rather than during.
+  return useSyncExternalStore(subscribe, dpadValue, () => DPAD_DEFAULT);
 }
 
 // ---------------------------------------------------------------------------

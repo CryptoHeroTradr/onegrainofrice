@@ -248,8 +248,20 @@ export function GrainsnakeScreen() {
         </div>
 
         {/* `lg:max-w-[1100px]` is what lets the board reach 45px cells (23 × 45 = 1035)
-            on a tall desktop while keeping the column a unit rather than a screen. */}
-        <div className="relative mx-auto flex w-full max-w-[720px] min-h-0 flex-1 items-center justify-center overflow-auto max-lg:landscape:mx-0 lg:max-w-[1100px]">
+            on a tall desktop while keeping the column a unit rather than a screen.
+
+            `max-lg:landscape:self-stretch` IS LOAD-BEARING, and it is the same defect
+            as the two above one element in. *Added 2026-08-12.* The landscape branch
+            centres its three columns with `items-center`, which stops this container
+            stretching — so its height came from its own content, the canvas, whose size
+            is measured FROM this container. `boardScale()`'s hard floor used to hide
+            that: the loop had a fixed point at 345px and simply overflowed. Now that the
+            canvas is scaled to fit its box, the same loop has a fixed point at ZERO and
+            walks the board down to it — measured at a 6.5px cell on an 844×390 handset.
+            `self-stretch` gives this container `main`'s height, which is definite, so
+            the measurement describes the window rather than the last thing it produced.
+            A board that fits is only meaningful if the box is real. */}
+        <div className="relative mx-auto flex w-full max-w-[720px] min-h-0 flex-1 items-center justify-center overflow-auto max-lg:landscape:mx-0 max-lg:landscape:self-stretch lg:max-w-[1100px]">
           <GrainsnakeCanvas ref={gameRef} reduced={reduced} onStats={onStats} />
 
           {panel === "menu" && !over && (
