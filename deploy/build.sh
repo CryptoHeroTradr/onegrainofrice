@@ -54,8 +54,27 @@ rm -rf "$OUT"
 # (success or failure) so a build leaves the repo byte-identical.
 TSCONFIG_BAK="$(mktemp)"
 cp tsconfig.json "$TSCONFIG_BAK"
-restore_tsconfig() { [ -f "$TSCONFIG_BAK" ] && cp "$TSCONFIG_BAK" tsconfig.json && rm -f "$TSCONFIG_BAK"; }
-trap restore_tsconfig EXIT
+
+# ─── ONE CLEANUP FUNCTION, ONE TRAP. APPEND HERE; DO NOT ADD A SECOND TRAP. ──────────
+#
+# `trap ... EXIT` REPLACES any existing EXIT trap rather than adding to it, so a second
+# one anywhere below silently disables everything in here — including the tsconfig
+# restore, which is the whole reason this script has a trap at all. That is not a
+# hypothetical: it was written once, in this file, while adding the manifest step, and
+# it would have traded a stray temp file for the dirty tracked file the snapshot exists
+# to prevent.
+#
+# The comment on its own only helps someone who reads it BEFORE writing their trap, which
+# is not how it happened. So the structure carries the rule: everything that must run on
+# exit goes INSIDE cleanup(), and TMPFILES is the place to register a temp file.
+TMPFILES=("$TSCONFIG_BAK")
+cleanup() {
+  if [ -f "$TSCONFIG_BAK" ]; then
+    cp "$TSCONFIG_BAK" tsconfig.json
+  fi
+  rm -f "${TMPFILES[@]}"
+}
+trap cleanup EXIT INT TERM
 
 # distDir -> builds/<sha> via the NEXT_DIST_DIR hook in next.config.ts.
 # BUILD_ID stamped to the sha so generateBuildId + asset() versioning match the commit.
@@ -112,9 +131,7 @@ if [ "$fail" != 0 ]; then echo; echo "BUILD INCOMPLETE — do not promote $OUT" 
 # it would make a broken directory verifiable.
 MANIFEST="$OUT/BUILD_MANIFEST"
 BUILD_LIST="$(mktemp)"
-# NO `trap ... EXIT` here: this script already has one, restoring tsconfig.json, and a
-# second EXIT trap REPLACES the first rather than adding to it. That would trade a stray
-# temp file for the dirty tracked file the whole snapshot exists to prevent.
+TMPFILES+=("$BUILD_LIST")   # registered with cleanup() above — never a second trap
 ( cd "$OUT" && find . -type f -printf '%P\t%s\n' ) | LC_ALL=C sort > "$BUILD_LIST"
 
 # The format is tab-separated, so a path containing a tab would make it ambiguous to
@@ -140,7 +157,6 @@ fi
 } > "$MANIFEST"
 
 echo "  manifest: $(wc -l < "$BUILD_LIST" | tr -d ' ') files recorded in $OUT/BUILD_MANIFEST"
-rm -f "$BUILD_LIST"
 
 echo
 echo "=== build OK: $OUT (commit $SHA, $DIRTY dirty) — NOT live ==="

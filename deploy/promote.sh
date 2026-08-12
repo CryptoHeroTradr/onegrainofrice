@@ -22,6 +22,20 @@ set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # repo root
 PM2_APP="onegrainofrice"
 
+# ─── ONE CLEANUP FUNCTION, ONE TRAP. APPEND HERE; DO NOT ADD A SECOND TRAP. ──────────
+#
+# `trap ... EXIT` REPLACES any existing EXIT trap rather than adding to it, so a second
+# one anywhere below silently disables everything in here. build.sh and dev.sh carry the
+# same structure, after a second trap was nearly added to build.sh and would have left a
+# tracked file dirty. The verifier below allocates three temp files and can exit from six
+# places; registering them here is what makes every one of those paths clean.
+TMPFILES=()
+cleanup() {
+  [ "${#TMPFILES[@]}" -gt 0 ] && rm -f "${TMPFILES[@]}"
+  return 0
+}
+trap cleanup EXIT INT TERM
+
 # `--verify <id>` runs the manifest check against a build and STOPS — no symlink, no pm2,
 # no marker written. *Added 2026-08-13 with the check itself*, for two reasons: it lets you
 # ask "is this rollback target still intact?" while nothing is on fire, which is the only
@@ -71,10 +85,35 @@ verify_target() {
   local manifest="$target/BUILD_MANIFEST"
   local built="$target/BUILT"
 
+  # ── A MISSING BUILT IS DAMAGE, NOT AGE. ──────────────────────────────────────
+  # *Tightened 2026-08-13.* Every promote-able build directory has a BUILT file — the 12
+  # that predated the convention were backfilled when this branch was added (see
+  # deploy/README.md). So its absence is not the signature of an old build; it is the
+  # signature of something wrong, and grandfathering on it was the last fail-open here:
+  # a build that lost both its manifest and its BUILT would have promoted unverified
+  # behind a banner nobody reads at 3am.
+  #
+  # The way past is a DECLARATION rather than a flag, which is this repo's pattern for
+  # exactly this trade (chomp's CHOMP_DB_OWNER, and the rule that a guard must never be a
+  # hard stop on the path OUT of an incident): if you have looked at the directory and
+  # know it is a real build, write the file and say so. That takes a deliberate act, it
+  # leaves a record on disk, and it cannot be typed reflexively as a command prefix.
+  if [ ! -f "$built" ]; then
+    echo "!! REFUSING to promote $target — it has no BUILT file." >&2
+    echo "   Every build directory has one; a missing BUILT means something removed it," >&2
+    echo "   not that the build is old. Promoting it would mean promoting a directory" >&2
+    echo "   whose contents cannot be checked at all." >&2
+    echo >&2
+    echo "   If you have looked and know this directory is intact, declare it:" >&2
+    echo "       printf 'BACKFILLED_AT=%s\\n' \"\$(date -u +%F)\" > $built" >&2
+    echo "   and re-run. Otherwise rebuild: deploy/build.sh" >&2
+    exit 1
+  fi
+
   # THE MIGRATION DISCRIMINATOR. Read from BUILT, not from the manifest — a missing
   # manifest cannot tell you whether it was never written or has been deleted.
   local claims_manifest=no
-  if [ -f "$built" ] && LC_ALL=C grep -qx 'MANIFEST=1' "$built"; then claims_manifest=yes; fi
+  if LC_ALL=C grep -qx 'MANIFEST=1' "$built"; then claims_manifest=yes; fi
 
   # ── FAIL CLOSED ──────────────────────────────────────────────────────────────
   # A manifest that is absent, empty or truncated must not silently skip verification.
@@ -126,6 +165,7 @@ verify_target() {
 
   local expected actual extras
   expected="$(mktemp)"; actual="$(mktemp)"; extras="$(mktemp)"
+  TMPFILES+=("$expected" "$actual" "$extras")   # cleanup() owns them from here
   LC_ALL=C awk -F'\t' '$1 == "SIZE" { printf "%s\t%s\n", $3, $2 }' "$manifest" \
     | LC_ALL=C sort > "$expected"
   # BUILD_MANIFEST is not in its own list, and DEPLOYED is written by THIS script on a
@@ -159,7 +199,6 @@ verify_target() {
     echo "!! REFUSING to promote $target — $bad file(s) do not match the manifest." >&2
     echo "   manifest: $n_expected files · on disk: $n_actual" >&2
     echo "   The paths and deltas are listed above. Rebuild rather than promoting this." >&2
-    rm -f "$expected" "$actual" "$extras"
     exit 1
   fi
 
@@ -175,7 +214,6 @@ verify_target() {
   done < <(LC_ALL=C grep '^SHA256	' "$manifest")
   if [ "$sha_bad" != 0 ]; then
     echo "!! REFUSING to promote $target — $sha_bad manifest file(s) have wrong contents." >&2
-    rm -f "$expected" "$actual" "$extras"
     exit 1
   fi
 
@@ -185,7 +223,6 @@ verify_target() {
     echo "     Not a refusal — nothing this check guards against ADDS files — but worth a look:"
     head -10 "$extras"
   fi
-  rm -f "$expected" "$actual" "$extras"
 }
 
 if [ "$VERIFY_ONLY" = 1 ]; then

@@ -55,15 +55,27 @@ fi
 # build.sh, and for the same reason.
 TSCONFIG_BAK="$(mktemp)"
 cp tsconfig.json "$TSCONFIG_BAK"
-restore_tsconfig() {
+
+# ─── ONE CLEANUP FUNCTION, ONE TRAP. APPEND HERE; DO NOT ADD A SECOND TRAP. ──────────
+#
+# `trap ... EXIT` REPLACES any existing EXIT trap rather than adding to it, so a second
+# one anywhere below silently disables everything in here — including the tsconfig
+# restore, which is the whole reason this script has a trap. build.sh carries the same
+# structure for the same reason, after a second trap was nearly added to it.
+#
+# Everything that must run on exit goes INSIDE cleanup(); TMPFILES is where a temp file
+# gets registered. The rule is carried by the shape of the code, not by this comment —
+# a comment only helps someone who reads it before writing their own trap.
+TMPFILES=("$TSCONFIG_BAK")
+cleanup() {
   if [ -f "$TSCONFIG_BAK" ]; then
     cp "$TSCONFIG_BAK" tsconfig.json
-    rm -f "$TSCONFIG_BAK"
     echo
     echo "=== tsconfig.json restored ==="
   fi
+  rm -f "${TMPFILES[@]}"
 }
-trap restore_tsconfig EXIT INT TERM
+trap cleanup EXIT INT TERM
 
 mkdir -p builds
 # ─── DO NOT ADD `exec` HERE. ─────────────────────────────────────────────────────────

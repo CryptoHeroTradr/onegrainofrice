@@ -136,11 +136,34 @@ make every existing rollback target unusable in the name of protecting it.
 `build.sh` therefore writes **`MANIFEST=1` into the `BUILT` file** of every build
 it produces from now on, and `promote.sh` reads *that* to tell the two apart:
 
-| `BUILT` says `MANIFEST=1` | `BUILD_MANIFEST` | promote.sh |
+| `BUILT` | `BUILD_MANIFEST` | promote.sh |
 |---|---|---|
-| no (old build) | absent | **WARNS LOUDLY and proceeds** — grandfathered |
-| yes | absent, empty, or truncated | **REFUSES** — fail closed |
-| either | present | **VERIFIES IT** |
+| **absent** | anything | **REFUSES** — a missing `BUILT` is damage, not age |
+| present, no `MANIFEST=1` | absent | **WARNS LOUDLY and proceeds** — grandfathered |
+| present, `MANIFEST=1` | absent, empty, or truncated | **REFUSES** — fail closed |
+| present | present | **VERIFIES IT** |
+
+> **A MISSING `BUILT` REFUSES.** *Tightened 2026-08-13.* Grandfathering on its absence
+> was the last fail-open: a build that lost both its manifest and its `BUILT` would
+> have promoted unverified behind a banner nobody reads at 3am.
+>
+> **This required a one-time backfill, because the premise was not true when it was
+> written.** Twelve of the fifty-eight build directories had no `BUILT` — the hand-named
+> phase builds (`phase3`, `phase4`, `p56`, `p56b`, `p56c`, `phase6e`, `d0c1485-p5`,
+> `d0c1485-p5b`, `2217c0c-p5c`, `af580a5`, `a102535`) **and
+> `premigrate-1784998263201`, which is the rollback floor `promote.sh` itself creates on
+> the first promote.** Refusing on a missing `BUILT` without backfilling would have
+> bricked the deepest rollback target on the box in the name of protecting it. Each was
+> given a `BUILT` recording exactly what is known — provenance backfilled, commit
+> unknown, and deliberately **no** `MANIFEST` line, so they still take the grandfathered
+> path. `builds/_dev` was left alone: it is a dev `distDir`, not a promote target, and it
+> *should* be refused.
+>
+> **The way past, if it ever fires on a build you know is good, is a declaration rather
+> than a flag** — the refusal prints the one-line `printf … > builds/<id>/BUILT` that
+> re-declares it. That is deliberate (it cannot be typed reflexively as a command prefix),
+> it leaves a record on disk, and it keeps this guard off the critical path out of an
+> incident, which is the standing rule a hard stop here would otherwise break.
 
 > *Rejected: letting the manifest's own absence mean "old build".* It is the
 > obvious design and it is precisely the fail-open this check exists to prevent —
@@ -183,11 +206,19 @@ shipped. The **first** promote migrates `./.next` from a real directory to a
 symlink, preserving the current live build as `builds/premigrate-<old-build-id>`
 so there is a rollback floor.
 
-**Rollback (one command — the previous build is kept, never deleted):**
+**Rollback (the previous build is kept, never deleted):**
 
 ```bash
-deploy/promote.sh <previous-sha>
+deploy/promote.sh --verify <previous-sha>    # step 0 — is the target still intact?
+deploy/promote.sh <previous-sha>             # the rollback itself
 ```
+
+**Step 0 is not optional ceremony, and it is the step that will be skipped.** The promote
+runs the same check and refuses on the same evidence, so nothing is lost by going
+straight to the second line — but you will find out *during* the incident rather than
+before it, and if the target is damaged you will be choosing your next move under
+pressure with one fewer option than you thought you had. Run `--verify` on the current
+rollback target when nothing is wrong; that is the only calm moment there is.
 
 `builds/` is git-ignored (build artifacts, like `.next`). Prune old builds
 manually when disk warrants; never delete the build `./.next` currently points at
