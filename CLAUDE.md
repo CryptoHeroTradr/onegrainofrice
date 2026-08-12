@@ -42,8 +42,15 @@ repo-wide — see above; nothing about Tetrice changes them.
   `chomp/` for historical reasons and are pure string functions — reusing them is not a
   data-layer dependency on chomp.
 - **Decide the new route's ambient-decoration status in `src/lib/playSurfaces.ts`.** The
-  exports are `PLAY_SURFACE_ROUTES` and `isPlaySurface` — there is no
-  `UNLISTED_PLAY_SURFACES`. Listing a route turns the site-wide decoration (Translate,
+  exports are `PLAY_SURFACE_ROUTES` and `isPlaySurface`. *Corrected 2026-08-12: this line
+  read "there is no `UNLISTED_PLAY_SURFACES`", which was true of this file and false of the
+  repo.* There is no unlisted array **in `playSurfaces.ts`** — `UNLISTED_PLAY_SURFACES` is a
+  local const inside `test/play-surfaces.test.ts` (added 2026-08-07, when GRAINSNAKE was
+  promoted before its card shipped). It is the allowlist for a play surface that is
+  deliberately not a listed game, and **a play-surface route that is not in
+  `src/config/games.ts` must be named there or the suite fails.** So a non-game play
+  surface is a two-file change: the route in `playSurfaces.ts`, the reason in the test.
+  Listing a route turns the site-wide decoration (Translate,
   KonamiRice, RiceParticles, the chopstick cursor) **off** on it; omitting it leaves the
   decoration on. Tetrice almost certainly belongs on the list — the Konami listener eats
   the arrow keys that are its primary control, and the translate script would break the

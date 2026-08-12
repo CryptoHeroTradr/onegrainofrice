@@ -302,12 +302,100 @@ shapes in the same hue family share one**:
 - **The axis does not rotate with the piece.** It is a property of the shape, fixed in
   screen space. An axis that rotated would stop being an identity cue and become a rotation
   indicator, which the silhouette already provides for free.
-- **The axis persists into the locked stack**, so a settled cell still says which piece put
-  it there. That is deliberate: reading your own stack's history is exactly what a player
-  does when deciding where the next piece goes.
+- **The axis persists into the locked stack, so a settled cell still says which SHAPE put
+  it there.** *Downgraded 2026-08-13, out of the Phase 1 gate, which falsified the stronger
+  claim this line used to make ("which piece put it there"). The gate is the record:
+  `/dev/tetrice-gate`, stacked-field panel.*
+  - What survives the lock is **shape** identity, not **instance** identity. Two Z pieces
+    that come to rest against each other read as one continuous diagonal mass — same hue,
+    same axis, nothing between them — and at 15 px there is no boundary to find. Adjacent
+    pieces of *different* shapes separate cleanly, which is the useful half and the half
+    that is true.
+  - *Rejected: adding a per-instance cue.* **Refused, not deferred.** Instance identity has
+    no gameplay function — nothing in the rules reads which piece filled a cell, and a
+    player deciding where the next piece goes is reading the skyline and the holes, not the
+    lock history. And it would have to be carried on value, rim or axis, which are the three
+    channels already carrying shape identity; the gate measured those at capacity (see the
+    luminance ceiling below). Spending a channel that is already full on information the
+    game does not use is the trade this rejects.
 - Three orientations, not seven. Seven distinct angles at a 30 px cell is a code nobody can
   read; three are *categorically* different at a glance, and three is all the collisions
   require.
+
+**THE AXIS CODE PASSED ITS GATE, AND IT PASSED FOR A REASON THAT IS NOT THE OBVIOUS ONE.**
+*Added 2026-08-13, out of Phase 1. `/dev/tetrice-gate`, primary panel: S vs Z, greyscale,
+15 px cell, captured at 390×844 CSS px on a DPR-3 viewport. Verdict: **distinguishable at a
+glance**, and not marginally.*
+
+The reason is written down here because the next person to consider a finer angle code will
+otherwise re-derive the wrong arithmetic and reach the wrong conclusion:
+
+- **The per-grain model predicts failure, and it is the wrong model.** A grain at a 15 px
+  cell is about 9 CSS px on its long axis, so ↗ versus ↘ is roughly 6 px of end
+  displacement. Reasoning from that single grain, the cue looks far too small to survive a
+  phone.
+- **The cue aggregates, and that is what actually carries it.** A piece is sixteen grains
+  raked the same way, which is a *texture*, and orientation is one of the earliest and
+  cheapest things the visual system extracts from a texture. At 90° separation between
+  categories the read is immediate. The unit of the cue is the piece, not the grain.
+- **The corollary, and the reason this is here rather than in a report:** narrowing the
+  angles narrows the *category* separation, and the aggregation argument does not survive
+  it — a texture raked at 30° against one raked at 60° is not a categorical difference at
+  any cell size this game will use. So a finer code is not "the same idea with more
+  values"; it is a different, weaker mechanism. **The three-way code is a floor, not a
+  starting point.**
+
+**A GREYSCALE PASS IS NOT THE MEASUREMENT, AND THE PIXEL FIDELITY IS NOT THE PHONE.** The
+gate was judged on rendered pixels at 45 device px per cell, not on a phone in hand. That
+is enough to settle whether the *renderer* produces the distinction; it says nothing about
+whether an eye at arm's length resolves it under a phone's brightness and viewing angle.
+The on-phone check is a separate open item and is listed as one in *Acceptance criteria* —
+deliberately not as a parenthetical inside a criterion that is already satisfied.
+
+**FUSION IS ANISOTROPIC. THE AXIS CODE AND THE ONE-FUSED-SHAPE RULE ARE TWO DECIDED RULES
+COMPETING FOR THE SAME GEOMETRY, AND THE AXIS CODE IS CURRENTLY WINNING FOR THREE SHAPES
+OUT OF SEVEN.** *Added 2026-08-13, out of Phase 1. Measured, not inferred:
+`/dev/tetrice-gate`, fused-edge panel.*
+
+A cell is a cluster of four grains in a loose 2×2, and the clusters are meant to overlap
+slightly along shared cell edges so that a four-cell piece reads as **one fused shape**
+rather than four beads. The gate measured what that produces once each shape's grains are
+raked to a fixed angle:
+
+| | Along the grain's own axis | Across it |
+|---|---|---|
+| Cluster reach past the cell boundary | **~10% over** | **~8% short** |
+| What it looks like | neighbouring cells merge | a hard dark channel between them |
+
+- **Horizontal-axis shapes (I, O) fuse into continuous bars separated by a channel between
+  rows.** I at 30 px reads as two ribbons, not one piece.
+- **Vertical-axis shapes (J, T) read as separate strands** — corduroy rather than a shape.
+- **Diagonal-axis shapes (S, Z, L) fuse best**, because a 45° grain bridges both axes at
+  once. Three of seven satisfy the rule; four do not, **and which four is decided by the
+  identity cue itself.** That is the part that makes this a constraint rather than a bug:
+  the geometry of the fix is coupled to the geometry of the cue.
+
+> **THE CONSTRAINT: CLUSTER FUSION MUST BE AXIS-INDEPENDENT.** Whether a piece reads as one
+> shape may not depend on which angle its grains were assigned. A mechanism that fuses
+> horizontals by raking them further is not a fix; it is the same coupling with a different
+> sign.
+
+**The mechanism is deliberately NOT chosen here — that is a Phase 3 decision.** Both
+candidates are named so Phase 3 starts from two options rather than from zero:
+
+1. **A fixed cross-axis overlap term**, independent of grain orientation — the cluster
+   reaches a set fraction past the boundary in *both* directions, so the spill stops being a
+   function of the angle.
+2. **A brick-offset lattice** — stagger alternate rows or columns of the 2×2 so grain *ends*
+   never line up into a continuous channel, which removes the failure without touching how
+   far anything reaches.
+
+**They share a cost, and it is the reason this is a decision rather than a fix:** both add
+overspill at the piece's outer edge, and overspill blurs the silhouette exactly where the
+silhouette is doing its work — the boundary between an occupied cell and an empty one. That
+trades directly against the **ghost-piece read** (an outline compared against a blurred
+edge) and the **empty-cell read** (*THE PIECE IS READ FROM THE WELL*, which makes the rim
+load-bearing). Neither candidate can be evaluated on the fused read alone.
 
 **The NEXT queue renders at a larger cell than the well** — call it 1.4× — and this is
 recorded here because it is free and because the queue is where a collision shows first.
@@ -328,6 +416,59 @@ cell. Nothing about the well's layout constrains this; the space beside it is al
   scheme** (*What this is*).
 - The gate must include a greyscale pass, because that is the same measurement with the
   weaker cue removed, and it is the one a colour-blind player is taking.
+
+**THE CEILING, MEASURED: HUE IS NOT A USABLE IDENTITY CHANNEL FOR EVERY PLAYER, AND IN THE
+GREYSCALE CASE THE AXIS CODE CARRIES IDENTITY ALONE.** *Added 2026-08-13, out of Phase 1.
+This was not a prediction — the gate produced the numbers and they are worse than the
+section above assumed.*
+
+Rec.709 luminance of the seven tokens: **I 74.3 · J 73.5 · Z 93.9 · O 104.0 · S 108.3 ·
+T 176.3 · L 177.8.** Three pairs are effectively identical in value — **I/J 0.8 apart, L/T
+1.5, S/O 4.3** — while per-grain value variation is **±14%**, which on a mid-tier shape is a
+spread of about 30 luminance units. **The jitter within one shape is an order of magnitude
+larger than the difference between two shapes**: an S grain can and does render darker than
+an O grain.
+
+So for a greyscale or colour-blind player the axis code is not the *second* channel the
+section above calls it. It is the only one. It happens to resolve all three collisions —
+but **by luck rather than by design**: the axis was assigned against *hue families*, and
+luminance proximity is a different partition of the same seven shapes that it lines up with
+by coincidence. A palette edit that is obviously safe on hue can break it silently.
+
+**This is enforced by a test rather than by this paragraph** — see
+`test/tetrice-palette.test.ts` in *Acceptance criteria*. A prose rule asks a future palette
+edit to remember; the test refuses it.
+
+- **The threshold is a luminance RATIO of 1.33, and the number comes from the ±14% spread
+  rather than from taste.** A shape's grains occupy `[0.86·L, 1.14·L]`. Two shapes are
+  confusable exactly when those bands overlap, which is `max/min < 1.14/0.86 = 1.326`. Any
+  future change to `VALUE_SPREAD` changes this threshold, and the test derives it from that
+  constant rather than hard-coding 1.33, so the two cannot drift apart.
+- **The assertion is PAIRWISE, not tier-based, and that is a correction to the obvious
+  design.** Clustering into tiers by single linkage chains through intermediate shapes: Z
+  (93.9) is band-adjacent to both I (74.3) and O (104.0), so I, J, Z, O and S merge into one
+  "tier" containing both I and O — which are **both horizontal** and would fail the
+  assertion, despite being 1.40 apart and genuinely not confusable. That is a false alarm on
+  a palette that is fine, and a test that cries wolf is a test somebody deletes. The
+  question the game actually asks is "can *these two* be confused", so the test asks it
+  about pairs.
+
+**WHERE THE GATE AND ITS EVIDENCE LIVE.** *Added 2026-08-13.*
+
+- **The gate page is `/dev/tetrice-gate`** (`src/app/dev/tetrice-gate/`, renderer in
+  `src/components/tetrice-gate/`). It is unlinked, `noindex`, and a play surface — the
+  ambient decoration would sit on top of the exact pixels being judged. Because it is a
+  play surface without a card in `src/config/games.ts`, it is also named in
+  `UNLISTED_PLAY_SURFACES` inside `test/play-surfaces.test.ts`.
+- **It is throwaway, and it is kept anyway until Phase 3**, because the fusion constraint
+  above is accepted by re-running it. **PHASE 6 DELETES IT** — the route directory, the
+  component directory, the `PLAY_SURFACE_ROUTES` entry and the `UNLISTED_PLAY_SURFACES`
+  entry, in one commit.
+- **The captures live OUTSIDE the repo**, at
+  `/home/deploy/onegrainofrice-asset-sources/tetrice-gate/`, beside the mood board (*What
+  this is*). They are unbudgeted images and `public/` is served wholesale, so they are not
+  committed — the size budget in constraint 12 is a budget on what ships, and evidence for a
+  decision is not something that ships.
 
 ## The randomizer
 
@@ -875,6 +1016,24 @@ an unchosen bag" either.
 - Pure-logic modules unit tested under the existing DOM-free vitest setup.
 - **`/games/tetrice` is in `PLAY_SURFACE_ROUTES` and `test/play-surfaces.test.ts` covers it
   by name**, in both directions.
+- **ALL SEVEN SHAPES SATISFY THE FUSED READ AT 15 px AND AT 30 px.** *Added 2026-08-13; this
+  is how the anisotropic-fusion constraint in* The pieces *is accepted.* Re-run
+  `/dev/tetrice-gate` after the Phase 3 mechanism lands and check the fused-edge panel at
+  both sizes: no shape may read as separated bars or strands because of the angle its grains
+  were assigned. Three of seven passed at Phase 1, which is the baseline this is measured
+  against — the same panel, the same two cell sizes.
+- **`test/tetrice-palette.test.ts` passes, AND FAILS ON ITS POSITIVE CONTROL.** *Added
+  2026-08-13.* It parses the seven chromatic tokens out of `globals.css`, computes Rec.709
+  luminance, and asserts that **no two shapes whose value bands overlap share a grain axis**
+  — the threshold derived from `VALUE_SPREAD`, not hard-coded (*The pieces*). The control is
+  a deliberately colliding fake palette the checker must reject; without it, a checker that
+  stopped checking would look exactly like a palette that is fine.
+- **THE ON-PHONE GATE IS STILL OPEN, AND THE PHASE 1 PASS DID NOT DISCHARGE IT.** *Added
+  2026-08-13, as its own line rather than a parenthetical, because a satisfied criterion
+  with a caveat inside it reads as satisfied.* The axis code was judged on rendered pixels
+  at 45 device px per cell (DPR-3 viewport, 390×844 CSS px). What remains unmeasured is an
+  eye at arm's length: real phone, real brightness, off-axis viewing, S versus Z in
+  greyscale at the 15 px floor.
 - **The palette gate has been run on a phone**, at the real cell size, with all seven shapes
   on screen, including a greyscale pass (*The pieces*).
   - *Added 2026-08-12:* the gate runs against a renderer that **already has the grain
