@@ -114,10 +114,8 @@ describe("play surfaces", () => {
   const UNLISTED_PLAY_SURFACES: ReadonlyArray<{ route: string; why: string }> = [
     // GRAINSNAKE's entry was removed 2026-08-07 when its leaderboard shipped and its
     // card went into src/config/games.ts.
-    {
-      route: "/games/tetrice",
-      why: "live and playable, but src/config/games.ts has no entry for it yet — the card is its own change (added 2026-08-13)",
-    },
+    // TETRICE's entry was removed 2026-08-13 when its card went into
+    // src/config/games.ts.
     // `/dev/tetrice-gate` left on 2026-08-13: the on-phone check failed the palette and
     // grain-axis decisions it existed to gate, both were reverted, and the page, its
     // renderer and this entry were deleted together — which is what its `why` said

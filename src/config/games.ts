@@ -11,8 +11,19 @@
  *
  * `href` is a plain route: `usePathname()` and `<Link>` are both basePath-aware,
  * so nothing here carries a prefix. See `src/lib/playSurfaces.ts` for why being a
- * game and being a "play surface" are NOT the same question — only RICE CHOMP is
- * both.
+ * game and being a "play surface" are NOT the same question — three of the five
+ * are both.
+ *
+ * ── EVERY GAME CARRIES EVERY FIELD. ───────────────────────────────────────────
+ * *Added 2026-08-13 with TETRICE, which needed `controls` and `leaderboard` and
+ * could have had them alone.* `Game` is a union over these literals, so a field
+ * on one entry and not the others is a field the card component cannot read
+ * without narrowing by slug — and narrowing by slug is a special case wearing a
+ * type. The four older games gained both fields in the same commit; describing
+ * what they were always true of costs four lines and keeps the card generic.
+ *
+ * `controls` is a PAIR because the answer genuinely differs by input device, and
+ * the card renders both and hides one in CSS (`components/games/GameCards`).
  */
 export const games = [
   {
@@ -23,6 +34,11 @@ export const games = [
     tagline: "Clear the paddy before the pests clear you.",
     blurb:
       "An arcade maze chase. Steer a grain of rice through the paddy, eat it clean, and stay ahead of a rat, a sparrow, a weevil and a locust that each hunt you differently.",
+    controls: {
+      keyboard: "Arrow keys or WASD · P pauses",
+      touch: "Swipe the board, or the on-screen d-pad",
+    },
+    leaderboard: true,
   },
   {
     slug: "grains",
@@ -32,6 +48,11 @@ export const games = [
     tagline: "Tap. The whole world is tapping with you.",
     blurb:
       "One tap, one grain, one live global total. Every grain you drop counts toward your country's score on a board that never stops moving.",
+    controls: {
+      keyboard: "Click the bowl",
+      touch: "Tap the bowl",
+    },
+    leaderboard: true,
   },
   {
     slug: "catch",
@@ -41,6 +62,13 @@ export const games = [
     tagline: "Chopsticks at the ready.",
     blurb:
       "Falling grains, one pair of chopsticks, and no floor to spare. The site's chopstick cursor is the controller.",
+    controls: {
+      keyboard: "Move the mouse — the chopsticks follow it",
+      touch: "Drag to move the chopsticks",
+    },
+    // No board, and this is the one that is a decision rather than a gap: the
+    // game has no server route at all (`/api/catch` does not exist).
+    leaderboard: false,
   },
   {
     slug: "grainsnake",
@@ -50,6 +78,27 @@ export const games = [
     tagline: "One grain becomes many. That is the problem.",
     blurb:
       "Classic snake in the paddy. Every grain you eat joins the trail behind you, the board gets faster, and the only thing that can end a run is the route you already took.",
+    controls: {
+      keyboard: "Arrow keys or WASD · P pauses",
+      touch: "Swipe the board, or the on-screen d-pad",
+    },
+    leaderboard: true,
+  },
+  {
+    slug: "tetrice",
+    href: "/games/tetrice",
+    // Not 🌾: that is the site menu's own mark, and a card sharing it would read
+    // as the menu rather than as a game. 🧱 is what the game asks you to do.
+    emoji: "🧱",
+    title: "TETRICE",
+    tagline: "Stack the grains. Clear the rows.",
+    blurb:
+      "Seven shapes fall into a ten-wide well, each one built from grains of rice. Fill a row and it clears; the further you get the faster they come. Every run is replayed on the server, so the leaderboard holds scores and nothing else.",
+    controls: {
+      keyboard: "Arrows move · ↑ rotates · Space drops · Shift holds · P pauses",
+      touch: "Swipe to move, tap to rotate, flick down to drop — or use the buttons",
+    },
+    leaderboard: true,
   },
 ] as const;
 
