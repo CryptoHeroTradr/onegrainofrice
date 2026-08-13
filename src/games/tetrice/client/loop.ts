@@ -30,6 +30,17 @@ export interface LoopCallbacks {
   step(): boolean;
   /** Draw. `alpha` is the accumulator fraction; render LAGGING, never leading. */
   draw(alpha: number): void;
+  /**
+   * True while the run is paused. Optional; absent means never paused.
+   *
+   * **A PAUSED FRAME BANKS NO TIME.** The accumulator is emptied on every paused frame
+   * rather than left to grow, because a run paused for a minute would otherwise return
+   * holding 3,600 frames of debt — and the catch-up cap would spend five of them and
+   * discard the rest, which is a piece the player never saw moving five rows and then a
+   * silent discontinuity in a tick-indexed trace. Pausing costs the current partial tick
+   * and nothing else.
+   */
+  paused?(): boolean;
 }
 
 export function startLoop(cb: LoopCallbacks): LoopHandle {
@@ -43,6 +54,13 @@ export function startLoop(cb: LoopCallbacks): LoopHandle {
     if (last === 0) last = now;
     acc += now - last;
     last = now;
+
+    if (cb.paused?.()) {
+      acc = 0;
+      cb.draw(0);
+      raf = requestAnimationFrame(frame);
+      return;
+    }
 
     let steps = 0;
     while (acc >= STEP_MS && steps < MAX_CATCHUP_STEPS) {

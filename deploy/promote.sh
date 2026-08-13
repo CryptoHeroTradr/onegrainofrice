@@ -324,13 +324,14 @@ pm2 restart "$PM2_APP"
 # guard that can take down production is worse than the hazard it prevents — which
 # is the same rule that made the flag a declaration rather than a lockfile.
 #
-# There are TWO such flags now (chomp and grainsnake), checked in one loop so a third
-# game is one word rather than a third copied paragraph.
+# There are THREE such flags now (chomp, grainsnake and tetrice), checked in one loop so
+# a fourth game is one word rather than a fourth copied paragraph.
 PM2_ENV="$(pm2 jlist 2>/dev/null || true)"
-for flag in CHOMP_DB_OWNER GRAINSNAKE_DB_OWNER; do
+for flag in CHOMP_DB_OWNER GRAINSNAKE_DB_OWNER TETRICE_DB_OWNER; do
   case "$flag" in
     CHOMP_DB_OWNER)      api="/api/chomp/*" ;;
     GRAINSNAKE_DB_OWNER) api="/api/grainsnake/*" ;;
+    TETRICE_DB_OWNER)    api="/api/tetrice/*" ;;
   esac
   if ! printf '%s' "$PM2_ENV" | grep -q "$flag"; then
     echo

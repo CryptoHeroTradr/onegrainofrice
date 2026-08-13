@@ -108,6 +108,10 @@ module.exports = {
         //     pm2 restart ecosystem.config.js --only onegrainofrice --update-env
         //     pm2 save
         GRAINSNAKE_DB_OWNER: "1",
+        // THE SAME DECLARATION, FOR data/tetrice.db. *Added 2026-08-13.* Everything
+        // written above applies verbatim, including the reason there are now THREE flags
+        // rather than one shared one.
+        TETRICE_DB_OWNER: "1",
         ...grainsEnv,
       },
     },

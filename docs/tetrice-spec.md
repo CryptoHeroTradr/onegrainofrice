@@ -567,10 +567,18 @@ tests, which is how a stray call gets in.
 - **The mechanics of it, so that the rule is enforceable rather than decorative.** *Decided
   2026-08-12; this was not in the brief, and it is written out because "the seed comes from
   the server" means nothing unless the server can later tell that it did.*
-  - `POST /api/tetrice/seed` issues `{ seed, engineVersion }` and records the issue —
-    seed, `vid`, issue time, unused — in `tetrice.db`.
-  - A score submission carries the seed it was issued. The score route **rejects a seed it
-    did not issue, a seed already spent, and a seed issued to a different `vid`.**
+  - `POST /api/tetrice/start` issues `{ runId, seed, issuedAt, engineVersion }` and records
+    the issue — run id, seed, `vid`, issue time, unspent — in `tetrice.db`.
+    - *Renamed 2026-08-13, out of Phase 5. This read `POST /api/tetrice/seed` issuing
+      `{ seed, engineVersion }`.* The row needs a name the client can quote back, and
+      quoting the seed itself would make the seed the identifier — so a submission would
+      have to carry it, and the route would have to decide whether to trust the copy it was
+      handed. **The run id exists so the seed never has to leave the server's own row.**
+      The submit path reads the seed it stored and ignores the one in the log.
+  - A submission carries the **run id** it was issued. The submit route **rejects an id it
+    did not issue, an id already spent, and an id issued to a different `vid`** — all three
+    as `409`, one message, because telling a prober which of the three it hit tells them
+    whether an id exists.
   - The issue time gives a trusted lower bound on the run's wall-clock duration, which
     catches a trace replayed at a thousand times real speed. That is the property
     grainsnake deferred, acquired here as a side effect. It still does not catch a bot
@@ -650,6 +658,41 @@ for a reason nothing on screen can explain.
   progress, with no error the first tab could show because nothing there has failed yet.
   A guard that kills a live honest run to make a shopper's life marginally harder is the
   wrong trade in the same direction constraint 7 names.
+
+**MITIGATION 1 IS NOT IMPLEMENTED. THE PHASE 5 BOARD SHIPPED WITHOUT IT, AND THIS SAYS SO
+RATHER THAN LEAVING IT TO BE INFERRED FROM A MISSING COLUMN.** *Added 2026-08-13, out of
+Phase 5.*
+
+The shipped lifecycle is `/start` → play → `/submit`. There is **no start beacon**, so
+there is no first-input event for a void to land on — and the alternative, voiding at
+issuance, is the option this section already rejected for killing live honest runs. Rather
+than ship the rejected design under the accepted design's name, the void is **absent**:
+
+| | decided | shipped |
+|---|---|---|
+| Server-issued seed, client cannot choose it | yes | **yes** |
+| Single-use, bound to `vid` | yes | **yes** |
+| One live seed per vid, voided at first input | yes | **no** |
+| TTL | 90 s issuance→start | **issuance→submission, the generous bound** |
+| Issued-to-submitted ratio visible | yes | **yes** (`seedUsageByVid`) |
+
+- **What that costs, precisely.** A shopper can hold many unspent run ids at once and pick
+  the friendliest, which is the attack this section says the mitigation exists to make
+  serial. What stands in its way today is only the rate limit on `/start` — tighter than
+  the one on `/submit`, per *Leaderboard* — so a hundred candidates cost ten minutes of
+  visible, rate-limited traffic rather than one unnoticed burst. That is a floor on the
+  cost, not a barrier.
+- **The TTL that DID ship is the other one this section names**, and the distinction is
+  load-bearing: 90 s is on issuance→**start**, and applying it to submission would reject
+  every honest player who lasted two minutes. Without a start signal there is nothing to
+  measure the tight bound against, so the deadline is the generous one — `MAX_REPLAY_TICKS
+  / 60 + 10 minutes`, derived from the tick cap rather than invented.
+  `test/tetrice-db.test.ts` asserts a run older than two minutes is still submittable,
+  paired with the expiry, because a test that only checked the expiry would pass on the
+  wrong bound.
+- **Closing it is one endpoint and one column**: a fire-and-forget beacon on first input,
+  and `started_at` on `tetrice_seeds`. The design above is unchanged and still the one to
+  build; nothing shipped in Phase 5 has to be undone to add it.
 
 ## Rotation
 
@@ -878,13 +921,113 @@ bump it. Carried over from grainsnake in full, including the parts that are easy
   defaults are chosen by feel and may be changed without an `ENGINE_VERSION` bump — but see
   the reachability arithmetic in *Gravity and lock*, which is the one place a DAS change has
   a gameplay consequence worth checking.
-- **Touch:** the game must be genuinely playable one-thumbed in portrait. Tap left/right
-  halves to move, tap the piece to rotate, swipe down to soft drop, flick down to hard drop,
-  and an explicit on-screen hold control. The touch mapping is decided in the phase that
-  builds it, against a real phone, and it is not a d-pad by default — grainsnake's d-pad
-  defaults off for a reason.
+- **Touch:** the game must be genuinely playable one-thumbed in portrait. Swipe left/right
+  to move, tap to rotate, swipe down to soft drop, flick down to hard drop, swipe up to
+  hold, and an on-screen cluster alongside all of it.
 - **A control that cannot be reached at level 12 does not exist.** Every control is
   measured at the fast end of the table, not the slow end.
+
+**THE OPERATING SYSTEM'S KEY REPEAT IS NOT A SOURCE OF INPUT.** *Added 2026-08-13, out of
+Phase 4.* A held key delivers `keydown` at the machine's typematic rate — around 500 ms to
+the first repeat and ~30 ms after, both a control-panel setting. Auto-repeat driven from
+those events would hand this game's feel to a preference that is not ours and give two
+players on the same build different games. **`event.repeat` is dropped at the door**; the
+DOWN and UP edges are the input, and every repeat is counted in simulation frames.
+
+That is also what makes the tick-indexed trace honest. DAS and ARR decide *which* ticks
+carry a `MoveLeft` and never what a `MoveLeft` does, so a run recorded under one DAS
+replays identically under another and none of these numbers is an `ENGINE_VERSION` bump.
+A control layer that let a wall clock in — typematic timing, gesture timeouts applied to
+the simulation — would be the one place the browser and the server-side replayer could
+disagree without either being wrong.
+
+### The touch mapping
+
+*Decided 2026-08-13, out of Phase 4.* Recognition fires **mid-gesture, at the threshold,
+never on lift**: a control recognised on release reports what the player wanted after the
+moment for it passed.
+
+| gesture | result |
+|---|---|
+| horizontal drag past 10 px | move one cell, then the held-key schedule — DAS, then ARR |
+| tap | rotate clockwise |
+| two-finger tap | rotate counter-clockwise |
+| drag down | soft drop while held |
+| flick down | hard drop |
+| drag up past 10 px | hold |
+
+- **The touch surface is a second way into the same input layer, not a second input
+  layer.** A swipe presses the same button an arrow key presses, charges the same DAS and
+  is capped by the same ARR. A thumb cannot move a piece faster than a keyboard can.
+- **A swipe charges DAS, and it has to.** "One cell per swipe" and "a held drag repeats at
+  ARR" are only both true if something separates them — with no charge, a swipe that
+  lingers 150 ms past the threshold emits five cells and the first clause is false. A drag
+  that keeps *travelling* does not wait out the charge: every further 10 px moves the piece
+  again, bounded by ARR.
+- **A downward stroke is not classified when it commits.** Soft drop and hard drop are the
+  same stroke and only speed separates them, and speed is unknowable at a 10 px crossing —
+  10 px inside one touch sample reads as 0.6 px/ms whatever the thumb meant. The stroke
+  settles once, on the first of *24 px travelled* (decide by velocity) or *80 ms elapsed*
+  (nothing that slow is a flick), and is then locked to what it settled on. **A thumb that
+  speeds up mid-soft-drop does not become a hard drop**: an irreversible action must be
+  something the player did, not something inferred from a thumb already in motion. For the
+  same reason a stroke that has already moved the piece sideways can only ever soft drop.
+- **Pause stops ticks, and a tick that did not happen cannot be in a tick-indexed trace.**
+  The accumulator is emptied on every paused frame rather than banked: a run paused for a
+  minute would otherwise return holding 3,600 frames of debt, and the catch-up cap would
+  spend five of them and discard the rest.
+
+**THE ON-SCREEN CLUSTER DEFAULTS ON FOR A COARSE POINTER, WHICH REVERSES WHAT THIS SECTION
+USED TO SAY.** *Changed 2026-08-13, Lito's call. This paragraph read "it is not a d-pad by
+default — grainsnake's d-pad defaults off for a reason", and that reason has been checked
+rather than dropped.*
+
+Grainsnake's pad defaults off because the cluster costs 168–192 px out of a column that is
+also the board's, and on a 667 px phone that pushed the torus's top and bottom rows
+off-screen — **the cost was board, and the board is the game**. That argument does not
+transfer, for two reasons:
+
+- Tetrice's well is letterboxed inside whatever space it is given, so the cluster comes off
+  the **cell size** and never off the edges, down to the measured 15 px floor. It costs
+  legibility that was measured, not information that exists nowhere else.
+- **Rotate has no swipe** — it is a tap, the gesture most easily eaten by a
+  mis-recognised drag. A player whose taps are being read as swipes cannot rotate at all,
+  and the cluster is the answer that does not require them to diagnose it.
+
+Five controls — left, right, rotate, hold, drop. Left and right are **held**, so DAS and
+ARR run exactly as they do for an arrow key; the rest are edges. **Every one fires on
+`pointerdown`, not `click`**: at level 12 a row is 4 frames — 67 ms — and `click` waits for
+release and may wait longer while the browser rules out a double-tap. Persisted as
+`tetrice:dpad`; an explicit choice overrides the default for ever after in both directions,
+which is what makes either default cheap. The swipe surface stays live whether the cluster
+is on or off, so this is a default about what a new player MEETS, not about what the game
+supports.
+
+### Feel
+
+*The shipped numbers, 2026-08-13. One exported object — `CONTROLS` in
+`src/games/tetrice/client/controls.ts` — is the only place any of them exists, and
+`test/tetrice-controls.test.ts` fails if a second one appears anywhere in the client.*
+
+| | value | why this number |
+|---|---|---|
+| **DAS** | **10 frames** (167 ms) | Reachability, not taste. At the 2 f/row floor a piece crosses the visible field in 40 frames; the longest walk any spawn owes is 5 cells, which costs `10 + 3 × 2 = 16`. Every column stays reachable on one charge with 24 frames of margin. **Past ~34 frames that margin is gone.** |
+| **ARR** | **2 frames** (30 cells/s) | Not 1: at most one move per direction applies per tick, so 1 frame would walk the full width in 167 ms and overshoot faster than a player can stop. |
+| **Soft drop** | **1 frame/row** | Forced, not chosen. Soft drop must beat gravity at every level and the table bottoms out at 2 f/row, so anything ≥ 2 is a no-op at level 15+ — the one level where it is the control being used. |
+| **Swipe threshold** | **10 px** | The whole recognition latency is `threshold ÷ finger velocity`. A deliberate 0.3 px/ms drag costs 33 ms here and 73 ms at RICE CHOMP's 22 px. **Chomp's 22 is explicitly rejected**: its player moves at 8 tiles/s through forgiving junctions; this game's hard drop is irreversible. Grainsnake measured this and reached 10 px; this is that finding applied, not re-derived. |
+| **Ambiguity ratio** | **1.4** | The dominant axis must beat the other by this much before a stroke has a direction. A diagonal reports nothing until it commits, because a diagonal is not an input this game has. |
+| **Flick split** | **1.2 px/ms** | The gap between two bands, not a midpoint: a soft-drop drag tracks the piece at 0.2–0.8 px/ms, a flick is ballistic at 2–5. **The two errors are not equal** — a hard drop read as a soft drop costs a moment, a soft drop read as a hard drop costs the piece — so the split leans toward soft drop. |
+| **Flick minimum travel** | **24 px** | Without it the split is quantisation noise: crossing 10 px inside one 16.7 ms sample already reads as 0.6 px/ms whatever the thumb did. |
+| **Flick decision window** | **80 ms** | How long soft drop can be held back waiting for evidence. Bounds the cost at five rows, and only on a stroke slow enough that the player is not counting them. |
+| **Tap window** | **300 ms** | Longest stroke with no direction that still reads as a tap. |
+
+**THESE ARE MODELLED NUMBERS, NOT MEASURED ONES, AND THE FLICK SPLIT IS THE ONE TO
+DISTRUST.** DAS, ARR and the soft-drop rate are arithmetic against the gravity table and
+are pinned by tests. The threshold is inherited from a measurement grainsnake actually
+made. **The 1.2 px/ms split is a model of two thumb velocity bands and nothing in this repo
+has measured a real thumb** — it is the one constant here whose justification is reasoning
+rather than a reading, it is the one whose failure mode is losing a piece, and it is the
+first thing to change after a playtest on a real phone.
 
 ## Sound
 
@@ -956,7 +1099,7 @@ the identity cookie** (constraint 6).
 - **HTTP, not a WebSocket.** A score is one discrete event per run.
 - `no-store` on every route. Rate-limited per vid and per IP hash, in the same shape and
   with the same honest note that the vid bucket is a speed bump and the IP bucket is the
-  real ceiling. **The seed route is rate-limited too**, and more tightly than the score
+  real ceiling. **The start route is rate-limited too**, and more tightly than the submit
   route: it is the cheapest thing on the site to call in a loop.
 
 ## Anti-cheat
@@ -970,10 +1113,49 @@ piece, counters, bag, PRNG, hold)*, all integers, and **the replayer is the step
 the same module, imported by the route handler, run without a canvas. There is no second
 implementation to drift.
 
-- `POST /api/tetrice/score` re-simulates `(seed, trace)` and **computes the score itself**.
-  The submitted score is compared against the computed one and the *computed* one is stored.
-- A submission whose trace does not produce its claimed score is **rejected** — not flagged,
+- `POST /api/tetrice/submit` re-simulates `(stored seed, trace)` and **computes the score
+  itself**. Level, lines and duration come out of the same replay.
+  - *Amended 2026-08-13, out of Phase 5. This read "`POST /api/tetrice/score` … the
+    submitted score is compared against the computed one and the computed one is stored."*
+    **There is no submitted score to compare.** `SubmitBody` is
+    `{ runId, engineVersion, inputLog, name }` and has no field for a number about the run,
+    so the comparison the old sentence described has nothing to compare against — which is
+    strictly stronger, and worth the amendment because "compared against" invites a future
+    reader to add the field back so the comparison can be made.
+- A submission whose trace does not produce a finished run is **rejected** — not flagged,
   not stored-and-sorted-later. The run stays playable.
+
+**THE REJECTION MATRIX, EACH WITH ITS OWN STATUS.** *Added 2026-08-13. A status is the only
+part of this route a caller can observe, so the mapping is a contract rather than an
+implementation detail, and `test/tetrice-routes.test.ts` asserts every row.*
+
+| condition | status |
+|---|---|
+| no signed `grain_vid` cookie | 401 |
+| malformed body, or a name `checkName` refuses | 400 |
+| body over the size cap (refused before it is parsed) | 413 |
+| **unknown `engineVersion`** | **409** — never rescore an old log under new rules |
+| **unknown / already-submitted / expired / wrong-vid `runId`** | **409** — single use |
+| log longer than `MAX_REPLAY_TICKS`, or a frame index that goes backwards | **400** |
+| replay tops out **before** the log ends, or ends **without** topping out | **422** |
+| zero-score run | **422** |
+| too many submissions in the window | 429 |
+
+The 409s are one status for one reason: all three mean *this submission can never succeed
+and retrying will not help*, as against a 422, which says the log is not a finished run.
+**An unknown `engineVersion` is checked before the run id is claimed**, so a player on a
+stale build keeps their run id and can retry after reloading.
+
+**TRAILING INPUT PAST THE TOP-OUT TICK IS THE ONE TAMPERING THE ENGINE WILL NOT NOTICE, AND
+THE VERIFIER HAS TO DISAGREE WITH THE ENGINE ABOUT IT.** *Added 2026-08-13.* `step()`
+returns the state unchanged once `over` is set — correct for the engine, because a replayer
+looping to the end of a trace runs past the tick the run ended on and that is ordinary. A
+verifier that only compared final states would therefore accept a log with frames appended
+after the top-out: the engine absorbs them and returns the same state. So the verifier
+checks the SHAPE of the ending — the replay must end with `over` set, and must have consumed
+exactly `ticks` ticks. `test/tetrice-replay.test.ts` asserts this against a log built to
+violate it, **and first asserts that the engine really does absorb it**, so the rejection is
+demonstrably the verifier's doing rather than something the engine was going to catch.
 - **The replay format is tick-indexed. It contains `(seed, inputs, tick index)` and nothing
   else.** No timestamps, no `elapsedMs`, no `startedAt` — **absent from the format**, so
   there is no field for one to arrive in. The accumulator clamp makes any time-typed field a
@@ -999,8 +1181,9 @@ accept a payload it never actually examined. Permissiveness in the simulation be
 blind spot in the check, which is the general shape of this failure and not a quirk of this
 one function.
 
-- `POST /api/tetrice/score` **rejects a trace whose last entry falls after the tick the
-  replay topped out on**, with a 422. Not truncated, not ignored: refused.
+- `POST /api/tetrice/submit` **rejects a trace whose last entry falls after the tick the
+  replay topped out on**, with a 422. Not truncated, not ignored: refused. *(Route renamed
+  from `/score` 2026-08-13 — see* The randomizer.*)*
 - The reason it is a 422 rather than a silent trim is that an honest client cannot produce
   one. The run ends on a tick the client knows about, because it is the tick that drew the
   game-over card. A log that keeps going is a log that was assembled rather than played.
@@ -1077,8 +1260,10 @@ an unchosen bag" either.
   - *Added 2026-08-13:* **including a trace with trailing input past the top-out tick**,
     which is the one tampering the engine itself will not notice — `step()` absorbs it
     silently by design (*Anti-cheat*). 422, not a truncation.
-- **A seed the server did not issue is rejected**, and so is a seed spent twice. Asserted
-  against the route, both directions.
+- **A run id the server did not issue is rejected**, and so is one spent twice. Asserted
+  against the route, both directions — `test/tetrice-routes.test.ts`, plus the id issued to
+  a different `vid`, which is asserted in BOTH directions too: refused for the stranger and
+  **still claimable by its owner**, so a prober cannot burn somebody else's run.
   - *Added 2026-08-12 with the shopping amendment (*The randomizer*).* Also asserted: a
     **voided** seed is rejected, and a seed that was **never started within its 90 s TTL**
     is rejected.
@@ -1086,6 +1271,15 @@ an unchosen bag" either.
     seed A, start it, issue seed B, and assert **A is still submittable** — B voids A only
     when B takes its first input. This is the assertion that fails on the
     void-at-issuance implementation, which is the whole reason the choice was written down.
+  - **NEITHER OF THE TWO SUB-ITEMS ABOVE IS ASSERTED, BECAUSE NEITHER IS IMPLEMENTED.**
+    *Added 2026-08-13, out of Phase 5.* There is no void and no start beacon (*The
+    randomizer*), so there is no voided seed to reject and no issuance→start TTL to
+    measure. They are left standing rather than deleted: they are the acceptance criteria
+    for the mitigation when it lands, and deleting them would turn a known gap into a
+    forgotten one. **What IS asserted in their place** is the generous submission deadline
+    and its pairing — a run older than two minutes is still submittable, one past the
+    deadline is not — because that pairing is what would catch someone "fixing" the TTL by
+    applying the 90 s bound to the wrong end.
 - **A REFUSED INPUT DOES NOT RESET THE LOCK DELAY, ASSERTED ONCE PER INSTANCE.** *Added
   2026-08-12 with the generalisation in* Gravity and lock. Three tests, because one test
   covering "the rule" would be written against whichever instance the author had in mind
@@ -1144,6 +1338,29 @@ an unchosen bag" either.
   at 45 device px per cell (DPR-3 viewport, 390×844 CSS px). What remains unmeasured is an
   eye at arm's length: real phone, real brightness, off-axis viewing, S versus Z in
   greyscale at the 15 px floor.
+  - **Still open after Phase 4, and the reason is worth stating plainly: nobody has
+    looked.** *2026-08-13.* The check needs no build and no deploy — `/dev/tetrice-gate`
+    is already on the promoted build, so the gate is **`/dev/tetrice-gate?mono=1`** on the
+    live domain, section `PRIMARY — S (↗) vs Z (↘), cell 15px`. It renders at a 15 px CSS
+    cell, which is 45 device px at DPR 3: **the same pixels the Phase 1 capture judged,
+    now in front of an eye rather than in a PNG.** Judged at arm's length, at normal
+    brightness, and tilted off-axis. That last one is the condition the capture could not
+    reproduce at all and the one most likely to fail, because an off-axis phone loses
+    contrast before it loses hue — and this is the greyscale panel, where contrast is the
+    only channel left.
+  - **The verdict goes in this file as pass or fail with the date, whichever it is.** A
+    fail is not a setback; it is the measurement finally existing, and *The pieces* already
+    names what a fail would cost (the three-way code is a floor, so the answer would be a
+    larger cell floor, not a finer angle code).
+- **THE TOUCH FEEL HAS NOT BEEN PLAYED ON A PHONE.** *Added 2026-08-13, out of Phase 4.*
+  The mapping and its numbers are decided, tested and shipped (*Controls*, *Feel*), and the
+  arithmetic ones are pinned against the gravity table. **The flick split is not
+  arithmetic.** What is unmeasured: whether 1.2 px/ms actually separates a soft drop from a
+  hard drop for a real thumb, whether a tap survives being read as a swipe often enough to
+  matter, and whether the cluster on by default leaves a legible cell at the phone's
+  height. All three are one playtest, and all three are tunable without an
+  `ENGINE_VERSION` bump — which is why they were allowed to ship ahead of the measurement,
+  and is not a reason to skip it.
 - **The palette gate has been run on a phone**, at the real cell size, with all seven shapes
   on screen, including a greyscale pass (*The pieces*).
   - *Added 2026-08-12:* the gate runs against a renderer that **already has the grain
