@@ -22,7 +22,7 @@ import {
   type Shape,
 } from "../engine/rules";
 import { collides, idx, type GameState } from "../engine/state";
-import { paintCell, paintGhost, paintPiece, type FusionMode, type Palette } from "./grains";
+import { paintCell, paintGhost, paintPiece, type Palette } from "./grains";
 
 export const FIELD = "#0a0805";
 export const GRID = "rgba(196, 179, 112, 0.13)";
@@ -137,7 +137,6 @@ export function paintBackdrop(ctx: CanvasRenderingContext2D, cell: number): void
 export interface DrawOpts {
   cell: number;
   palette: Palette;
-  fusion: FusionMode;
   ghost: boolean;
   effects: Effects;
   now: number;
@@ -188,7 +187,9 @@ export function drawWell(
           col,
           row: row - BUFFER_ROWS + dy,
         },
-        { cell: c, palette: o.palette, fusion: o.fusion },
+        // LOCKED: the duller treatment. The stack is most of the screen, and with hue
+        // gone this value step is the only thing separating it from the piece in play.
+        { cell: c, palette: o.palette, layer: "locked" },
       );
     }
   }
@@ -201,7 +202,6 @@ export function drawWell(
         paintGhost(ctx, p.shape, p.rot, { col: p.x, row: gy - BUFFER_ROWS }, p.id, {
           cell: c,
           palette: o.palette,
-          fusion: o.fusion,
         });
       }
     }
@@ -212,10 +212,12 @@ export function drawWell(
     const was = o.prev?.active;
     const fromY = was && was.id === p.id ? was.y : p.y;
     const y = fromY + (p.y - fromY) * o.alpha;
+    // ACTIVE: brighter, and haloed. This is what hue used to do — see `grains.ts`,
+    // *layers*. Drawn LAST so its glow lies over the stack rather than under it.
     paintPiece(ctx, p.shape, p.rot, { col: p.x, row: y - BUFFER_ROWS }, p.id, {
       cell: c,
       palette: o.palette,
-      fusion: o.fusion,
+      layer: "active",
     });
   }
 
@@ -227,7 +229,7 @@ export function drawPreview(
   ctx: CanvasRenderingContext2D,
   shape: Shape | null,
   boxCells: number,
-  o: { cell: number; palette: Palette; fusion: FusionMode; id: string },
+  o: { cell: number; palette: Palette; id: string },
 ): void {
   const c = o.cell;
   ctx.clearRect(0, 0, boxCells * c, boxCells * c);
@@ -244,6 +246,6 @@ export function drawPreview(
   paintPiece(ctx, shape, 0, { col: offX, row: offY }, o.id, {
     cell: c,
     palette: o.palette,
-    fusion: o.fusion,
+    layer: "preview",
   });
 }

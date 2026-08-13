@@ -1,115 +1,172 @@
 /**
  * TETRICE — the grain painter. THE decided render rules, in one place.
  *
- * Everything here was settled in `docs/tetrice-spec.md` (*The pieces*) and measured in the
- * Phase 1 gate. It is implemented, not re-derived:
+ * ── THE REFERENCE ART IS THE AUTHORITY, AND IT IS MONOCHROME ────────────────────────
+ * *Rewritten 2026-08-13, after the on-phone check failed. It replaces a seven-hue palette,
+ * a three-way grain-axis code and a four-grain cluster; `docs/tetrice-spec.md` carries the
+ * superseding notes.*
  *
- *  - seven `@theme` tokens, one per shape;
- *  - a three-way CATEGORICAL grain long-axis code, FIXED IN SCREEN SPACE — it does not
- *    rotate with the piece, because an axis that rotated would stop being an identity cue
- *    and become a rotation indicator the silhouette already provides;
- *  - a cell is four grains in a loose 2x2, not a tile;
- *  - per-grain value variation around the piece's hue, value only, never a hue shift;
- *  - jitter keyed on `(pieceInstanceId, cellIndex, grainIndex)` — NOT world position and
- *    NOT index-from-spawn, so a piece that moves, rotates, is held, or locks re-rolls
- *    nothing, and the key is carried into the locked board cell.
+ * Everything here now derives from one decision: **the pieces are rice, and rice is white
+ * and tan.** Piece identity comes from the SILHOUETTE, exactly as it does in the game this
+ * is modelled on. Colour was never carrying it — the previous design spent two channels
+ * (hue and grain angle) telling the player something the outline already told them, and
+ * paid for it in legibility on a real phone.
  *
- * No DOM lookups beyond the palette read, no React, no engine rules.
+ * What that buys, stated so nobody re-derives the old design:
+ *
+ *  - **No per-shape hue.** One rice palette, deterministic value/tint variation per grain.
+ *  - **One orientation for every grain.** Horizontal, as in the reference. The old
+ *    diagonal classes read on glass as a diagonal SHAPE, which fought the silhouette they
+ *    were supposed to support.
+ *  - **Tight packing.** A cell is a small brick field of grains, sized so a filled region
+ *    shows no background between cells. `test/tetrice-packing.test.ts` measures that at
+ *    the three cell sizes this game actually renders at.
+ *  - **The falling piece separates from the stack by VALUE, not hue** — brighter, with a
+ *    glow. That is what the reference does and it is the only separation channel left.
+ *
+ * Jitter is still keyed on `(pieceInstanceId, cellIndex, grainIndex)` — NOT world position
+ * and NOT index-from-spawn — so a piece that moves, rotates, is held or locks re-rolls
+ * nothing, and the key is carried into the locked board cell.
+ *
+ * No DOM lookups beyond the palette read, no React, no engine rules. Nothing in this file
+ * can change a run: it is downstream of `step()` and reads no state the engine writes.
  */
 
-import { AXIS, TOKEN, VALUE_SPREAD, SHAPES, cellsOf, type Axis, type Shape } from "../engine/rules";
+import { cellsOf, type Shape } from "../engine/rules";
 
-export type Palette = Record<Shape, string>;
-
-const FALLBACK: Palette = {
-  I: "#2a4d8f",
-  J: "#474d2e",
-  L: "#c4b370",
-  S: "#4e7a3e",
-  Z: "#c1443a",
-  T: "#f4a08a",
-  O: "#6a6c3a",
-};
-
-/** Sample the seven chromatic @theme tokens off the live document. */
-export function readPalette(root: HTMLElement): Palette {
-  const cs = getComputedStyle(root);
-  const out = {} as Palette;
-  for (const s of SHAPES) out[s] = cs.getPropertyValue(TOKEN[s]).trim() || FALLBACK[s];
-  return out;
-}
-
-/** Canvas radians: y is down, so ↗ is a negative rotation and ↘ a positive one. */
-const AXIS_RAD: Record<Axis, number> = {
-  horizontal: 0,
-  vertical: Math.PI / 2,
-  diagNE: -Math.PI / 4,
-  diagSE: Math.PI / 4,
-};
-
-// ─── FUSION ──────────────────────────────────────────────────────────────────
+// ─── the palette ─────────────────────────────────────────────────────────────
 //
-// THE ONE OPEN RENDER DECISION, and the reason this file has a mode switch.
-//
-// Phase 1 measured that fusion is ANISOTROPIC: a cluster reaches ~10% past the cell
-// boundary along the grain's own axis and falls ~8% short across it. Horizontal-axis
-// shapes therefore fuse into bars with a channel between grain rows, vertical ones read as
-// strands, and only the three diagonals satisfy "one fused shape" — because a 45° grain
-// projects almost equally onto both screen axes and is isotropic by accident.
-//
-// The spec's constraint is that fusion must be AXIS-INDEPENDENT, and it names two
-// candidates. Both are implemented so the choice is made by looking at them side by side
-// in `/dev/tetrice-gate`, with the ghost piece already built — because the cost they share
-// is overspill blurring the piece's outer edge, and that trades against the ghost read and
-// the empty-cell read, neither of which can be judged from a still of a single piece.
-export type FusionMode =
-  /** Phase 1's behaviour, kept so the gate can show a real before. */
-  | "anisotropic"
-  /** Candidate 1: the cluster is built in the AXIS frame with equal reach on both axes. */
-  | "crossAxis"
-  /** Candidate 2: original grain shape; alternate cells offset so channels cannot line up. */
-  | "brick";
+// FOUR TINTS, WHITE THROUGH TAN, AND NO HUE PER SHAPE. Every one is an existing site
+// token, so the well is lit by the same rice this site is made of rather than by a second
+// palette invented for one page. The ramp is ordered — index 0 is the brightest grain in
+// the bowl, index 3 the most toasted — and `tintOf` picks along it deterministically.
 
-interface Geometry {
-  /** Grain radii, in cell units: along its own long axis, and across it. */
-  ru: number;
-  rv: number;
-  /** Cluster offsets from the cell centre: along the grain axis, and across it. */
-  ou: number;
-  ov: number;
-}
-
-const GEOMETRY: Record<FusionMode, Geometry> = {
-  // reach along = 0.25 + 0.30 = 0.55 (10% over the boundary)
-  // reach across = 0.25 + 0.165 = 0.415 (8.5% short of it)  ← the channel
-  anisotropic: { ru: 0.3, rv: 0.165, ou: 0.25, ov: 0.25 },
-  // Equal reach both ways: 0.24 + 0.32 = 0.56 along, 0.26 + 0.24 = 0.50 across. Costs
-  // grain shape — 0.32 x 0.24 is a 1.33:1 oval where the original was 1.8:1.
-  crossAxis: { ru: 0.32, rv: 0.24, ou: 0.24, ov: 0.26 },
-  // Original 1.8:1 grain, unchanged reach. The channel is not closed; its ALIGNMENT is
-  // broken, per-cell, by the phase term below.
-  brick: { ru: 0.3, rv: 0.175, ou: 0.25, ov: 0.235 },
-};
+/** The rice ramp, brightest first. Site tokens: bone, paper, paper-dark, khaki. */
+export const RICE_TINTS = ["#f4efe2", "#eae3d2", "#d9cfb8", "#c4b370"] as const;
 
 /**
- * Brick phase: alternate cells of the same piece shift along the grain axis by a quarter
- * pitch, so the gaps between grain rows in neighbouring cells cannot line up into one
- * continuous channel.
+ * How often a grain is drawn from the toasted end of the ramp.
  *
- * KEYED ON `cellIndex`, NOT ON BOARD POSITION. A phase keyed on the board row would shift
- * every cell of the piece on every row of gravity — a visible twitch once per fall step,
- * and exactly the world-position dependence the jitter key exists to avoid.
+ * The reference is mostly pale rice with a scattering of tan — not an even mix. A uniform
+ * draw over four tints reads as beige noise; this weights the two pale tints to ~72% of
+ * grains, which is roughly what the reference shows.
  */
-const BRICK_PHASE = 0.12;
+const TINT_WEIGHTS = [0.42, 0.3, 0.18, 0.1] as const;
 
-function brickPhase(mode: FusionMode, cellIndex: number): number {
-  return mode === "brick" ? (cellIndex % 2 === 0 ? BRICK_PHASE : -BRICK_PHASE) : 0;
+/**
+ * Per-grain value variation, multiplicative, around the chosen tint.
+ *
+ * *Was `VALUE_SPREAD` in `engine/rules.ts`, moved here 2026-08-13.* It lived there because
+ * the palette test needed a home for it that outlived the gate page; that test is gone
+ * (it guarded a hue-family guarantee that no longer exists), and a render constant in a
+ * file whose header says "changing a constant here bumps ENGINE_VERSION" was always an
+ * invitation to a wrong inference. It is render-only and it is here now.
+ */
+const VALUE_SPREAD = 0.1;
+
+/** Kept as a type alias so callers that spoke `Palette` still compile; it is now a ramp. */
+export type Palette = readonly string[];
+
+/**
+ * The palette is a CONSTANT, not a document read.
+ *
+ * It used to sample seven `@theme` tokens off the live root. There is nothing per-shape to
+ * sample any more, and the four tints are fixed values rather than themeable ones — a
+ * `getComputedStyle` call per mount to fetch four constants would be a DOM dependency
+ * bought for nothing. The argument passed by callers is preserved so the render path can
+ * still be handed a different ramp in a test.
+ */
+export function readPalette(): Palette {
+  return RICE_TINTS;
 }
 
-const JITTER_POS = 0.055;
-/** Small on purpose: the axis is a CATEGORICAL code and wobble approaching the 45° gap
- *  between categories would be destroying the thing it encodes. */
-const JITTER_ANGLE = (5 * Math.PI) / 180;
+// ─── layers ──────────────────────────────────────────────────────────────────
+
+/**
+ * WHAT COLOUR USED TO DO, VALUE DOES NOW.
+ *
+ * With hue gone, the one distinction the player must never lose is **which piece is still
+ * theirs to move**. In the reference the falling piece is bright and haloed and the
+ * settled stack is duller; that is the mechanism, and it is a stronger one than hue was,
+ * because it separates the two things a player actually has to tell apart rather than
+ * seven things they do not.
+ */
+export type Layer = "active" | "locked" | "ghost" | "preview";
+
+interface LayerStyle {
+  /** Multiplies the grain's value. */
+  value: number;
+  /** Canvas `shadowBlur`, in cell units, for the halo. 0 disables the shadow entirely. */
+  glow: number;
+  alpha: number;
+}
+
+/** The ghost is the piece's own silhouette shown faint — no second treatment. */
+export const GHOST_ALPHA = 0.22;
+
+const LAYERS: Record<Layer, LayerStyle> = {
+  // Bright and haloed. The glow is deliberately soft and warm rather than a rim: a rim
+  // would draw an outline the silhouette already draws, and two outlines a pixel apart is
+  // how a shape reads as blurred.
+  active: { value: 1.12, glow: 0.5, alpha: 1 },
+  // Duller, and this is the whole of the stack's treatment. It must stay high enough to
+  // read as rice rather than as a grey wall — the stack is most of the screen.
+  locked: { value: 0.78, glow: 0, alpha: 1 },
+  ghost: { value: 0.9, glow: 0, alpha: GHOST_ALPHA },
+  // NEXT and hold render at their own cell size on a panel, away from the stack, so they
+  // take the plain treatment rather than the active one.
+  preview: { value: 1, glow: 0, alpha: 1 },
+};
+
+// ─── the lattice ─────────────────────────────────────────────────────────────
+//
+// ── PACKING IS THE THING THAT FAILED ON GLASS, AND IT IS MEASURED NOW ───────────────
+// At 33 device px the old four-grain cluster read as four separate beads with the board
+// showing through between them, so a cell did not read as a block and a piece did not read
+// as one shape. The fix is more grains, larger relative to the cell, overlapping in both
+// axes — a brick field rather than a 2x2 of dots.
+//
+// Every number below is checked by `test/tetrice-packing.test.ts`, which samples a filled
+// 4x4 region at 15, 33 and 70 px and asserts NO sample lands on background. That test is
+// the reason these are constants rather than adjustments: they are not taste, they are the
+// smallest values that pass a coverage measurement.
+
+/** Grains across a cell, and grain rows down it. 2 x 4 = 8 per cell (was 4). */
+export const GRAIN_COLS = 2;
+export const GRAIN_ROWS = 4;
+
+/**
+ * Grain half-axes in CELL UNITS. 0.33 x 0.20 is a 1.65:1 oval lying flat — the reference's
+ * proportion, near enough, and wide enough that two of them across a cell overlap each
+ * other AND spill past both cell edges.
+ *
+ * The spill is what fuses neighbouring cells: reach is `0.25 + 0.33 = 0.58`, so a grain
+ * crosses the boundary by 0.08 of a cell and meets its neighbour's.
+ */
+const GRAIN_RX = 0.33;
+const GRAIN_RY = 0.2;
+
+/**
+ * ── THE BRICK OFFSET SURVIVED, AND IT IS NOW ROW-TO-ROW RATHER THAN CELL-TO-CELL ────
+ * *Re-derived 2026-08-13. It used to alternate whole CELLS to stop grain-row channels
+ * lining up across a piece; that problem was an artefact of the sparse cluster and is gone
+ * with it.*
+ *
+ * What replaces it is ordinary brickwork: alternate grain ROWS shift half a column pitch,
+ * so a row's grain sits over the seam between the two below it. It is kept because it is
+ * load-bearing — with it, 8 grains per cell cover the region at all three sizes; without
+ * it, the four-way gaps between ellipse centres survive and the coverage test fails at
+ * 70 px. The measurement is in `test/tetrice-packing.test.ts`, which asserts BOTH — that
+ * the shipped lattice covers, and that the same lattice with the offset removed does not.
+ *
+ * Half the column pitch, and the pitch is `1 / GRAIN_COLS`.
+ */
+const BRICK_OFFSET = 0.5 / GRAIN_COLS;
+
+/** Jitter, in cell units. Small: this is a woven field, not a spill of loose grains. */
+const JITTER_POS = 0.028;
+/** A few degrees of wobble. The grains all LIE the same way; they are not machined. */
+const JITTER_ANGLE = (6 * Math.PI) / 180;
 
 // ─── deterministic noise ─────────────────────────────────────────────────────
 
@@ -134,6 +191,16 @@ function streamFrom(seed: number): () => number {
   };
 }
 
+/** Pick a tint from the weighted ramp. Falls through to the last entry on a short ramp. */
+function tintOf(ramp: Palette, r: number): string {
+  let acc = 0;
+  for (let i = 0; i < ramp.length; i++) {
+    acc += TINT_WEIGHTS[i] ?? 0;
+    if (r < acc) return ramp[i];
+  }
+  return ramp[ramp.length - 1];
+}
+
 // ─── colour ──────────────────────────────────────────────────────────────────
 
 function parseHex(hex: string): [number, number, number] {
@@ -146,26 +213,18 @@ function parseHex(hex: string): [number, number, number] {
   ];
 }
 
-function toMono(r: number, g: number, b: number): [number, number, number] {
-  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return [y, y, y];
-}
-
-function grainFill(base: string, value: number, mono: boolean, alpha: number): string {
+function grainFill(base: string, value: number, alpha: number): string {
   const [r0, g0, b0] = parseHex(base);
-  let r = r0 * value;
-  let g = g0 * value;
-  let b = b0 * value;
-  if (mono) [r, g, b] = toMono(r, g, b);
-  const c = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
-  return alpha >= 1
-    ? `rgb(${c(r)}, ${c(g)}, ${c(b)})`
-    : `rgba(${c(r)}, ${c(g)}, ${c(b)}, ${alpha})`;
+  const c = (n: number) => Math.max(0, Math.min(255, Math.round(n * value)));
+  const [r, g, b] = [c(r0), c(g0), c(b0)];
+  return alpha >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // ─── painting ────────────────────────────────────────────────────────────────
 
 export interface CellPaint {
+  /** Kept for the caller's convenience and for preview layout; NOTHING reads it for
+   *  colour or angle any more. A cell of an S looks exactly like a cell of an O. */
   shape: Shape;
   /** Stable for the whole life of the piece, including after it locks. */
   pieceInstanceId: number | string;
@@ -177,53 +236,94 @@ export interface CellPaint {
 
 export interface PaintOpts {
   cell: number;
-  palette: Palette;
-  mono?: boolean;
-  fusion?: FusionMode;
-  /** Whole-piece alpha. The ghost is drawn at a low value with no other change. */
+  palette?: Palette;
+  layer?: Layer;
+  /** Overrides the layer's alpha. */
   alpha?: number;
   originX?: number;
   originY?: number;
 }
 
-export function paintCell(ctx: CanvasRenderingContext2D, cell: CellPaint, o: PaintOpts): void {
+/** One grain, in device pixels, ready to draw or to measure. */
+export interface Grain {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  /** Radians. Near zero — every grain lies the same way. */
+  angle: number;
+  fill: string;
+}
+
+/**
+ * The lattice, as data.
+ *
+ * `paintCell` draws exactly what this returns and the packing test measures exactly what
+ * this returns, so there is ONE description of where a grain goes. A test that recomputed
+ * the layout would be a second implementation agreeing with its own arithmetic.
+ */
+export function grainsOfCell(cell: CellPaint, o: PaintOpts): Grain[] {
   const c = o.cell;
-  const mode = o.fusion ?? "brick";
-  const g = GEOMETRY[mode];
-  const alpha = o.alpha ?? 1;
+  const ramp = o.palette ?? RICE_TINTS;
+  const style = LAYERS[o.layer ?? "locked"];
+  const alpha = o.alpha ?? style.alpha;
   const ox = (o.originX ?? 0) + cell.col * c;
   const oy = (o.originY ?? 0) + cell.row * c;
-  const angle = AXIS_RAD[AXIS[cell.shape]];
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  const phase = brickPhase(mode, cell.cellIndex);
-  const base = o.palette[cell.shape];
 
-  for (let i = 0; i < 4; i++) {
-    const rand = streamFrom(hash32(`${cell.pieceInstanceId}:${cell.cellIndex}:${i}`));
-    const ju = (rand() * 2 - 1) * JITTER_POS;
-    const jv = (rand() * 2 - 1) * JITTER_POS;
-    const ja = (rand() * 2 - 1) * JITTER_ANGLE;
-    const value = 1 + (rand() * 2 - 1) * VALUE_SPREAD;
+  const out: Grain[] = [];
+  for (let row = 0; row < GRAIN_ROWS; row++) {
+    for (let col = 0; col < GRAIN_COLS; col++) {
+      const i = row * GRAIN_COLS + col;
+      const rand = streamFrom(hash32(`${cell.pieceInstanceId}:${cell.cellIndex}:${i}`));
+      const jx = (rand() * 2 - 1) * JITTER_POS;
+      const jy = (rand() * 2 - 1) * JITTER_POS;
+      const ja = (rand() * 2 - 1) * JITTER_ANGLE;
+      const tint = tintOf(ramp, rand());
+      const value = style.value * (1 + (rand() * 2 - 1) * VALUE_SPREAD);
 
-    // The cluster is laid out in the AXIS frame — u along the grain, v across it — and
-    // then rotated into screen space. Building it here rather than in screen space is what
-    // makes "reach along" and "reach across" mean the same thing for all four angles,
-    // which is the whole point of an axis-independent fusion rule.
-    const u = (i % 2 === 0 ? -g.ou : g.ou) + phase + ju;
-    const v = (i < 2 ? -g.ov : g.ov) + jv;
-    const dx = u * cos - v * sin;
-    const dy = u * sin + v * cos;
+      // Centres on a regular grid spanning the cell, alternate rows shifted half a pitch.
+      // `(col + 0.5) / GRAIN_COLS - 0.5` puts the columns symmetrically about the centre.
+      const brick = row % 2 === 1 ? BRICK_OFFSET : 0;
+      const u = (col + 0.5) / GRAIN_COLS - 0.5 + brick + jx;
+      const v = (row + 0.5) / GRAIN_ROWS - 0.5 + jy;
 
+      out.push({
+        cx: ox + c / 2 + u * c,
+        cy: oy + c / 2 + v * c,
+        rx: GRAIN_RX * c,
+        ry: GRAIN_RY * c,
+        angle: ja,
+        fill: grainFill(tint, value, alpha),
+      });
+    }
+  }
+  return out;
+}
+
+export function paintCell(ctx: CanvasRenderingContext2D, cell: CellPaint, o: PaintOpts): void {
+  const style = LAYERS[o.layer ?? "locked"];
+  const grains = grainsOfCell(cell, o);
+
+  // The halo is drawn ONCE for the cell, as a shadow under the grains, rather than per
+  // grain: eight overlapping shadows stack into a bright blob that swallows the shape.
+  if (style.glow > 0) {
     ctx.save();
-    ctx.translate(ox + c / 2 + dx * c, oy + c / 2 + dy * c);
-    ctx.rotate(angle + ja);
-    ctx.fillStyle = grainFill(base, value, o.mono ?? false, alpha);
+    ctx.shadowColor = "rgba(248, 240, 214, 0.75)";
+    ctx.shadowBlur = style.glow * o.cell;
+  }
+
+  for (const g of grains) {
+    ctx.save();
+    ctx.translate(g.cx, g.cy);
+    if (g.angle !== 0) ctx.rotate(g.angle);
+    ctx.fillStyle = g.fill;
     ctx.beginPath();
-    ctx.ellipse(0, 0, g.ru * c, g.rv * c, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, g.rx, g.ry, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
+
+  if (style.glow > 0) ctx.restore();
 }
 
 export function paintPiece(
@@ -240,13 +340,10 @@ export function paintPiece(
 }
 
 /**
- * The ghost: the same shape at its landing position, low alpha, and **no accent grains** —
- * no highlight, no rim, no second treatment. It is the piece's own silhouette shown faint,
- * so that comparing it against the skyline is a comparison of the same shape rather than
- * of two different drawings.
+ * The ghost: the same shape at its landing position, low alpha, and no other change. It is
+ * the piece's own silhouette shown faint, so comparing it against the skyline is a
+ * comparison of the same shape rather than of two different drawings.
  */
-export const GHOST_ALPHA = 0.22;
-
 export function paintGhost(
   ctx: CanvasRenderingContext2D,
   shape: Shape,
@@ -255,5 +352,5 @@ export function paintGhost(
   pieceInstanceId: number | string,
   o: PaintOpts,
 ): void {
-  paintPiece(ctx, shape, rot, at, pieceInstanceId, { ...o, alpha: GHOST_ALPHA });
+  paintPiece(ctx, shape, rot, at, pieceInstanceId, { ...o, layer: "ghost" });
 }

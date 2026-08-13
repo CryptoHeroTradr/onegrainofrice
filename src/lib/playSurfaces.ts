@@ -78,24 +78,21 @@
  * every entry here is a route that actually exists on disk.
  */
 /**
- * ── A NON-GAME ROUTE IS ON THIS LIST, AND IT IS TEMPORARY. ────────────────────
- * *Added 2026-08-12.* `/dev/tetrice-gate` is a throwaway prototype page (see
- * `src/app/dev/tetrice-gate/page.tsx`) that exists to falsify the palette and
- * grain-axis decisions in `docs/tetrice-spec.md` before TETRICE's render phase
- * commits to them. It is here for the rule's own reason and not because it is a
- * game: the chopstick cursor and the rice-particle field would sit on top of the
- * exact pixels being judged, and a legibility gate read through a pointer trail
- * is measuring the instrument rather than the thing.
+ * ── THE GATE IS GONE, AND SO IS ITS ENTRY. ────────────────────────────────────
+ * *2026-08-13.* `/dev/tetrice-gate` was on this list from 2026-08-12 — a throwaway page
+ * that existed to falsify the palette and grain-axis decisions in `docs/tetrice-spec.md`.
+ * It was here for the rule's own reason and not because it was a game: the chopstick
+ * cursor and the particle field would have sat on top of the exact pixels being judged.
  *
- * It is named in `UNLISTED_PLAY_SURFACES` in `test/play-surfaces.test.ts`, which
- * is what keeps it a decision somebody made rather than a route that drifted onto
- * the list. **Delete both entries together with the page.**
+ * The on-phone check failed those decisions, the palette and the axis code were reverted,
+ * and the page had nothing left to gate. Page, renderer, this entry and its
+ * `UNLISTED_PLAY_SURFACES` twin in `test/play-surfaces.test.ts` were deleted together,
+ * which is what that entry existed to make happen. **The list is games only again.**
  */
 export const PLAY_SURFACE_ROUTES: readonly string[] = [
   "/games/chomp",
   "/games/grainsnake",
   "/games/tetrice",
-  "/dev/tetrice-gate",
 ];
 
 /** True when this route is a game that should be left alone by ambient decoration. */

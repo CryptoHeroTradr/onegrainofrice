@@ -46,7 +46,7 @@ import { InputRecorder, maskOf, selfCheck, type RunLog } from "./inputLog";
 import { previewCell, resolveBoardSize, type BoardSize } from "./layout";
 import { startLoop } from "./loop";
 import { useDpad, toggleDpad } from "./prefs";
-import { readPalette, type FusionMode, type Palette } from "./grains";
+import { readPalette, type Palette } from "./grains";
 import { Effects, drawPreview, drawWell, landingRow } from "./render";
 import { TouchControls } from "./TouchControls";
 import {
@@ -59,8 +59,6 @@ import {
   type TouchTracker,
 } from "./touch";
 
-/** The decided fusion mechanism. See `docs/tetrice-spec.md`, *The pieces*. */
-const FUSION: FusionMode = "brick";
 
 /**
  * The keyboard, by `event.code` — physical position, not the character produced, so the
@@ -375,7 +373,7 @@ export default function TetriceScreen() {
 
   useEffect(() => {
     if (!size) return;
-    if (!paletteRef.current) paletteRef.current = readPalette(document.documentElement);
+    if (!paletteRef.current) paletteRef.current = readPalette();
     // The first run's seed is a round trip away, and this effect re-runs on every resize —
     // so the guard is "a run exists or one is on its way", not just the former. Without the
     // second half a resize during that round trip starts a second run.
@@ -511,7 +509,6 @@ export default function TetriceScreen() {
         drawWell(ctx, s, {
           cell: size.cell,
           palette: pal,
-          fusion: FUSION,
           ghost: ghostOn,
           effects: effectsRef.current,
           now,
@@ -526,17 +523,36 @@ export default function TetriceScreen() {
   const pCell = size ? previewCell(size.cell) : 0;
   const shown = narrow ? 2 : QUEUE_LOOKAHEAD;
 
-  // h-screen + overflow-hidden, not min-h-screen: a game page is exactly one viewport tall
-  // and never scrolls. With min-h-screen the flex row has no ceiling, so the wrapper grows
-  // to whatever the cell arithmetic asks for and the page scrolls — the opposite failure to
-  // the circular one below, and just as invisible until you measure it.
+  // ── `h-[100dvh]`, NOT `h-screen`, AND NOT `min-h-screen` ──────────────────────────
+  // *Changed 2026-08-13, after a phone showed the top strip cut off with no way to scroll
+  // to it.* Two separate mistakes were stacked here:
+  //
+  //  1. **`min-h-screen` is not a definite height**, so a column flex container is still
+  //     laid out from its CONTENT and `flex-1` has no spare space to distribute. That one
+  //     was already fixed — the note it replaces explains it — and the fix is kept.
+  //  2. **`h-screen` is `100vh`, and `vh` lies on a phone.** Mobile Safari resolves `vh`
+  //     against the LARGE viewport, the one with the toolbars hidden, so on a page that
+  //     cannot scroll the toolbars never retract and the bottom of a `100vh` box is behind
+  //     them. The strip at the top was pushed out of frame by a column taller than the
+  //     glass, and `overflow-hidden` — correct in itself — meant there was no scrolling to
+  //     it either.
+  //
+  // `dvh` is the viewport as it CURRENTLY is, toolbars included, which is the only unit
+  // that describes what the player can see. GRAINSNAKE reached for `svh` here, and the
+  // difference matters only for a page that can scroll its toolbars away: this one cannot
+  // (`overflow-hidden`), so `dvh` never changes under it and the two are the same value
+  // with `dvh` being the one that is right by construction rather than by side effect.
+  //
+  // Everything above the well is `shrink-0` and the well takes what is left — the strip,
+  // the cluster and the link row are fixed rows and the canvas is measured from the
+  // remainder, so the well is what gives when a viewport is short, never the controls.
   if (!mounted) {
     // Server output and first paint: the frame, no layout-dependent structure.
-    return <main className="flex h-screen flex-col overflow-hidden bg-nori text-paper" />;
+    return <main className="flex h-[100dvh] flex-col overflow-hidden bg-nori text-paper" />;
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-nori text-paper">
+    <main className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-nori text-paper">
       {/* THE WRAPPER MUST NOT BE SIZED BY THE CANVAS IT CONTAINS. The canvas is absolutely
           positioned below, so it contributes nothing to the wrapper's height, and the
           wrapper takes its height from this row instead. With the canvas in flow the
@@ -553,6 +569,11 @@ export default function TetriceScreen() {
         }
       >
         {narrow && (
+          // `shrink-0`: a flex item's default `min-height: auto` lets it be squeezed
+          // rather than overflow, and a strip squeezed to nothing is how the NEXT queue
+          // ended up as three slivers at the top of the phone. It keeps its height and
+          // the WELL gives instead — the well is the one thing here that can be smaller
+          // and still be itself, down to the measured 15px floor.
           <CompactStrip queue={queue.slice(0, shown)} hold={hold} hud={hud} cell={Math.max(15, Math.round(pCell * 0.7))} />
         )}
         {/* THE SWIPE SURFACE IS THE WHOLE WELL AREA, AND IT IS LIVE WHETHER OR NOT THE
@@ -606,7 +627,7 @@ export default function TetriceScreen() {
           it would be reachable only by the hand that is not holding the phone. */}
       {dpad && !hud.over && (
         <TouchControls
-          className="mx-auto w-full max-w-md px-2 pb-2"
+          className="mx-auto w-full max-w-md shrink-0 px-2 pb-2"
           onPress={(b) => !pausedRef.current && inputRef.current.press(b)}
           onRelease={(b) => inputRef.current.release(b)}
           onPulse={(a) => !pausedRef.current && inputRef.current.pulse(a)}
@@ -741,7 +762,7 @@ function NarrowBar({
 }) {
   const item = "px-2 py-1 font-mono text-[11px] opacity-70 underline";
   return (
-    <div className="mx-auto mb-1 flex items-center justify-center gap-2">
+    <div className="mx-auto mb-1 flex shrink-0 items-center justify-center gap-2">
       <button type="button" className={item} onClick={onPause} aria-pressed={paused}>
         {paused ? "resume" : "pause"}
       </button>
@@ -771,12 +792,7 @@ function PreviewBox({ shape, cell, id }: { shape: Shape | null; cell: number; id
     const ctx = cvs.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawPreview(ctx, shape, box, {
-      cell,
-      palette: readPalette(document.documentElement),
-      fusion: FUSION,
-      id,
-    });
+    drawPreview(ctx, shape, box, { cell, palette: readPalette(), id });
   }, [shape, cell, id]);
   return <canvas ref={ref} className="block" />;
 }
@@ -864,7 +880,7 @@ function CompactStrip({
   cell: number;
 }) {
   return (
-    <div className="flex items-center gap-3 border border-khaki/25 p-2">
+    <div className="flex shrink-0 items-center gap-3 overflow-hidden border border-khaki/25 p-2">
       <div className="flex gap-1">
         {queue.map((s, i) => (
           <PreviewBox key={`${s}-${i}`} shape={s} cell={cell} id={`nnext-${i}`} />

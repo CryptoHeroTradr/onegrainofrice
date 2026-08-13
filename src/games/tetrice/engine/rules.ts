@@ -189,46 +189,21 @@ export const HARD_DROP_POINTS = 2;
  */
 export const QUEUE_LOOKAHEAD = 4;
 
-// ─── PRESENTATION CONSTANTS ──────────────────────────────────────────────────
+// ─── NO PRESENTATION CONSTANTS ───────────────────────────────────────────────
 //
-// *Moved here from the throwaway gate renderer in Phase 2, which is what disarms the
-// tripwire `test/tetrice-palette.test.ts` was carrying.*
+// **THIS FILE IS RULES ONLY, AND THAT IS NEW.** *2026-08-13.* It briefly held three render
+// constants — `TOKEN` (a per-shape `@theme` colour), `AXIS` (a per-shape grain angle) and
+// `VALUE_SPREAD` — moved here in Phase 2 so the palette test had a home that outlived the
+// gate page. All three are **deleted**: the seven-hue palette and the grain-axis code were
+// reverted after the on-phone check (`docs/tetrice-spec.md`, *The pieces*), and the value
+// spread is a render number that now lives with the renderer, in `client/grains.ts`.
 //
-// **THE SIMULATION NEVER READS ANYTHING BELOW THIS LINE, AND CHANGING IT IS NOT AN
-// `ENGINE_VERSION` BUMP.** A colour cannot change a replay's score. They live in this file
-// because it is the one place a per-shape table belongs, and because the palette test
-// needs a home for them that outlives the gate page — but the version rule above applies
-// to the simulation section only, and a future reader must not infer otherwise from the
-// filename.
-
-/** One `@theme` token per shape (spec: *The pieces*). */
-export const TOKEN: Readonly<Record<Shape, string>> = {
-  I: "--color-porcelain",
-  J: "--color-olive-deep",
-  L: "--color-khaki",
-  S: "--color-bamboo",
-  Z: "--color-tuna",
-  T: "--color-salmon",
-  O: "--color-olive",
-};
-
-export type Axis = "horizontal" | "vertical" | "diagNE" | "diagSE";
-
-/**
- * The three-way categorical grain long-axis code, fixed in SCREEN space — it does not
- * rotate with the piece. Assigned so no two shapes in a hue family share one; the Phase 1
- * gate then measured that it is also the only channel separating the three near-identical
- * luminance pairs, which `test/tetrice-palette.test.ts` now enforces.
- */
-export const AXIS: Readonly<Record<Shape, Axis>> = {
-  I: "horizontal",
-  J: "vertical",
-  S: "diagNE",
-  O: "horizontal",
-  L: "diagSE",
-  Z: "diagSE",
-  T: "vertical",
-};
-
-/** Per-grain value variation around the piece's hue. Value only — never a hue shift. */
-export const VALUE_SPREAD = 0.14;
+// The deletion is NOT an `ENGINE_VERSION` bump, and the reason is checkable rather than
+// asserted: nothing in `state.ts` or `step.ts` ever imported any of them. A colour could
+// not change a replay's score, so no stored run is affected and no leaderboard row is
+// invalidated.
+//
+// A per-shape presentation table does not belong in this file again. The version rule at
+// the top applies to everything here, and a constant that is exempt from it is a constant
+// in the wrong file — which is exactly the wrong inference the old block had to spend a
+// paragraph warning against.

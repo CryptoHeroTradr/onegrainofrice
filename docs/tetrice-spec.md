@@ -249,6 +249,56 @@ Seven shapes: **I, J, L, S, Z, T, O**. Four cells each. These are the classic se
 that is deliberate — the mechanic is the genre, and a "sixth shape" would be a different
 game wearing this one's difficulty curve.
 
+**THE ON-PHONE CHECK FAILED, AND THE WHOLE COLOUR DIRECTION IS REVERTED. THE REFERENCE ART
+IS THE AUTHORITY AND IT IS MONOCHROME.** *Added 2026-08-13, Lito's call, out of the on-phone
+gate this section spent three amendments deferring. Everything between here and* The
+randomizer *that argues about hue, luminance or grain angle is superseded; each of those
+amendments now carries a dated note saying so, and they are LEFT IN PLACE because the
+reasoning that led to a wrong answer is the most expensive thing to re-derive.*
+
+The reference art — the mood board, still outside the repo (*What this is*) — is **rice in
+white and tan tints only**, grains packed tightly enough that a cell reads as a solid block,
+and **every grain lying the same way**. There is no per-piece colour in it and no per-piece
+grain angle. **Piece identity comes from the SILHOUETTE**, exactly as it does in the genre
+this belongs to. Three things follow, and all three are deletions:
+
+1. **The seven-hue mapping is deleted.** `TOKEN` is gone. Every piece renders as rice:
+   a four-tint ramp from bone to khaki, chosen per grain by the same deterministic hash the
+   jitter uses. No shape has a colour.
+2. **The grain-axis code is deleted.** `AXIS` is gone, and so is
+   `test/tetrice-palette.test.ts`, which existed to enforce a hue-family guarantee that no
+   longer has hues to guarantee. **Its only job was separating hue families that do not
+   exist any more**, and on a phone the diagonal class did active harm: at a 33 px cell a
+   45° raking reads as a diagonal SHAPE, so the cue meant to support the silhouette was
+   competing with it. One orientation for every grain, horizontal, as in the reference.
+3. **What colour was doing for the falling piece is now done by value.** The reference
+   makes the active piece bright and haloed against a duller settled stack; that is the
+   separation mechanism. Active is brighter with a soft warm glow, locked is dimmer, and
+   the ghost stays low-alpha and otherwise untreated.
+
+**THE CONSEQUENCE, STATED RATHER THAN AVOIDED: ADJACENT LOCKED PIECES OF DIFFERENT SHAPES
+NO LONGER SEPARATE.** Two settled pieces touching along an edge read as one mass of rice.
+That is not a regression to be tuned out later — **it is what the reference looks like**, it
+is what the genre this is modelled on has always looked like, and it is accepted. The
+reasoning is that the separation a player needs is not "which locked piece was that" but
+"where is the surface and what is still mine to move": the first is answered by the skyline,
+which is unaffected, and the second by the active piece's value and glow, which is the one
+distinction the render now spends everything on. A stack that reads as one surface is
+arguably the more useful picture, because the surface is what the next piece has to fit.
+
+**Packing is now a measured property rather than a described one.** The old four-grain
+cluster left 41% of a filled region showing background at every cell size — which is what
+"reads as separate beads" means numerically, and why a cell did not read as a block. The
+shipped lattice is 8 grains per cell in a brick field and covers a filled 4x4 region
+completely at 15, 33 and 70 px. `test/tetrice-packing.test.ts` samples it and carries two
+controls that must fail: the old cluster, and the shipped lattice with its brick offset
+removed.
+
+**The brick offset survived, and the margin is thin enough to write down.** Without it the
+same lattice leaves 0.06% of the region uncovered — the four-way gaps between ellipse
+centres — so it earns its place, but it is now doing an ordinary bricklaying job row to row
+rather than the cell-to-cell channel-breaking job *Fusion* gave it.
+
 **Every cell is a grain of rice**, drawn procedurally: the shape's cells are grains packed
 into the cell grid, not a bevelled square. A locked piece keeps its grains; a cleared row
 is grains leaving the well.
@@ -345,12 +395,20 @@ otherwise re-derive the wrong arithmetic and reach the wrong conclusion:
   values"; it is a different, weaker mechanism. **The three-way code is a floor, not a
   starting point.**
 
+
+
+> **SUPERSEDED 2026-08-13 — the palette this argues about was replaced.** The axis code is DELETED: it existed to separate hue families, there are no hue families, and on glass its diagonal class read as a diagonal shape competing with the silhouette. The aggregation argument below is still correct about textures — it was answering the wrong question. See *The pieces*, the on-phone reversal, at the top of this section. Kept because the reasoning is the expensive part to re-derive, and because the next person to reach for a colour code should be able to read why this one looked right.
+
 **A GREYSCALE PASS IS NOT THE MEASUREMENT, AND THE PIXEL FIDELITY IS NOT THE PHONE.** The
 gate was judged on rendered pixels at 45 device px per cell, not on a phone in hand. That
 is enough to settle whether the *renderer* produces the distinction; it says nothing about
 whether an eye at arm's length resolves it under a phone's brightness and viewing angle.
 The on-phone check is a separate open item and is listed as one in *Acceptance criteria* —
 deliberately not as a parenthetical inside a criterion that is already satisfied.
+
+
+
+> **THIS ONE WAS RIGHT, AND THE CHECK IT ASKED FOR IS THE ONE THAT FAILED.** *2026-08-13.* The on-phone read was taken and it did not pass — at the cell size a phone resolves, the cells read as separate beads and the diagonal grain classes read as shape rather than as code. The paragraph above is the only part of this section that survives the reversal intact, and it survives because it refused to treat a render as a measurement.
 
 **FUSION IS ANISOTROPIC. THE AXIS CODE AND THE ONE-FUSED-SHAPE RULE ARE TWO DECIDED RULES
 COMPETING FOR THE SAME GEOMETRY, AND THE AXIS CODE IS CURRENTLY WINNING FOR THREE SHAPES
@@ -379,6 +437,10 @@ raked to a fixed angle:
 > shape may not depend on which angle its grains were assigned. A mechanism that fuses
 > horizontals by raking them further is not a fix; it is the same coupling with a different
 > sign.
+
+
+
+> **SUPERSEDED 2026-08-13 — the palette this argues about was replaced.** The anisotropy MEASUREMENT stands — a raked cluster does reach further along its own axis. What is superseded is the identity-cue half: there is no per-shape angle any more, so fusion is no longer coupled to the identity code and the 'three of seven satisfy the rule' arithmetic describes a renderer that no longer exists. Every cell now has the same lattice, so fusion is uniform by construction. See *The pieces*, the on-phone reversal, at the top of this section. Kept because the reasoning is the expensive part to re-derive, and because the next person to reach for a colour code should be able to read why this one looked right.
 
 **The mechanism is deliberately NOT chosen here — that is a Phase 3 decision.** Both
 candidates are named so Phase 3 starts from two options rather than from zero:
@@ -451,6 +513,16 @@ cell. Nothing about the well's layout constrains this; the space beside it is al
   scheme** (*What this is*).
 - The gate must include a greyscale pass, because that is the same measurement with the
   weaker cue removed, and it is the one a colour-blind player is taking.
+
+> **SUPERSEDED 2026-08-13 — the palette this measured no longer exists.** *The A2
+> luminance amendment.* Its finding was right and is the reason the reversal was cheap:
+> hue was never carrying identity, and the seven tokens were never separable by value
+> either. What is superseded is the CONCLUSION it drew — that a second per-shape channel
+> was therefore required. The answer turned out to be that no per-shape channel is
+> required, because the silhouette was always doing the work. The luminance figures below
+> describe seven tokens that are no longer rendered, and
+> `test/tetrice-palette.test.ts`, which enforced them, is deleted rather than left passing
+> vacuously over a palette nothing reads. See *The pieces*.
 
 **THE CEILING, MEASURED: HUE IS NOT A USABLE IDENTITY CHANNEL FOR EVERY PLAYER, AND IN THE
 GREYSCALE CASE THE AXIS CODE CARRIES IDENTITY ALONE.** *Added 2026-08-13, out of Phase 1.
@@ -1320,55 +1392,43 @@ an unchosen bag" either.
 - Pure-logic modules unit tested under the existing DOM-free vitest setup.
 - **`/games/tetrice` is in `PLAY_SURFACE_ROUTES` and `test/play-surfaces.test.ts` covers it
   by name**, in both directions.
-- **ALL SEVEN SHAPES SATISFY THE FUSED READ AT 15 px AND AT 30 px.** *Added 2026-08-13; this
-  is how the anisotropic-fusion constraint in* The pieces *is accepted.* Re-run
-  `/dev/tetrice-gate` after the Phase 3 mechanism lands and check the fused-edge panel at
-  both sizes: no shape may read as separated bars or strands because of the angle its grains
-  were assigned. Three of seven passed at Phase 1, which is the baseline this is measured
-  against — the same panel, the same two cell sizes.
-- **`test/tetrice-palette.test.ts` passes, AND FAILS ON ITS POSITIVE CONTROL.** *Added
-  2026-08-13.* It parses the seven chromatic tokens out of `globals.css`, computes Rec.709
-  luminance, and asserts that **no two shapes whose value bands overlap share a grain axis**
-  — the threshold derived from `VALUE_SPREAD`, not hard-coded (*The pieces*). The control is
-  a deliberately colliding fake palette the checker must reject; without it, a checker that
-  stopped checking would look exactly like a palette that is fine.
-- **THE ON-PHONE GATE IS STILL OPEN, AND THE PHASE 1 PASS DID NOT DISCHARGE IT.** *Added
-  2026-08-13, as its own line rather than a parenthetical, because a satisfied criterion
-  with a caveat inside it reads as satisfied.* The axis code was judged on rendered pixels
-  at 45 device px per cell (DPR-3 viewport, 390×844 CSS px). What remains unmeasured is an
-  eye at arm's length: real phone, real brightness, off-axis viewing, S versus Z in
-  greyscale at the 15 px floor.
-  - **Still open after Phase 4, and the reason is worth stating plainly: nobody has
-    looked.** *2026-08-13.* The check needs no build and no deploy — `/dev/tetrice-gate`
-    is already on the promoted build, so the gate is **`/dev/tetrice-gate?mono=1`** on the
-    live domain, section `PRIMARY — S (↗) vs Z (↘), cell 15px`. It renders at a 15 px CSS
-    cell, which is 45 device px at DPR 3: **the same pixels the Phase 1 capture judged,
-    now in front of an eye rather than in a PNG.** Judged at arm's length, at normal
-    brightness, and tilted off-axis. That last one is the condition the capture could not
-    reproduce at all and the one most likely to fail, because an off-axis phone loses
-    contrast before it loses hue — and this is the greyscale panel, where contrast is the
-    only channel left.
-  - **The verdict goes in this file as pass or fail with the date, whichever it is.** A
-    fail is not a setback; it is the measurement finally existing, and *The pieces* already
-    names what a fail would cost (the three-way code is a floor, so the answer would be a
-    larger cell floor, not a finer angle code).
-- **THE TOUCH FEEL HAS NOT BEEN PLAYED ON A PHONE.** *Added 2026-08-13, out of Phase 4.*
-  The mapping and its numbers are decided, tested and shipped (*Controls*, *Feel*), and the
-  arithmetic ones are pinned against the gravity table. **The flick split is not
-  arithmetic.** What is unmeasured: whether 1.2 px/ms actually separates a soft drop from a
-  hard drop for a real thumb, whether a tap survives being read as a swipe often enough to
-  matter, and whether the cluster on by default leaves a legible cell at the phone's
-  height. All three are one playtest, and all three are tunable without an
-  `ENGINE_VERSION` bump — which is why they were allowed to ship ahead of the measurement,
-  and is not a reason to skip it.
-- **The palette gate has been run on a phone**, at the real cell size, with all seven shapes
-  on screen, including a greyscale pass (*The pieces*).
-  - *Added 2026-08-12:* the gate runs against a renderer that **already has the grain
-    long-axis channel**, and its job is to falsify the assumption that hue alone would not
-    have carried identity — not to discover the collision. A gate run on a hue-only
-    renderer is measuring a version this spec has already rejected.
-  - The queue is gated at its own cell size (~1.4× the well's), because that is the surface
-    where the collision shows first.
+- **A FILLED REGION SHOWS NO BACKGROUND BETWEEN CELLS, AT 15, 33 AND 70 px.** *Replaced
+  2026-08-13; supersedes "ALL SEVEN SHAPES SATISFY THE FUSED READ AT 15 px AND AT 30 px",
+  which was written against a renderer whose fusion depended on a per-shape grain angle.*
+  With one lattice for every cell there is no per-shape case left to enumerate, so the
+  criterion is a coverage measurement instead of a seven-way visual check:
+  `test/tetrice-packing.test.ts` samples a filled 4x4 region and asserts zero uncovered
+  samples at all three sizes. **33 px replaces 30 px** because 33 is what the phone in the
+  failed check was actually resolving, and 70 px is added because a desktop well is bigger
+  than anything the old criterion looked at. The test carries two controls that must fail:
+  the four-grain cluster this replaced (41% uncovered) and the shipped lattice with its
+  brick offset removed (0.06%).
+- **~~`test/tetrice-palette.test.ts` passes, AND FAILS ON ITS POSITIVE CONTROL.~~**
+  *Deleted 2026-08-13.* The test enforced that no two shapes whose value bands overlap share
+  a grain axis. There are no per-shape hues and no grain axes, so the guarantee has no
+  subject. **It was deleted rather than left passing**, because a green test over a palette
+  nothing renders is the most expensive kind of decoration: it reads as coverage. What
+  replaces it is the packing criterion above, which measures something the renderer
+  actually does.
+- **THE ON-PHONE GATE IS CLOSED, AND IT CLOSED AS A FAIL.** *Resolved 2026-08-13.* The
+  criterion was an eye at arm's length rather than a render: real phone, real brightness,
+  S versus Z at the cell floor. It was checked on a real device and **it did not pass** —
+  at the cell size a phone resolves, cells read as separate beads with the board visible
+  between them, and the diagonal grain classes read as diagonal SHAPE rather than as an
+  identity code. The failure invalidated the palette, the axis code and the packing
+  together, which is why the response was a reversal rather than a tuning pass (*The
+  pieces*).
+  - **The criterion itself was correct and is the reason this cost one phase rather than
+    five.** Every render decision above it had been "measured" on rendered pixels at 45
+    device px per cell, and every one of them was wrong in the same direction. The
+    standing rule is the one the amendment stated: **a render is not a measurement of a
+    phone.**
+- **~~The palette gate has been run on a phone, with all seven shapes on screen, including
+  a greyscale pass.~~** *Deleted 2026-08-13 along with the gate page it names.* There is no
+  palette to gate: seven tokens became one rice ramp, and `/dev/tetrice-gate` — page,
+  renderer, play-surface entry and test allowlist row — was deleted in the same change. The
+  question it existed to answer ("does hue alone carry identity?") was answered the other
+  way round by the phone: **nothing needed to carry identity except the silhouette.**
 - RICE CHOMP, GRAINSNAKE, the grains game and the WS process are untouched and still
   working. `chomp.db`, `grains.db` and `grainsnake.db` are not opened by anything in this
   feature.

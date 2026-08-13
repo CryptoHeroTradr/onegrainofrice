@@ -116,12 +116,12 @@ describe("play surfaces", () => {
     // card went into src/config/games.ts.
     {
       route: "/games/tetrice",
-      why: "shipped before its card: the leaderboard is Phase 5 and src/config/games.ts gains an entry then (added 2026-08-13)",
+      why: "live and playable, but src/config/games.ts has no entry for it yet — the card is its own change (added 2026-08-13)",
     },
-    {
-      route: "/dev/tetrice-gate",
-      why: "throwaway TETRICE palette/grain-axis gate — never gets a card, and is deleted with the page before Phase 2 ships (added 2026-08-12)",
-    },
+    // `/dev/tetrice-gate` left on 2026-08-13: the on-phone check failed the palette and
+    // grain-axis decisions it existed to gate, both were reverted, and the page, its
+    // renderer and this entry were deleted together — which is what its `why` said
+    // would happen to it.
   ];
 
   it("every play-surface route is a game, or is a NAMED unlisted route", () => {
