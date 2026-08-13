@@ -60,3 +60,4 @@ next-env.d.ts
 # Throwaway prototypes and one-question probes. Disposable by definition — a file
 # here exists to answer something with your eyes and is then deleted.
 /scratch/
+scratchpad/
